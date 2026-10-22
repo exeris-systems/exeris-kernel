@@ -423,6 +423,70 @@ is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through
 
 ---
 
+## Stream lifecycle and wakeups
+
+A `NativeTcpStream` can end through several routes, and a thread parked on it, whether a reader in
+`read`, a writer or a caller waiting for the reactor registration, has to learn of each one. The
+rules below are the contract between the terminal paths and the waiters. They describe the Community
+native TCP stream only; an Enterprise transport meets the same observable obligations through the
+`AbstractTransportStreamTck` terminal-wake cases, not through this mechanism. A TLS write that meets a
+full send buffer still aborts the stream instead of stalling, and goes through the rules below as an
+abort.
+
+The cost is a wake on every terminal transition, not only on the one that wins: each call reads three
+waiter slots and unparks the threads it finds, so a waiter may receive a surplus permit, which its park
+loop absorbs by re-checking its condition. Nothing is allocated, and the steady-state read and write
+paths gain one extra flag read.
+
+**Rules**
+
+1. **Wakers never clear a waiter's registration.** A thread records itself as the stream's reader,
+   writer or registration waiter, and removes its own record when it leaves. A terminal transition
+   reads the record and unparks the thread; it does not take the record away, so a second terminal
+   transition reaches the same thread again.
+2. **Flag first, then wake.** Every transition in the table writes its flag and then wakes all
+   waiters, whether or not this caller won the compare-and-set on that flag. The wake is not gated on
+   a "parked" hint: those hints serve the data path, and a surplus permit is harmless because every
+   park loop re-checks its own condition.
+3. **Park conditions name every terminal flag.** The reader stops waiting when the stream is
+   closed, a close was requested, the remote end was observed, or data arrived; a reader still
+   completing the TLS handshake stops on a requested close too. A `read` that finds a close requested
+   discards what is queued inbound, then reports end of stream if the remote end was observed and
+   otherwise throws `EX-NET-4009`, the same answer a write gets from the same state. One exception:
+   after a send-failure abort that follows the peer's end, bytes the peer sent first stay readable
+   and end of stream comes only after them, because the abort is this side's consequence of the
+   peer's end. A later `close()` or `reset(long)` by the application ends that and discards them.
+4. **No early return without a wake and a finish attempt.** A repeated `close()` or `reset(long)`
+   wakes the waiters and tries to finish the teardown again; a repeated `reset(long)` that cannot
+   finish also asks the reactor to do it.
+5. **An abort finishes where it happens.** A send failure sets the abortive flags, abandons the
+   queue and wakes the waiters while the failing thread holds the outbound consumer slot. The
+   abort's terminal close runs after that thread releases the slot. The finishes that
+   `flushPendingWrites` itself runs at the end of a drain or on a stall run under the slot, which
+   rule 6 makes safe.
+6. **The consumer gate is re-entrant.** Entering the inbound or outbound slot reports whether the
+   call acquired it or its thread already held it, and only an acquiring call releases. A cleanup
+   nested under a holder therefore leaves the holder's slot alone.
+7. **The finish wakes once more.** The transition that sets `closed` wakes all waiters again, as the
+   last transition of the stream.
+
+**Transitions**
+
+| Event | Flags set | Wakes | Finish |
+|:--|:--|:--|:--|
+| `close()` (any call) | `closeRequested` | all | now, if the slot is free and the queue is drained; otherwise whoever releases the slot, or the reactor's drain |
+| `reset(long)` (any call) | `resetRequested`, `closeRequested` | all | now, if the slot is free; otherwise the reactor is woken to do it |
+| Write `IOException` on a plain or ciphertext queue drain (not a TLS wrap `CLOSED`, which still goes through `close()`) | `resetRequested`, `closeRequested`; `peerEndedFirst` when the remote end was already observed and no local close came first | all | after the failing thread releases the slot |
+| Peer FIN or TLS `close_notify` (`markRemoteClosed`) | `remoteClosed`; `peerEndedFirst` when no local close was requested | all | none |
+| Carrier teardown (`closeKeyStream`: dispatch fault, idle reap) | `markRemoteClosed`, then `reset(long)` | all | through `reset(long)` |
+| The finish succeeds | `closed` | all | none |
+
+A peer FIN is a half-close: it ends the reader's input but does not end writes, so a writer woken by
+it re-checks its condition and keeps waiting.
+
+A thread that wants to wait on the stream's terminal state registers itself the way `read` does and
+checks every flag in the table after registering and before parking.
+
 ## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
