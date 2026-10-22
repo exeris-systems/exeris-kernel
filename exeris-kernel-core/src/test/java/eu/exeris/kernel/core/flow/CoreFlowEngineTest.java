@@ -283,8 +283,10 @@ class CoreFlowEngineTest {
                             throw ex;
                         }
                     }
-                    awaitTrue(60_000, () -> engine.stats().completedFlows() >= 1);
                 }
+
+                awaitTrue(60_000, () -> executions.get() >= 1);
+                awaitTrue(60_000, () -> engine.stats().completedFlows() >= 1);
 
                 assertThat(engine.stats().failedFlows()).isZero();
                 assertThat(executions.get()).isGreaterThanOrEqualTo(1);
