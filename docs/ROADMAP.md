@@ -3448,25 +3448,26 @@ fails, and fixed to `false` both positive cases fail.
 
 **Owner:** Core / Bootstrap, Crypto, Contract subsystems.
 
-**Status: IN PROGRESS (v0.13).** Kernel side implemented in exeris-systems/exeris-kernel#608; the items under "Open within this item" remain.
+**Status: IN PROGRESS (v0.13).** Kernel side implemented in exeris-systems/exeris-kernel#608, with scoped issuer keys, the entitlement classes and the developer-licence envelope added since; the items under "Open within this item" remain.
 
 **Resolution:**
 - Define `ExecutionContract`, `WorkloadEnvelope`, `EnforcementLevel`, `ExecutionEnvironment` and the `EntitlementRequirement` SPI in `exeris-kernel-spi` (`eu.exeris.kernel.spi.contract`).
-- Define `ContractBreachException` in `exeris-kernel-spi` (`eu.exeris.kernel.spi.exceptions.contract`) with registered error codes `EX-LIC-0001` through `EX-LIC-0008` (catalogued in `docs/subsystems/exceptions.md`).
+- Define `ContractBreachException` in `exeris-kernel-spi` (`eu.exeris.kernel.spi.exceptions.contract`) with registered error codes `EX-LIC-0001` through `EX-LIC-0013` (catalogued in `docs/subsystems/exceptions.md`).
 - Expose the `ContractKernelProviders.EXECUTION_CONTRACT` slot.
-- Implement zero-dependency RFC 8785 JSON canonicalization (`JsonCanonicalizer`), Ed25519 signature verification (`LicenseManifestVerifier`), and an immutable embedded `TrustedIssuerKeyStore` holding `exeris-root-2026-k1` in `exeris-kernel-core`.
-- Integrate license verification in Phase 0 of `KernelBootstrap.boot()`, before the orchestrator, through `ContractBootstrapStep` (`inspect()` does not run it): with no manifest the kernel boots under the Community fallback in every environment, and fails fast (`EX-LIC-0005`) only in a production-class environment (`production`, `production-load-sim`, `dr-hot`, declared by the `environment` key) when an `EntitlementRequirement` is on the classpath.
+- Implement zero-dependency RFC 8785 JSON canonicalization (`JsonCanonicalizer`), Ed25519 signature verification (`LicenseManifestVerifier`), and an immutable embedded `TrustedIssuerKeyStore` in `exeris-kernel-core` that pins one scoped key per family, `exeris-prod-2026-k1`, `exeris-dev-2026-k1` and `exeris-ent-2026-k1`; `exeris-root-2026-k1` is retired.
+- Integrate license verification in Phase 0 of `KernelBootstrap.boot()`, before the orchestrator, through `ContractBootstrapStep` (`inspect()` does not run it): with no manifest and no `EntitlementRequirement` the kernel boots under the Community fallback in every environment, and with a requirement it fails fast (`EX-LIC-0005`) in every environment, development included.
 - Verify the manifest against the strict v1 schema of ADR-088 §1 and canonicalize it per RFC 8785, including ECMAScript number serialization; read it from `license.manifest.path` with no fallback when that key is set, and refuse one above 64 KiB.
-- Load every `EntitlementRequirement` defensively (`EX-LIC-0008` for one that breaks its contract), warn once when entitlement-requiring code runs ungated outside the production classes, and record each gate decision as `ContractResolvedEvent`.
+- Load every `EntitlementRequirement` defensively (`EX-LIC-0008` for one that breaks its contract, its `EntitlementClass` included), and record each gate decision as `ContractResolvedEvent`.
+- Hold a manifest to the scope of the key that signed it, at `HARD` and whatever `enforcementRules` say: environments (`EX-LIC-0009`, the declared environment included), validity (`EX-LIC-0010`), workload ceiling (`EX-LIC-0011`), the class of every declared requirement (`EX-LIC-0012`), and for the developer key the `capability` and `environment` rules (`EX-LIC-0013`). The scope types and `LicenseManifestVerifier.verifyScoped` are public so a tool that signs licences runs the same checks.
+- Run a kernel under a developer licence at 50 requests per second and 10 connections: the gate binds a `DeveloperWorkloadAdmission` when a developer key signed the manifest and a requirement is declared, and the Community drivers enforce it (`WorkloadAdmission`).
 - Report `SOFT` and `AUDIT` violations through `ContractViolationReporter`, once per distinct violation: `SOFT` logs a `WARNING` through `System.Logger` and emits `ContractEnforcementEvent`, `AUDIT` emits the event only; `assertCapability` / `assertEnvironment` return the violation below `HARD`, and Phase 0 and the grace period report through it.
-- Implement `AbstractExecutionContractTck` and `AbstractLicenseManifestCryptoTck` in `exeris-kernel-tck` and bind concrete tests in `exeris-kernel-community`; the crypto suite verifies a golden manifest canonicalized and signed by an independent RFC 8785 implementation.
+- Implement `AbstractExecutionContractTck`, `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck` in `exeris-kernel-tck` and bind concrete tests in `exeris-kernel-community`; the crypto suite verifies a golden manifest canonicalized and signed by an independent RFC 8785 implementation, holds a manifest to its key's scope and checks the gate in every environment.
 
 **Open within this item:**
-- `authorizedInstances` and the workload envelope are carried in the contract but not metered.
+- `authorizedInstances` is carried in the contract but not metered, and the workload envelope is enforced only under the developer licence: metering for the other keys stays open.
 - `BlockedManifestRegistry` (ADR-088 §4 item 3, offline revocation) is not implemented.
-- The `exeris-manifest-tool` signing CLI and the `-Pproduction` capability gate belong to `exeris-tooling` and are not started.
+- The signing CLI lives in the private issuance repository. Only the `-Pproduction` capability check, which compares each declared class with the licence registry, stays in `exeris-tooling` and is not started.
 - The gate's cost is not measured against ADR-089's reversal threshold (5 ms); the measurement that settles it — marginal cost to `KernelBootReady` with and without a manifest, read from `ContractResolved.gateDuration` — is exeris-systems/exeris-kernel#605.
-- No architecture rule keeps the `core.contract` packages free of cycles (exeris-systems/exeris-kernel#607).
 
 **Merge Gate:** Complete TCK coverage with passing Community bindings, zero-dependency canonicalization in Core, ArchUnit/The Wall compliance. A startup-cost claim waits for the measurement listed above.
 

@@ -76,7 +76,7 @@ class CommunityTransportWorkloadAdmissionTckTest extends AbstractTransportWorklo
             recording.enable("eu.exeris.kernel.transport.CommunityConnectionRefused");
             recording.start();
             ScopedValue.where(ContractKernelProviders.WORKLOAD_ADMISSION, gate).run(engine::start);
-            try (Socket _ = connect(port); Socket refused = connect(port)) {
+            try (var _ = connect(port); Socket refused = connect(port)) {
                 refused.setSoTimeout(10_000);
                 assertThat(refused.getInputStream().read()).as("refused connection is closed").isEqualTo(-1);
                 assertThat(engine.stats().totalRejected()).as("the gate's refusal counts as rejected").isEqualTo(1);

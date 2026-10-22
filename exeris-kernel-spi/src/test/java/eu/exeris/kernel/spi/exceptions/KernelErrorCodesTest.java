@@ -541,6 +541,16 @@ class KernelErrorCodesTest {
         }
 
         @Test
+        @DisplayName("EX_LIC_0009 .. EX_LIC_0013 are the issuer-key scope codes")
+        void scopeCodes() {
+            assertThat(KernelErrorCodes.EX_LIC_0009).isEqualTo("EX-LIC-0009");
+            assertThat(KernelErrorCodes.EX_LIC_0010).isEqualTo("EX-LIC-0010");
+            assertThat(KernelErrorCodes.EX_LIC_0011).isEqualTo("EX-LIC-0011");
+            assertThat(KernelErrorCodes.EX_LIC_0012).isEqualTo("EX-LIC-0012");
+            assertThat(KernelErrorCodes.EX_LIC_0013).isEqualTo("EX-LIC-0013");
+        }
+
+        @Test
         @DisplayName("All EX-LIC codes match the pattern EX-LIC-\\d{4}")
         void allLicCodesMatchPattern() {
             assertThat(KernelErrorCodes.EX_LIC_0001).matches("EX-LIC-\\d{4}");
@@ -551,6 +561,11 @@ class KernelErrorCodesTest {
             assertThat(KernelErrorCodes.EX_LIC_0006).matches("EX-LIC-\\d{4}");
             assertThat(KernelErrorCodes.EX_LIC_0007).matches("EX-LIC-\\d{4}");
             assertThat(KernelErrorCodes.EX_LIC_0008).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0009).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0010).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0011).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0012).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0013).matches("EX-LIC-\\d{4}");
         }
     }
 
@@ -596,7 +611,10 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_LIC_0001, KernelErrorCodes.EX_LIC_0002,
                     KernelErrorCodes.EX_LIC_0003, KernelErrorCodes.EX_LIC_0004,
                     KernelErrorCodes.EX_LIC_0005, KernelErrorCodes.EX_LIC_0006,
-                    KernelErrorCodes.EX_LIC_0007, KernelErrorCodes.EX_LIC_0008
+                    KernelErrorCodes.EX_LIC_0007, KernelErrorCodes.EX_LIC_0008,
+                    KernelErrorCodes.EX_LIC_0009, KernelErrorCodes.EX_LIC_0010,
+                    KernelErrorCodes.EX_LIC_0011, KernelErrorCodes.EX_LIC_0012,
+                    KernelErrorCodes.EX_LIC_0013
             );
             assertThat(allCodes).isNotEmpty().doesNotContain("").allSatisfy(code ->
                     assertThat(code).isNotBlank()

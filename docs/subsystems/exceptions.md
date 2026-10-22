@@ -101,7 +101,11 @@ fault origin `SYSTEM`) by the Phase 0 contract gate of `KernelBootstrap.boot()` 
 refusal reaches the caller of `boot()` unwrapped, before any subsystem is initialized. After the gate, a `HARD`
 breach travels like any other failure from where it is raised: from a subsystem's `initialize()` or `start()` it
 is the cause of an `EX-BOOT-0002`; from `kernelMain` it reaches the caller of `boot()` unwrapped. An unknown
-value of the `environment` key fails the gate earlier, as `ConfigProviderException` `EX-CFG-1002`.
+value of the `environment` key fails the gate earlier, as `ConfigProviderException` `EX-CFG-1002`. A manifest
+that breaks the scope of the key that signed it is refused in the order the verifier checks: signature and
+schema (`EX-LIC-0001`, `EX-LIC-0002`), then the scope (`EX-LIC-0009`, `EX-LIC-0010`, `EX-LIC-0011`, then
+`EX-LIC-0013` for a key with a ceiling and `EX-LIC-0001` for a key without one that sets the workload envelope
+to `HARD`), then the validity window (`EX-LIC-0006`, `EX-LIC-0003`).
 
 | Code          | Description                               | Glass-Box Payload                                  |
 |:--------------|:------------------------------------------|:---------------------------------------------------|
@@ -109,10 +113,15 @@ value of the `environment` key fails the gate earlier, as `ConfigProviderExcepti
 | `EX-LIC-0002` | Unknown issuer key                        | `[0] String keyId` — the manifest's `issuer.keyId` names no trusted issuer key; a missing `issuer` block or `keyId` is a schema violation, `EX-LIC-0001` |
 | `EX-LIC-0003` | Manifest expired beyond grace             | `[0] String contractId, [1] Instant validUntil, [2] int gracePeriodDays` — evaluated after `validUntil + gracePeriodDays` |
 | `EX-LIC-0004` | Capability not entitled (`HARD`)          | `[0] String capabilityId` |
-| `EX-LIC-0005` | No manifest where an entitlement is required | `[0] String environment, [1] List<String> requiredCapabilities` (sorted) — production-class environment, an `EntitlementRequirement` on the classpath, no manifest |
+| `EX-LIC-0005` | No manifest where an entitlement is required | `[0] String environment, [1] List<String> requiredCapabilities` (sorted) — an `EntitlementRequirement` on the classpath and no manifest, in any environment |
 | `EX-LIC-0006` | Manifest not yet valid                    | `[0] String contractId, [1] Instant validFrom` — evaluated before `validFrom`; the grace period never applies here |
 | `EX-LIC-0007` | Environment not authorized (`HARD`)       | `[0] String environment` |
-| `EX-LIC-0008` | Invalid entitlement requirement           | `[0] String provider` — the `EntitlementRequirement` class that throws or declares `null`, nothing, or a malformed capability identifier; the service name when a provider cannot be loaded. Raised in every environment |
+| `EX-LIC-0008` | Invalid entitlement requirement           | `[0] String provider` — the `EntitlementRequirement` class that throws or declares `null`, nothing, a malformed capability identifier or a `null` entitlement class, or declares one identifier under a class other than the one an earlier provider declared (the second provider is named); the service name when a provider cannot be loaded. Raised in every environment |
+| `EX-LIC-0009` | Environment outside the key's scope (`HARD`) | `[0] String keyId, [1] List<String> environments` outside the scope, sorted — a manifest `execution.environments` value the signing key may not authorize, or the declared environment of the running kernel. No enforcement rule softens it |
+| `EX-LIC-0010` | Validity outside the key's maximum (`HARD`) | `[0] String keyId, [1] Instant issuedAt` (`null` when absent), `[2] Instant` the last instant the manifest boots (`validUntil` plus the grace period, `Instant.MAX` with no end), `[3] long maxValidityDays` — `issuer.issuedAt` missing, `validFrom` before it, `PERPETUAL_INTERNAL` or no `validUntil`, or the span from `issuedAt` to the last boot instant above the maximum; the message names the rule |
+| `EX-LIC-0011` | Workload envelope above the key's ceiling, or absent (`HARD`) | `[0] String keyId, [1] long maxThroughputRps, [2] int maxConnections, [3] int growthAllowancePercent`, as read; `Long.MAX_VALUE` and `Integer.MAX_VALUE` when absent, `0` for an absent growth allowance |
+| `EX-LIC-0012` | Requirement class outside the key's scope (`HARD`) | `[0] String keyId, [1] String` entitlement class identifier, `[2] String` provider class name — raised for every declared requirement, whether or not the manifest lists its capabilities |
+| `EX-LIC-0013` | Rule below `HARD` under a key with a ceiling | `[0] String keyId, [1] String` rule name (`capability` or `environment`), `[2] String` level as read — a developer key's manifest may not soften the checks that keep it out of production |
 
 ### Runtime (`EX-RUN-`)
 

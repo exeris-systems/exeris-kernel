@@ -180,12 +180,42 @@ class ExecutionContractRecordTest {
 
         @ParameterizedTest(name = "{0}")
         @EnumSource(ExecutionEnvironment.class)
-        @DisplayName("Exactly the production classes require an entitlement")
+        @DisplayName("Exactly production, production-load-sim and dr-hot are production classes")
         void productionClasses(ExecutionEnvironment environment) {
             boolean production = Set.of("production", "production-load-sim", "dr-hot").contains(environment.id());
 
-            assertThat(environment.requiresEntitlement()).isEqualTo(production);
+            assertThat(environment.isProductionClass()).isEqualTo(production);
             assertThat(ExecutionEnvironment.fromId(environment.id())).contains(environment);
+        }
+    }
+
+    @Nested
+    @DisplayName("EntitlementClass")
+    class Classes {
+
+        @Test
+        @DisplayName("The two classes carry the identifiers a licence registry writes")
+        void identifiers() {
+            assertThat(EntitlementClass.COMMERCIAL.id()).isEqualTo("commercial");
+            assertThat(EntitlementClass.ENTERPRISE_PRIVATE.id()).isEqualTo("enterprise-private");
+            assertThat(EntitlementClass.values()).hasSize(2);
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @EnumSource(EntitlementClass.class)
+        @DisplayName("fromId resolves each identifier back to its class")
+        void roundTrip(EntitlementClass entitlementClass) {
+            assertThat(EntitlementClass.fromId(entitlementClass.id())).contains(entitlementClass);
+        }
+
+        @Test
+        @DisplayName("fromId matches exactly: no case folding, no whitespace stripping, no null")
+        void exactMatch() {
+            assertThat(EntitlementClass.fromId("Commercial")).isEmpty();
+            assertThat(EntitlementClass.fromId(" commercial ")).isEmpty();
+            assertThat(EntitlementClass.fromId("ENTERPRISE_PRIVATE")).isEmpty();
+            assertThat(EntitlementClass.fromId("")).isEmpty();
+            assertThat(EntitlementClass.fromId(null)).isEmpty();
         }
     }
 

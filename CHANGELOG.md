@@ -18,6 +18,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Breaking
 
+- **A declared `EntitlementRequirement` with no manifest stops the boot in every environment, development included (ADR-088, ADR-089).** `EX-LIC-0005` is raised whatever the `environment` key says; a commercial artifact now needs a manifest wherever it runs, and a developer runs it under a developer licence. The verified manifest's environment and capability checks run in every environment too. See `MIGRATION.md`.
+- **`EntitlementRequirement` gains an abstract `entitlementClass()` (SPI, preview, ADR-089).** An implementer returns `EntitlementClass.COMMERCIAL` or `EntitlementClass.ENTERPRISE_PRIVATE`; there is no default, so no artifact is silently given the weaker class. One identifier declared under two classes, and a `null` class, stop the boot with `EX-LIC-0008`.
+- **`ExecutionEnvironment.requiresEntitlement()` is renamed `isProductionClass()` (SPI, preview, ADR-089).** The accessor says whether the environment serves live traffic; it no longer decides whether a manifest is needed.
+- **`exeris-root-2026-k1` is no longer a trust root (ADR-088).** The store pins `exeris-prod-2026-k1`, `exeris-dev-2026-k1` and `exeris-ent-2026-k1`, each with a scope; a manifest naming any other `issuer.keyId` fails with `EX-LIC-0002`.
+- **A manifest is valid only inside the scope of the key that signed it (ADR-088).** An environment outside the key's scope, a validity beyond its maximum, an envelope above its ceiling and a requirement of a class it may not entitle each stop the boot, with `EX-LIC-0009` to `EX-LIC-0013` (the last for a developer key that softens a `capability` or `environment` rule); see Added.
+- **Core: `IssuerKeyResolver.resolve` returns a `TrustedIssuerKey` instead of a `PublicKey` (ADR-088).** A resolver written as a lambda returns the key together with its scope; `IssuerKeyResolver.of` keeps its signature and gives each key the unrestricted enterprise scope.
 - **More than one `license-manifest.json` on the classpath now stops the boot (ADR-088 §5 step 1).** The contract gate read the first one in classpath order; it now fails with `EX-LIC-0001` and lists every URL. A deployment whose dependency jars carry a second manifest binds `license.manifest.path` to the one to use; see `MIGRATION.md`.
 - **Graph traversal refused under an unscopable storage context (ADR-102 Obligation 9).** Traversals under an unscopable tenant context are refused before any database I/O; see Changed.
 - **Graph SPI (preview): `GraphSession` gains abstract `traversePath`/`streamPathJson`, `GraphDialect` gains abstract `buildPathQuery`, and `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract (ADR-102).** An out-of-tree implementer must implement the three methods and the three-argument overload; it can no longer inherit the two-argument behaviour.
@@ -56,7 +62,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   apart by `(streamId, protocolStreamId)`. `StreamBackpressurePark` also gains `windowBytes`, the smaller of
   the stream's and the connection's window at the park and `-1` on HTTP/1.1. The existing `emit` overloads
   remain.
-- **Changed (Core): `ContractBootstrapStep.run` returns a `ContractDecision` instead of an `ExecutionContract` (ADR-089).** The decision pairs the contract with the `WorkloadAdmission` the drivers consult; a caller outside the kernel reads `.contract()` for the old value. The admission is `WorkloadAdmission.UNGATED` for every contract, so behaviour is unchanged.
+- **Changed (Core): `ContractBootstrapStep.run` returns a `ContractDecision` instead of an `ExecutionContract` (ADR-089).** The decision pairs the contract with the `WorkloadAdmission` the drivers consult; a caller outside the kernel reads `.contract()` for the old value. The admission is `WorkloadAdmission.UNGATED` unless a developer key signed the manifest and a requirement is declared.
+- **Changed (Core): the issuance-facing contract surface is public (ADR-088).** `IssuerKeyScope` (`PROD`, `DEV`, `ENT`),
+  `TrustedIssuerKey`, `IssuerKeyResolver.ofScoped`, `IssuerKeyResolver.embedded`, `LicenseManifestVerifier.verifyScoped` with its `VerifiedManifest`,
+  `TrustedIssuerKeyStore.resolve` and `TrustedIssuerKeyStore.trustedKeyIds()` are `public` with `@since 0.13`, so a
+  tool that signs licences checks a manifest against the same scope rules the kernel applies before it signs. They
+  stay preview until 1.0.
+- **Changed (Core): the contract gate reads the manifest's validity through the kernel time source (ADR-082).**
+  `TimeKernelProviders.timeSource()` supplies the instant, the platform clock until a time provider is bound.
+- **`ContractResolvedEvent` gains `keyId` and `developerLicence`.** The signing key and whether the kernel runs under
+  a developer licence; both are empty or `false` when no manifest was verified.
+- **A Community transport connection releases its admission to the gate that admitted it.** After a stop and a start
+  under another gate, the release no longer lands on the new gate.
 - **`PaqsScheduler` no longer reports a peer-closed stream as a handler failure.** A handler that ends with
   `EX-NET-4008` is recorded as `StreamLifecycle` outcome `PEER_CLOSED`, logged at `DEBUG` with the stream id
   and engine, and emits no `PaqsHandlerFailure` event. Only the thrown exception's own type counts: a failure
@@ -155,7 +172,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **The developer-licence workload-admission mechanism (ADR-089): `spi.contract.WorkloadAdmission`, its
   `ContractKernelProviders.WORKLOAD_ADMISSION` slot, the Core limiter and Community enforcement. It is inert:
   the contract gate binds `WorkloadAdmission.UNGATED` for every contract, so no kernel behaves differently
-  until a contract policy selects the developer gate.** Under an enforced gate a driver admits each inbound
+  until a developer key signs the manifest of a kernel that declares a requirement.** Under an enforced gate a driver admits each inbound
   connection at accept and closes a refused one before it writes a byte; asks the gate before each HTTP/1.1
   message and each HTTP/2 stream, an HTTP/2 stream route included, is routed or forked, and answers a refused one `429` with `Retry-After: 1` (HTTP/2:
   `HEADERS` with `END_STREAM`, not `RST_STREAM`); and stamps `Exeris-License: development` on every final
@@ -231,13 +248,26 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `META-INF/native-image/`). It registers the type and the five accessors `GeneratedRoleRegistryLoader`
   binds; without it a native image loads the fail-closed empty registry and every `@RequiresRole` denies
   (ADR-103).
+- **Scoped issuer keys and the developer licence (ADR-088, ADR-089).** Each pinned key carries a scope. `prod`:
+  all six environments, no maximum validity, no workload ceiling, commercial artifacts. `dev`: `development` only,
+  30 days from `issuer.issuedAt` to `validUntil` plus the grace period, at most 50 requests per second and 10
+  connections with no growth allowance, an absent envelope refused, `issuedAt` required, no `PERPETUAL_INTERNAL`,
+  commercial artifacts. `ent`: as `prod`, and enterprise-private artifacts too. A scope breach is `HARD`, and no
+  enforcement rule softens it: `EX-LIC-0009` (environment, the declared one included), `EX-LIC-0010` (validity),
+  `EX-LIC-0011` (envelope), `EX-LIC-0012` (a requirement of a class the key may not entitle) and `EX-LIC-0013` (a
+  key with a ceiling signed a `capability` or `environment` rule below `HARD`). A key with no ceiling cannot sign
+  `workloadEnvelope: HARD` (`EX-LIC-0001`). The kernel verifies a manifest under a developer key and holds its
+  envelope at `HARD` through `DeveloperWorkloadAdmission`, only when a requirement is declared; a Community-only
+  classpath is never gated. New: `EntitlementClass`, `IssuerKeyScope`, `TrustedIssuerKey`. `AbstractLicenseManifestCryptoTck`
+  adds Tests 5 to 8 and the gate cases. **For anyone binding the TCK:** its `verifyManifest` hook takes a `TckKeyScope`
+  and a new abstract `decide` hook runs the gate's decision; `AbstractEntitlementRequirementTck` asserts the class.
 - **The boot verifies a signed license manifest and enforces its entitlements (ADR-088, ADR-089,
   #608).** Phase 0 of `KernelBootstrap.boot()` reads `license-manifest.json` (or
   `license.manifest.path`), checks it against ADR-088's v1 schema, canonicalizes it per RFC 8785 and
   verifies its Ed25519 signature against the embedded `TrustedIssuerKeyStore`, before the
   orchestrator runs. Without a manifest the kernel boots under the Community fallback, and refuses
-  the boot (`EX-LIC-0005`) only in a production-class `environment` when an
-  `EntitlementRequirement` is on the classpath. The result is the `ExecutionContract` in
+  the boot (`EX-LIC-0005`), in every environment, when an `EntitlementRequirement` is on the
+  classpath. The result is the `ExecutionContract` in
   `spi.contract` (preview); `SOFT` and `AUDIT` violations are reported once each, and every gate
   decision is recorded as `ContractResolvedEvent`. Covered by `AbstractExecutionContractTck`,
   `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck`. Not yet: metering,

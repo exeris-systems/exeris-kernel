@@ -11,9 +11,9 @@ import java.util.Optional;
  * The environment class a kernel declares it runs in, with the identifiers a license manifest's
  * {@code execution.environments} uses (ADR-088 §1).
  *
- * <p>Three classes are production: they serve live traffic, so code that requires an entitlement
- * may run in them only under a verified manifest. The other three may run anything without one,
- * which is the <i>Build ≠ License</i> boundary of ADR-089.
+ * <p>Three classes are production classes ({@link #isProductionClass()}): they serve live traffic.
+ * The other three do not. The distinction describes the environment only; an artifact that requires an
+ * entitlement needs a verified manifest in every one of them.
  *
  * <p>The kernel reads the declaration from the configuration key {@value #CONFIG_KEY}. A kernel
  * that declares nothing runs as {@link #DEVELOPMENT}.
@@ -23,28 +23,28 @@ import java.util.Optional;
 @SuppressWarnings({"PMD.ShortVariable", "PMD.ShortMethodName"})
 public enum ExecutionEnvironment {
 
-    /** Evaluation, local development and test; no entitlement required. */
+    /** Evaluation, local development and test. */
     DEVELOPMENT("development", false),
-    /** Pre-release validation; no entitlement required. */
+    /** Pre-release validation. */
     STAGING("staging", false),
-    /** Live traffic; entitlement required. */
+    /** Live traffic. */
     PRODUCTION("production", true),
-    /** Load simulation on live data planes; entitlement required. */
+    /** Load simulation on live data planes. */
     PRODUCTION_LOAD_SIM("production-load-sim", true),
-    /** Dormant disaster-recovery standby that serves no traffic; no entitlement required. */
+    /** Dormant disaster-recovery standby that serves no traffic. */
     DR_COLD("dr-cold", false),
-    /** Hot or warm disaster-recovery standby that serves traffic; entitlement required. */
+    /** Hot or warm disaster-recovery standby that serves traffic. */
     DR_HOT("dr-hot", true);
 
     /** Configuration key that declares the environment. */
     public static final String CONFIG_KEY = "environment";
 
     private final String id;
-    private final boolean requiresEntitlement;
+    private final boolean productionClass;
 
-    ExecutionEnvironment(String id, boolean requiresEntitlement) {
+    ExecutionEnvironment(String id, boolean productionClass) {
         this.id = id;
-        this.requiresEntitlement = requiresEntitlement;
+        this.productionClass = productionClass;
     }
 
     /**
@@ -57,12 +57,12 @@ public enum ExecutionEnvironment {
     }
 
     /**
-     * Reports whether code that requires an entitlement may run here only under a verified manifest.
+     * Reports whether this environment serves live traffic.
      *
-     * @return {@code true} for the production classes
+     * @return {@code true} for {@link #PRODUCTION}, {@link #PRODUCTION_LOAD_SIM} and {@link #DR_HOT}
      */
-    public boolean requiresEntitlement() {
-        return requiresEntitlement;
+    public boolean isProductionClass() {
+        return productionClass;
     }
 
     /**

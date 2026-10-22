@@ -6,6 +6,7 @@ package eu.exeris.kernel.tck.contract;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.contract.ContractKernelProviders;
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import org.junit.jupiter.api.DisplayName;
@@ -18,12 +19,13 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * TCK conformance of an {@link EntitlementRequirement} provider (ADR-089, amendment of 2026-10-06).
+ * TCK conformance of an {@link EntitlementRequirement} provider (ADR-089).
  *
  * <p>The kernel's contract gate loads every provider through {@code ServiceLoader} before any kernel service
  * is bound, and refuses the boot with {@code EX-LIC-0008} when one breaks its contract. A binding names its
  * provider class; this suite checks what the gate relies on: a public no-argument constructor, the same
- * non-empty set on every call and from every instance, identifiers of capability shape, and no use of
+ * non-empty set and the same non-null entitlement class on every call and from every instance, identifiers of
+ * capability shape, and no use of
  * {@link KernelProviders} bindings.
  *
  * @since 0.13
@@ -69,6 +71,17 @@ public abstract class AbstractEntitlementRequirementTck {
     }
 
     @Test
+    @DisplayName("It states a non-null entitlement class, the same on every call and from every instance")
+    void entitlementClassIsStated() throws Exception {
+        EntitlementRequirement provider = newProvider();
+        EntitlementClass first = provider.entitlementClass();
+
+        assertThat(first).isNotNull();
+        assertThat(provider.entitlementClass()).isSameAs(first);
+        assertThat(newProvider().entitlementClass()).isSameAs(first);
+    }
+
+    @Test
     @DisplayName("Every declared identifier has capability shape, so a manifest can entitle it")
     void identifiersHaveCapabilityShape() throws Exception {
         for (String capability : newProvider().requiredCapabilities()) {
@@ -83,5 +96,6 @@ public abstract class AbstractEntitlementRequirementTck {
         assertThat(ContractKernelProviders.EXECUTION_CONTRACT.isBound()).isFalse();
 
         assertThat(newProvider().requiredCapabilities()).isNotEmpty();
+        assertThat(newProvider().entitlementClass()).isNotNull();
     }
 }

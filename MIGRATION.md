@@ -24,6 +24,54 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.12.x → 0.13 — entitlement-requiring artifacts: a class, a manifest in every environment, a developer licence (ADR-088, ADR-089)
+
+Five changes land together, and an artifact that registers an `EntitlementRequirement` is affected by all of them.
+
+1. **Implement `entitlementClass()`.** `EntitlementRequirement` has a new abstract method with no default. A
+   commercial artifact returns the commercial class; an enterprise-private artifact returns the other:
+
+   ```java
+   @Override
+   public EntitlementClass entitlementClass() {
+       return EntitlementClass.COMMERCIAL;   // or ENTERPRISE_PRIVATE
+   }
+   ```
+
+   The class applies to every identifier `requiredCapabilities()` returns. An artifact whose identifiers differ in
+   class registers one provider per class; one identifier under two classes fails the boot with `EX-LIC-0008`.
+2. **Give every environment a manifest.** A kernel with an `EntitlementRequirement` on its classpath and no
+   license manifest now stops with `EX-LIC-0005` in every environment, `development` and `staging` included. It
+   used to boot under the Community contract with a warning outside the production classes. A deployment that
+   has no manifest for a non-production environment obtains one: `production`, `staging` and the other
+   environments are covered by a licence signed by the production or the enterprise key, and local development
+   and CI by a developer licence. A kernel that carries no entitlement-requiring artifact is not affected.
+3. **The developer licence.** A developer licence is a manifest signed by the developer key. It is valid for
+   `development` only, for at most 30 days (`issuer.issuedAt` to `validUntil` plus the grace period), and runs
+   the kernel at no more than 50 requests per second and 10 connections: a request over the limit is answered
+   `429` with `Retry-After: 1`, a connection over it is closed at accept, and every HTTP response carries
+   `Exeris-License: development`. It cannot be used to run `staging` or `production`; the gate refuses a declared
+   environment outside the signing key's scope with `EX-LIC-0009`. Renew it before it expires: a developer
+   manifest past its window stops the boot with `EX-LIC-0003`. Bind it with `license.manifest.path`
+   (`-Dexeris.license.manifest.path` or `EXERIS_LICENSE_MANIFEST_PATH`) or place `license-manifest.json` in the
+   working directory.
+4. **Rename `requiresEntitlement()`.** `ExecutionEnvironment.requiresEntitlement()` is now `isProductionClass()`;
+   change the call and nothing else, it answers the same set of environments. It no longer decides whether a
+   manifest is needed.
+5. **A manifest signed by `exeris-root-2026-k1` no longer verifies.** The key is retired and resolves to
+   `EX-LIC-0002`; manifests are signed by the production, developer or enterprise key of the 2026 epoch.
+
+`IssuerKeyResolver.of(...)` gives every key the unrestricted enterprise scope. A test manifest that sets
+`enforcementRules.workloadEnvelope` to `HARD` and is verified through it now fails with `EX-LIC-0001`, because a
+key with no workload ceiling may not sign that rule; use `IssuerKeyResolver.ofScoped(...)` with a developer-scoped
+key for such a manifest.
+
+A test of your own that boots `KernelBootstrap` with an entitlement-requiring artifact on the classpath binds
+a developer licence, or stops running the real gate, or it fails with `EX-LIC-0005`. Code that calls
+`IssuerKeyResolver.resolve` as a lambda returns a `TrustedIssuerKey` now; `IssuerKeyResolver.of` is unchanged.
+
+---
+
 ## 0.12.x → 0.13 — contract gate: one license manifest on the classpath (ADR-088)
 
 The contract gate reads `license-manifest.json` from the classpath when `license.manifest.path` is unbound

@@ -18,16 +18,18 @@ import java.util.Set;
 /**
  * Root of trust for verifying Exeris cryptographic license manifests.
  *
- * <p>Pins trusted Ed25519 public keys for offline verification per ADR-088. The key set is fixed
- * at build time: it is an immutable map with no mutator, so no code in the process can add,
- * replace or remove a trust root at runtime (ADR-088 obligation 5, ADR-089 obligation 4). Tests
- * that need their own issuer key pass it to {@link LicenseManifestVerifier#verify(String,
- * java.time.Instant, IssuerKeyResolver)}; the bootstrap path never accepts a resolver and always
- * resolves keys here.
+ * <p>Pins trusted Ed25519 public keys for offline verification per ADR-088, each with the
+ * {@link IssuerKeyScope} it is allowed to entitle. The key set is fixed at build time: it is an immutable
+ * map with no mutator, so no code in the process can add, replace, widen or remove a trust root at runtime
+ * (ADR-088 obligation 5, ADR-089 obligation 4). Tests that need their own issuer key pass it to
+ * {@link LicenseManifestVerifier#verify(String, java.time.Instant, IssuerKeyResolver)}; the bootstrap path
+ * never accepts a resolver and always resolves keys here.
  *
- * <p>Each entry is the raw 32-byte public key of an issuer epoch whose private key is held by the
- * Exeris license issuer. Historical epoch keys stay in this map for as long as a version line must
- * boot {@code PERPETUAL_INTERNAL} manifests signed with them.
+ * <p>There are three families of key, named {@code exeris-<family>-<year>-k<N>}: {@code prod} entitles
+ * production licences ({@link IssuerKeyScope#PROD}), {@code dev} developer licences
+ * ({@link IssuerKeyScope#DEV}) and {@code ent} enterprise licences ({@link IssuerKeyScope#ENT}). Each
+ * entry is the raw 32-byte public key of an issuer epoch whose private key is held by the Exeris license
+ * issuer.
  *
  * @since 0.13
  */
@@ -39,10 +41,36 @@ public final class TrustedIssuerKeyStore {
 
     private static final int ED25519_PUBLIC_KEY_LENGTH = 32;
 
-    private static final Map<String, byte[]> TRUSTED_PUBLIC_KEYS = Map.of(
-            "exeris-root-2026-k1",
-            HexFormat.of().parseHex("ab971ce0e0bbf674139d8beac52d38dc3dad28a351e00975032a8be613e5e70f")
+    private static final Map<String, Entry> TRUSTED_KEYS = Map.of(
+            "exeris-prod-2026-k1",
+            new Entry(HexFormat.of().parseHex("bbba57668037f6dc4f1c305a7fac2d2ba0a506611dd6b70bdb9a3ce24a5365c9"),
+                    IssuerKeyScope.PROD),
+            "exeris-dev-2026-k1",
+            new Entry(HexFormat.of().parseHex("2c15e5013d02a45c579e1021aec554292a47b29ac480ae2366df276b547da92e"),
+                    IssuerKeyScope.DEV),
+            "exeris-ent-2026-k1",
+            new Entry(HexFormat.of().parseHex("5c07d772c227fafc491d7c5d5ef0fbcd18830872fc401f4a1f6dcbec23bb6027"),
+                    IssuerKeyScope.ENT)
     );
+
+    /** A pinned raw public key and its scope; the key is copied on every read. */
+    private static final class Entry {
+        private final byte[] raw;
+        private final IssuerKeyScope scope;
+
+        private Entry(byte[] raw, IssuerKeyScope scope) {
+            this.raw = raw.clone();
+            this.scope = scope;
+        }
+
+        private byte[] raw() {
+            return raw.clone();
+        }
+
+        private IssuerKeyScope scope() {
+            return scope;
+        }
+    }
 
     private TrustedIssuerKeyStore() {}
 
@@ -54,14 +82,18 @@ public final class TrustedIssuerKeyStore {
      * @throws ContractBreachException with EX-LIC-0002 if keyId is unknown
      */
     public static byte[] getPublicKeyBytes(String keyId) {
+        return entry(keyId).raw().clone();
+    }
+
+    private static Entry entry(String keyId) {
         if (keyId == null) {
             throw new ContractBreachException(KernelErrorCodes.EX_LIC_0002, "Issuer keyId must not be null");
         }
-        byte[] key = TRUSTED_PUBLIC_KEYS.get(keyId);
-        if (key == null) {
+        Entry entry = TRUSTED_KEYS.get(keyId);
+        if (entry == null) {
             throw new ContractBreachException(KernelErrorCodes.EX_LIC_0002, "Unknown issuer keyId", keyId);
         }
-        return key.clone();
+        return entry;
     }
 
     /**
@@ -72,16 +104,30 @@ public final class TrustedIssuerKeyStore {
      * @throws ContractBreachException if keyId is unknown (EX-LIC-0002) or malformed (EX-LIC-0001)
      */
     public static PublicKey getPublicKey(String keyId) {
-        return decodeRawPublicKey(keyId, getPublicKeyBytes(keyId));
+        return decodeRawPublicKey(keyId, entry(keyId).raw());
+    }
+
+    /**
+     * Resolves the embedded issuer key for the given keyId together with its scope.
+     *
+     * @param keyId key identifier from a manifest's {@code issuer.keyId}
+     * @return the decoded public key with the scope it is allowed to entitle
+     * @throws ContractBreachException with EX-LIC-0002 if keyId is unknown
+     * @since 0.13
+     */
+    public static TrustedIssuerKey resolve(String keyId) {
+        Entry entry = entry(keyId);
+        return new TrustedIssuerKey(keyId, decodeRawPublicKey(keyId, entry.raw()), entry.scope());
     }
 
     /**
      * Returns the identifiers of the embedded trust roots.
      *
      * @return immutable set of embedded keyIds
+     * @since 0.13
      */
-    /* default */ static Set<String> trustedKeyIds() {
-        return TRUSTED_PUBLIC_KEYS.keySet();
+    public static Set<String> trustedKeyIds() {
+        return TRUSTED_KEYS.keySet();
     }
 
     private static PublicKey decodeRawPublicKey(String keyId, byte[] raw) {

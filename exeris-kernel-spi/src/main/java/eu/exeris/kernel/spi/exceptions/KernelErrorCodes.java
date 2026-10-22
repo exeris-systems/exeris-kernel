@@ -1401,8 +1401,8 @@ public final class KernelErrorCodes {
     public static final String EX_LIC_0004 = "EX-LIC-0004";
 
     /**
-     * No license manifest was found, the declared environment is a production class, and code on the
-     * classpath declares an {@code EntitlementRequirement}.
+     * No license manifest was found, and code on the classpath declares an {@code EntitlementRequirement}.
+     * Raised in every environment, development included.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
@@ -1436,16 +1436,89 @@ public final class KernelErrorCodes {
 
     /**
      * An {@code EntitlementRequirement} on the classpath breaks its contract: it cannot be loaded or
-     * instantiated, throws, or returns {@code null}, an empty set, or an identifier that is not a capability
-     * identifier. Raised by the contract gate before any subsystem is initialized, in every environment.
+     * instantiated, throws, or returns {@code null}, an empty set, an identifier that is not a capability
+     * identifier or a {@code null} entitlement class, or declares one identifier under two classes. Raised
+     * by the contract gate before any subsystem is initialized, in every environment.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} provider class name, or the service name when the provider could not
-     *       be loaded</li>
+     *       be loaded; for an identifier declared under two classes, the second provider</li>
      * </ul>
      */
     public static final String EX_LIC_0008 = "EX-LIC-0008";
+
+    /**
+     * An environment lies outside the scope of the issuer key that signed the manifest: an
+     * {@code execution.environments} value the key may not entitle, or the declared environment of the
+     * running kernel. A scope breach is {@code HARD}; no enforcement rule softens it.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code List<String>} environments outside the key's scope, sorted</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0009 = "EX-LIC-0009";
+
+    /**
+     * The manifest's validity lies outside what the issuer key allows: {@code issuer.issuedAt} is missing,
+     * {@code execution.validFrom} precedes it, the licence mode is {@code PERPETUAL_INTERNAL} or has no
+     * {@code validUntil}, or the span from {@code issuedAt} to {@code validUntil} plus the grace period is
+     * longer than the key's maximum. The message names the rule.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code Instant} issuedAt, or {@code null} when the manifest carries none</li>
+     *   <li>index 2 – {@code Instant} the last instant the manifest boots, {@code validUntil} plus the
+     *       grace period, or {@code Instant.MAX} when it has no end</li>
+     *   <li>index 3 – {@code long} the key's maximum validity in days</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0010 = "EX-LIC-0010";
+
+    /**
+     * The manifest's workload envelope is above the ceiling of the issuer key that signed it, or absent,
+     * which reads as unlimited.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code long} maxThroughputRps as read, {@code Long.MAX_VALUE} when absent</li>
+     *   <li>index 2 – {@code int} maxConnections as read, {@code Integer.MAX_VALUE} when absent</li>
+     *   <li>index 3 – {@code int} growthAllowancePercent as read, {@code 0} when absent</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0011 = "EX-LIC-0011";
+
+    /**
+     * A declared {@code EntitlementRequirement} is of a class the issuer key that signed the manifest may
+     * not entitle. The check covers every declared requirement, whether or not the manifest lists its
+     * capabilities.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code String} entitlement class identifier</li>
+     *   <li>index 2 – {@code String} class name of the provider that declares the requirement</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0012 = "EX-LIC-0012";
+
+    /**
+     * An issuer key with a workload ceiling, a developer key, signed a manifest whose enforcement rule for
+     * {@code capability} or {@code environment} is below {@code HARD}. A developer licence cannot soften
+     * the checks that keep it out of production.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code String} rule name, {@code capability} or {@code environment}</li>
+     *   <li>index 2 – {@code String} enforcement level as read</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0013 = "EX-LIC-0013";
 
     // -----------------------------------------------------------------------
     // EX-UNK – no code of its own

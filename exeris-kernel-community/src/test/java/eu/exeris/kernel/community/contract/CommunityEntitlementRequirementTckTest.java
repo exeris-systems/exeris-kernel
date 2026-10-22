@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.contract;
 
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.tck.contract.AbstractEntitlementRequirementTck;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +36,11 @@ class CommunityEntitlementRequirementTckTest extends AbstractEntitlementRequirem
         @Override
         public Set<String> requiredCapabilities() {
             return CAPABILITIES;
+        }
+
+        @Override
+        public EntitlementClass entitlementClass() {
+            return EntitlementClass.COMMERCIAL;
         }
     }
 }

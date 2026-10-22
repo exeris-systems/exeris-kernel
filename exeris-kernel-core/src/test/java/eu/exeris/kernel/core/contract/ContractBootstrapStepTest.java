@@ -5,15 +5,19 @@
 package eu.exeris.kernel.core.contract;
 
 import eu.exeris.kernel.core.contract.crypto.IssuerKeyResolver;
+import eu.exeris.kernel.core.contract.crypto.IssuerKeyScope;
 import eu.exeris.kernel.core.contract.crypto.JsonCanonicalizer;
+import eu.exeris.kernel.core.contract.crypto.TrustedIssuerKey;
 import eu.exeris.kernel.core.contract.jfr.ContractViolationReporterTest;
 import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.contract.ExecutionEnvironment;
 import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -33,12 +37,16 @@ import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.LogRecord;
@@ -46,14 +54,18 @@ import java.util.logging.LogRecord;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 @DisplayName("ContractBootstrapStep — Phase 0 contract gate")
 class ContractBootstrapStepTest {
 
-    private static final String KEY_ID = "phase0-test-k1";
+    private static final String PROD_KEY = "gate-prod-k1";
+    private static final String DEV_KEY = "gate-dev-k1";
+    private static final String ENT_KEY = "gate-ent-k1";
+    private static final String LIMITED_KEY = "gate-limited-k1";
     private static final Instant NOW = Instant.parse("2026-10-06T12:00:00Z");
-    private static final Set<String> NO_REQUIREMENT = Set.of();
-    private static final Set<String> GATEWAY = Set.of("gateway-core");
+    private static final RequirementDiscovery.DeclaredRequirements NO_REQUIREMENT = declared();
+    private static final RequirementDiscovery.DeclaredRequirements GATEWAY = declared("gateway-core");
 
     private KeyPair keyPair;
     private IssuerKeyResolver resolver;
@@ -61,89 +73,89 @@ class ContractBootstrapStepTest {
     @BeforeEach
     void setUp() throws Exception {
         keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-        resolver = IssuerKeyResolver.of(Map.of(KEY_ID, keyPair.getPublic()));
+        resolver = IssuerKeyResolver.ofScoped(Map.of(
+                PROD_KEY, new TrustedIssuerKey(PROD_KEY, keyPair.getPublic(), IssuerKeyScope.PROD),
+                DEV_KEY, new TrustedIssuerKey(DEV_KEY, keyPair.getPublic(), IssuerKeyScope.DEV),
+                ENT_KEY, new TrustedIssuerKey(ENT_KEY, keyPair.getPublic(), IssuerKeyScope.ENT),
+                LIMITED_KEY, new TrustedIssuerKey(LIMITED_KEY, keyPair.getPublic(), new IssuerKeyScope(
+                        EnumSet.of(ExecutionEnvironment.DEVELOPMENT, ExecutionEnvironment.STAGING), null, null,
+                        EnumSet.of(EntitlementClass.COMMERCIAL)))));
+    }
+
+    private ContractDecision decide(ExecutionEnvironment environment,
+                                    RequirementDiscovery.DeclaredRequirements requirements, byte[] manifest) {
+        return ContractBootstrapStep.decide(environment, requirements, manifest, NOW, resolver);
+    }
+
+    private ContractBreachException refusal(ExecutionEnvironment environment,
+                                            RequirementDiscovery.DeclaredRequirements requirements,
+                                            byte[] manifest) {
+        return catchThrowableOfType(ContractBreachException.class, () -> decide(environment, requirements, manifest));
     }
 
     // ── No manifest ─────────────────────────────────────────────────────────
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(ExecutionEnvironment.class)
-    @DisplayName("No manifest and no requirement on the classpath: Community boots in every environment")
+    @DisplayName("No manifest and no requirement on the classpath: Community boots in every environment, ungated")
     void communityBootsEverywhereWithoutManifest(ExecutionEnvironment environment) {
-        ExecutionContract contract = ContractBootstrapStep.decide(environment, NO_REQUIREMENT, null, NOW, resolver);
+        ContractDecision decision = decide(environment, NO_REQUIREMENT, null);
 
-        assertThat(contract.edition()).isEqualTo("community");
-        assertThat(contract.isEnvironmentAuthorized(environment.id())).isTrue();
+        assertThat(decision.contract().edition()).isEqualTo("community");
+        assertThat(decision.contract().isEnvironmentAuthorized(environment.id())).isTrue();
+        assertThat(decision.admission()).isSameAs(WorkloadAdmission.UNGATED);
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(value = ExecutionEnvironment.class, names = {"PRODUCTION", "PRODUCTION_LOAD_SIM", "DR_HOT"})
-    @DisplayName("No manifest, a requirement, and a production-class environment: the boot stops with EX-LIC-0005")
-    void productionClassWithRequirementAndNoManifestHalts(ExecutionEnvironment environment) {
-        assertThatThrownBy(() -> ContractBootstrapStep.decide(
-                environment, Set.of("gateway-core", "bot-fingerprinting"), null, NOW, resolver))
-                .isInstanceOf(ContractBreachException.class)
-                .satisfies(e -> {
-                    ContractBreachException breach = (ContractBreachException) e;
-                    assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0005);
-                    assertThat(breach.rawArgs())
-                            .containsExactly(environment.id(), List.of("bot-fingerprinting", "gateway-core"));
-                });
-    }
+    @EnumSource(ExecutionEnvironment.class)
+    @DisplayName("No manifest and a requirement: the boot stops with EX-LIC-0005 in every environment")
+    void requirementWithoutManifestHaltsEverywhere(ExecutionEnvironment environment) {
+        ContractBreachException breach = refusal(
+                environment, declared("gateway-core", "bot-fingerprinting"), null);
 
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(value = ExecutionEnvironment.class, names = {"DEVELOPMENT", "STAGING", "DR_COLD"})
-    @DisplayName("No manifest and a requirement in a non-production environment: Community fallback, no halt")
-    void nonProductionWithRequirementAndNoManifestFallsBack(ExecutionEnvironment environment) {
-        ExecutionContract contract = ContractBootstrapStep.decide(environment, GATEWAY, null, NOW, resolver);
-
-        assertThat(contract.edition()).isEqualTo("community");
+        assertThat(breach).isNotNull();
+        assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0005);
+        assertThat(breach.rawArgs()).containsExactly(environment.id(), List.of("bot-fingerprinting", "gateway-core"));
     }
 
     // ── Manifest present ────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("Production, manifest entitles the required capability and the environment: contract returned")
+    @DisplayName("Production, manifest entitles the required capability and the environment: contract returned, ungated")
     void productionWithEntitlingManifestBoots() throws Exception {
-        byte[] manifest = signedManifest(List.of("production"), List.of("gateway-core"));
+        byte[] manifest = signedManifest(PROD_KEY, List.of("production"), List.of("gateway-core"));
 
-        ExecutionContract contract = ContractBootstrapStep.decide(
-                ExecutionEnvironment.PRODUCTION, GATEWAY, manifest, NOW, resolver);
+        ContractDecision decision = decide(ExecutionEnvironment.PRODUCTION, GATEWAY, manifest);
 
-        assertThat(contract.contractId()).isEqualTo("EXR-PHASE0-001");
+        assertThat(decision.contract().contractId()).isEqualTo("EXR-PHASE0-001");
+        assertThat(decision.admission()).isSameAs(WorkloadAdmission.UNGATED);
     }
 
     @Test
     @DisplayName("Production, manifest does not authorize the environment (HARD): EX-LIC-0007")
     void productionNotAuthorizedByManifestHalts() throws Exception {
-        byte[] manifest = signedManifest(List.of("staging"), List.of("gateway-core"));
+        byte[] manifest = signedManifest(PROD_KEY, List.of("staging"), List.of("gateway-core"));
 
-        assertThatThrownBy(() -> ContractBootstrapStep.decide(
-                ExecutionEnvironment.PRODUCTION, GATEWAY, manifest, NOW, resolver))
-                .isInstanceOf(ContractBreachException.class)
-                .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
-                        .isEqualTo(KernelErrorCodes.EX_LIC_0007));
+        assertThat(refusal(ExecutionEnvironment.PRODUCTION, GATEWAY, manifest).errorCode())
+                .isEqualTo(KernelErrorCodes.EX_LIC_0007);
     }
 
     @Test
     @DisplayName("Production, required capability not entitled (HARD): EX-LIC-0004")
     void productionWithUnentitledRequirementHalts() throws Exception {
-        byte[] manifest = signedManifest(List.of("production"), List.of("security-tls"));
+        byte[] manifest = signedManifest(PROD_KEY, List.of("production"), List.of("security-tls"));
 
-        assertThatThrownBy(() -> ContractBootstrapStep.decide(
-                ExecutionEnvironment.PRODUCTION, GATEWAY, manifest, NOW, resolver))
-                .isInstanceOf(ContractBreachException.class)
-                .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
-                        .isEqualTo(KernelErrorCodes.EX_LIC_0004));
+        assertThat(refusal(ExecutionEnvironment.PRODUCTION, GATEWAY, manifest).errorCode())
+                .isEqualTo(KernelErrorCodes.EX_LIC_0004);
     }
 
     @Test
     @DisplayName("Production, required capability not entitled at SOFT: the boot continues and a WARNING is logged")
     void productionSoftCapabilityBootsAndWarns() throws Exception {
-        byte[] manifest = signedManifest(List.of("production"), List.of("security-tls"), "SOFT");
+        byte[] manifest = signedManifest(PROD_KEY, List.of("production"), List.of("security-tls"), "SOFT");
 
-        List<LogRecord> warnings = ContractViolationReporterTest.captureWarnings(() -> ContractBootstrapStep.decide(
-                ExecutionEnvironment.PRODUCTION, GATEWAY, manifest, NOW, resolver));
+        List<LogRecord> warnings = ContractViolationReporterTest.captureWarnings(
+                () -> decide(ExecutionEnvironment.PRODUCTION, GATEWAY, manifest));
 
         assertThat(warnings).singleElement()
                 .satisfies(r -> assertThat(r.getParameters()).contains("capability", "gateway-core"));
@@ -152,36 +164,172 @@ class ContractBootstrapStepTest {
     @Test
     @DisplayName("Production, required capability not entitled at AUDIT: the boot continues and nothing is logged")
     void productionAuditCapabilityBootsSilently() throws Exception {
-        byte[] manifest = signedManifest(List.of("production"), List.of("security-tls"), "AUDIT");
+        byte[] manifest = signedManifest(PROD_KEY, List.of("production"), List.of("security-tls"), "AUDIT");
 
-        List<LogRecord> warnings = ContractViolationReporterTest.captureWarnings(() -> ContractBootstrapStep.decide(
-                ExecutionEnvironment.PRODUCTION, GATEWAY, manifest, NOW, resolver));
+        List<LogRecord> warnings = ContractViolationReporterTest.captureWarnings(
+                () -> decide(ExecutionEnvironment.PRODUCTION, GATEWAY, manifest));
 
         assertThat(warnings).isEmpty();
     }
 
-    @Test
-    @DisplayName("Development, manifest neither authorizes the environment nor entitles the requirement: boots")
-    void developmentIsNotGatedByManifestContent() throws Exception {
-        byte[] manifest = signedManifest(List.of("production"), List.of("security-tls"));
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = ExecutionEnvironment.class, names = {"DEVELOPMENT", "STAGING", "DR_COLD"})
+    @DisplayName("A manifest that lists only production does not authorize a non-production environment (HARD): EX-LIC-0007")
+    void nonProductionEnvironmentIsAuthorizedByTheManifest(ExecutionEnvironment environment) throws Exception {
+        byte[] manifest = signedManifest(PROD_KEY, List.of("production"), List.of("gateway-core"));
 
-        assertThatCode(() -> ContractBootstrapStep.decide(
-                ExecutionEnvironment.DEVELOPMENT, GATEWAY, manifest, NOW, resolver))
-                .doesNotThrowAnyException();
+        assertThat(refusal(environment, GATEWAY, manifest).errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0007);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = ExecutionEnvironment.class, names = {"DEVELOPMENT", "STAGING", "DR_COLD"})
+    @DisplayName("A required capability the manifest does not entitle halts a non-production environment (HARD): EX-LIC-0004")
+    void nonProductionEnvironmentEntitlesTheCapability(ExecutionEnvironment environment) throws Exception {
+        byte[] manifest = signedManifest(PROD_KEY, List.of(environment.id()), List.of("security-tls"));
+
+        assertThat(refusal(environment, GATEWAY, manifest).errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0004);
     }
 
     @Test
-    @DisplayName("A tampered manifest fails verification even where no entitlement is required")
+    @DisplayName("A tampered manifest fails verification even where no requirement is declared")
     void tamperedManifestFailsInDevelopment() throws Exception {
-        String manifest = new String(signedManifest(List.of("production"), List.of("gateway-core")),
+        String manifest = new String(signedManifest(PROD_KEY, List.of("production"), List.of("gateway-core")),
                 StandardCharsets.UTF_8);
         byte[] tampered = manifest.replace("gateway-core", "gateway-cora").getBytes(StandardCharsets.UTF_8);
 
-        assertThatThrownBy(() -> ContractBootstrapStep.decide(
-                ExecutionEnvironment.DEVELOPMENT, NO_REQUIREMENT, tampered, NOW, resolver))
-                .isInstanceOf(ContractBreachException.class)
-                .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
-                        .isEqualTo(KernelErrorCodes.EX_LIC_0001));
+        assertThat(refusal(ExecutionEnvironment.DEVELOPMENT, NO_REQUIREMENT, tampered).errorCode())
+                .isEqualTo(KernelErrorCodes.EX_LIC_0001);
+    }
+
+    @Test
+    @DisplayName("A manifest with no requirement is still verified: out of its key's scope it halts, in scope it is ungated")
+    void manifestWithoutRequirementIsStillVerified() throws Exception {
+        byte[] outOfScope = signedManifest(DEV_KEY, List.of("development", "staging"), List.of("gateway-core"));
+        byte[] inScope = signedManifest(DEV_KEY, List.of("development"), List.of("gateway-core"));
+
+        assertThat(refusal(ExecutionEnvironment.DEVELOPMENT, NO_REQUIREMENT, outOfScope).errorCode())
+                .isEqualTo(KernelErrorCodes.EX_LIC_0009);
+        assertThat(decide(ExecutionEnvironment.DEVELOPMENT, NO_REQUIREMENT, inScope).admission())
+                .isSameAs(WorkloadAdmission.UNGATED);
+    }
+
+    // ── Declared environment and key scope ─────────────────────────────────
+
+    @Test
+    @DisplayName("A developer key never entitles a production environment: EX-LIC-0009 with the declared environment")
+    void developerKeyDoesNotEntitleProduction() throws Exception {
+        byte[] manifest = signedManifest(DEV_KEY, List.of("development"), List.of("gateway-core"));
+
+        ContractBreachException breach = refusal(ExecutionEnvironment.PRODUCTION, GATEWAY, manifest);
+
+        assertThat(breach).isNotNull();
+        assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0009);
+        assertThat(breach.rawArgs()).containsExactly(DEV_KEY, List.of("production"));
+    }
+
+    @ParameterizedTest(name = "environment rule {0}")
+    @ValueSource(strings = {"HARD", "SOFT", "AUDIT"})
+    @DisplayName("The declared environment outside the key's scope is refused whatever the environment rule says")
+    void declaredEnvironmentOutsideScopeIgnoresTheRule(String level) throws Exception {
+        byte[] manifest = signedManifest(LIMITED_KEY, List.of("development"), List.of("gateway-core"), "HARD", level);
+
+        ContractBreachException breach = refusal(ExecutionEnvironment.PRODUCTION, GATEWAY, manifest);
+
+        assertThat(breach).isNotNull();
+        assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0009);
+        assertThat(breach.rawArgs()).containsExactly(LIMITED_KEY, List.of("production"));
+    }
+
+    @Test
+    @DisplayName("The declared environment inside the key's scope but outside the manifest still follows the environment rule")
+    void declaredEnvironmentInsideScopeFollowsTheRule() throws Exception {
+        byte[] hard = signedManifest(LIMITED_KEY, List.of("development"), List.of("gateway-core"), "HARD", "HARD");
+        byte[] audit = signedManifest(LIMITED_KEY, List.of("development"), List.of("gateway-core"), "HARD", "AUDIT");
+
+        assertThat(refusal(ExecutionEnvironment.STAGING, GATEWAY, hard).errorCode())
+                .isEqualTo(KernelErrorCodes.EX_LIC_0007);
+        assertThat(decide(ExecutionEnvironment.STAGING, GATEWAY, audit).contract().contractId())
+                .isEqualTo("EXR-PHASE0-001");
+    }
+
+    // ── Entitlement class ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("An enterprise key entitles an enterprise-private requirement")
+    void enterpriseKeyEntitlesEnterprisePrivate() throws Exception {
+        byte[] manifest = signedManifest(ENT_KEY, List.of("production"), List.of("bot-fingerprinting"));
+
+        assertThat(decide(ExecutionEnvironment.PRODUCTION, declared(EntitlementClass.ENTERPRISE_PRIVATE,
+                "bot-fingerprinting"), manifest).contract().allowsCapability("bot-fingerprinting")).isTrue();
+    }
+
+    @Test
+    @DisplayName("A production key may not entitle an enterprise-private requirement, even one the manifest does not list")
+    void productionKeyDoesNotEntitleEnterprisePrivate() throws Exception {
+        byte[] manifest = signedManifest(PROD_KEY, List.of("production"), List.of("gateway-core"));
+
+        ContractBreachException breach = refusal(ExecutionEnvironment.PRODUCTION, declared(
+                EntitlementClass.ENTERPRISE_PRIVATE, "bot-fingerprinting"), manifest);
+
+        assertThat(breach).isNotNull();
+        assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0012);
+        assertThat(breach.rawArgs()).containsExactly(PROD_KEY, "enterprise-private", "test-provider");
+    }
+
+    @Test
+    @DisplayName("A developer key may not entitle an enterprise-private requirement")
+    void developerKeyDoesNotEntitleEnterprisePrivate() throws Exception {
+        byte[] manifest = signedManifest(DEV_KEY, List.of("development"), List.of("bot-fingerprinting"));
+
+        assertThat(refusal(ExecutionEnvironment.DEVELOPMENT, declared(
+                EntitlementClass.ENTERPRISE_PRIVATE, "bot-fingerprinting"), manifest).errorCode())
+                .isEqualTo(KernelErrorCodes.EX_LIC_0012);
+    }
+
+    @Test
+    @DisplayName("With no requirement declared no class is checked: a production key boots a manifest listing any capability")
+    void noRequirementChecksNoClass() throws Exception {
+        byte[] manifest = signedManifest(PROD_KEY, List.of("production"), List.of("bot-fingerprinting"));
+
+        assertThatCode(() -> decide(ExecutionEnvironment.PRODUCTION, NO_REQUIREMENT, manifest))
+                .doesNotThrowAnyException();
+    }
+
+    // ── Workload admission ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("A developer key and a requirement: the decision carries an enforced gate holding the manifest's envelope")
+    void developerKeyWithRequirementIsGated() throws Exception {
+        byte[] manifest = signedManifest(DEV_KEY, List.of("development"), List.of("gateway-core"));
+
+        WorkloadAdmission admission = decide(ExecutionEnvironment.DEVELOPMENT, GATEWAY, manifest).admission();
+
+        assertThat(admission).isInstanceOf(DeveloperWorkloadAdmission.class);
+        assertThat(admission.enforced()).isTrue();
+        for (int connection = 0; connection < 10; connection++) {
+            assertThat(admission.tryAdmitConnection()).as("connection %d", connection).isTrue();
+        }
+        assertThat(admission.tryAdmitConnection()).as("the eleventh connection").isFalse();
+    }
+
+    @Test
+    @DisplayName("A developer key and no requirement: the Community-only classpath is not gated")
+    void developerKeyWithoutRequirementIsUngated() throws Exception {
+        byte[] manifest = signedManifest(DEV_KEY, List.of("development"), List.of("gateway-core"));
+
+        assertThat(decide(ExecutionEnvironment.DEVELOPMENT, NO_REQUIREMENT, manifest).admission())
+                .isSameAs(WorkloadAdmission.UNGATED);
+    }
+
+    @Test
+    @DisplayName("A production or enterprise key and a requirement: no developer envelope applies")
+    void nonDeveloperKeysAreUngated() throws Exception {
+        for (String key : List.of(PROD_KEY, ENT_KEY)) {
+            byte[] manifest = signedManifest(key, List.of("production"), List.of("gateway-core"));
+
+            assertThat(decide(ExecutionEnvironment.PRODUCTION, GATEWAY, manifest).admission())
+                    .as(key).isSameAs(WorkloadAdmission.UNGATED);
+        }
     }
 
     // ── Environment declaration ─────────────────────────────────────────────
@@ -305,7 +453,7 @@ class ContractBootstrapStepTest {
     @DisplayName("A null class loader reads the classpath through the system class loader, not into a NullPointerException")
     void nullClassLoaderFallsBackToSystemLoader(@TempDir Path dir) {
         assertThat(ManifestLocator.resolve(Optional.empty(), dir.resolve("license-manifest.json"), null)).isNull();
-        assertThat(RequirementDiscovery.requiredCapabilities(null)).isEmpty();
+        assertThat(RequirementDiscovery.declared(null).isEmpty()).isTrue();
     }
 
     @Test
@@ -333,66 +481,6 @@ class ContractBootstrapStepTest {
         }
     }
 
-    // ── Requirement discovery ───────────────────────────────────────────────
-
-    @Test
-    @DisplayName("Requirements are discovered through ServiceLoader and merged")
-    void requirementsAreDiscovered(@TempDir Path root) throws Exception {
-        Path services = root.resolve("META-INF/services");
-        Files.createDirectories(services);
-        Files.writeString(services.resolve(EntitlementRequirement.class.getName()),
-                GatewayRequirement.class.getName() + "\n" + BotRequirement.class.getName() + "\n");
-
-        try (URLClassLoader loader = new URLClassLoader(
-                new URL[] {root.toUri().toURL()}, getClass().getClassLoader())) {
-            assertThat(RequirementDiscovery.requiredCapabilities(loader))
-                    .containsExactly("bot-fingerprinting", "gateway-core", "gateway-routing");
-        }
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @ValueSource(classes = {
-            ThrowingRequirement.class, NullRequirement.class, EmptyRequirement.class, MalformedRequirement.class})
-    @DisplayName("A requirement that throws, or declares null, nothing or a malformed id, stops the boot with EX-LIC-0008")
-    void invalidRequirementIsRefused(Class<?> provider, @TempDir Path root) throws Exception {
-        try (URLClassLoader loader = loaderDeclaring(root, provider.getName())) {
-            assertThatThrownBy(() -> RequirementDiscovery.requiredCapabilities(loader))
-                    .isInstanceOf(ContractBreachException.class)
-                    .satisfies(e -> {
-                        ContractBreachException breach = (ContractBreachException) e;
-                        assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0008);
-                        assertThat(breach.rawArgs()).containsExactly(provider.getName());
-                    });
-        }
-    }
-
-    @Test
-    @DisplayName("A requirement class that cannot be loaded stops the boot with EX-LIC-0008, not a raw Error")
-    void unloadableRequirementIsRefused(@TempDir Path root) throws Exception {
-        try (URLClassLoader loader = loaderDeclaring(root, "eu.exeris.example.MissingRequirement")) {
-            assertThatThrownBy(() -> RequirementDiscovery.requiredCapabilities(loader))
-                    .isInstanceOf(ContractBreachException.class)
-                    .satisfies(e -> {
-                        ContractBreachException breach = (ContractBreachException) e;
-                        assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0008);
-                        assertThat(breach.rawArgs()).containsExactly(EntitlementRequirement.class.getName());
-                    });
-        }
-    }
-
-    @Test
-    @DisplayName("A requirement outside production with no manifest boots, and warns that the code runs ungated")
-    void ungatedRequirementWarns() {
-        List<LogRecord> warnings = ContractViolationReporterTest.captureWarnings(() ->
-                assertThat(ContractBootstrapStep.decide(
-                        ExecutionEnvironment.STAGING, Set.of("staging-only-capability"), null, NOW, resolver)
-                        .edition()).isEqualTo("community"));
-
-        assertThat(warnings).singleElement().satisfies(r -> assertThat(
-                java.text.MessageFormat.format(r.getMessage(), r.getParameters()))
-                .contains("staging-only-capability").contains("'staging'"));
-    }
-
     @Test
     @DisplayName("Each gate run records one ContractResolved event: environment, source, contract, outcome")
     void gateRecordsResolvedEvent(@TempDir Path dir) throws Exception {
@@ -417,6 +505,149 @@ class ContractBootstrapStepTest {
     }
 
     @Test
+    @DisplayName("A scope refusal raised inside the verifier still records the signing key on the event")
+    void verifierRefusalRecordsTheKey(@TempDir Path dir) throws Exception {
+        Path outside = Files.write(dir.resolve("outside.json"),
+                signedManifest(DEV_KEY, List.of("development", "staging"), List.of("gateway-core")));
+        Path dump = dir.resolve("gate.jfr");
+        try (Recording recording = new Recording();
+             URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
+            recording.enable("eu.exeris.kernel.contract.Resolved");
+            recording.start();
+            assertThatThrownBy(() -> ContractBootstrapStep.run(
+                    config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, outside.toString())), empty, resolver))
+                    .isInstanceOfSatisfying(ContractBreachException.class,
+                            breach -> assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0009));
+            recording.stop();
+            recording.dump(dump);
+        }
+
+        assertThat(RecordingFile.readAllEvents(dump))
+                .filteredOn(e -> e.getEventType().getName().equals("eu.exeris.kernel.contract.Resolved"))
+                .singleElement()
+                .satisfies(e -> {
+                    assertThat(e.getString("keyId")).isEqualTo(DEV_KEY);
+                    assertThat(e.getString("outcome")).isEqualTo(KernelErrorCodes.EX_LIC_0009);
+                });
+    }
+
+    @Test
+    @DisplayName("The public decision takes requirements by class and decides as the gate does")
+    void publicDecisionMatchesTheGate() throws Exception {
+        byte[] manifest = signedManifest(DEV_KEY, List.of("development"), List.of("gateway-core"));
+
+        ContractDecision decision = ContractBootstrapStep.decide(ExecutionEnvironment.DEVELOPMENT,
+                Map.of(EntitlementClass.COMMERCIAL, Set.of("gateway-core")), manifest, NOW, resolver);
+        assertThat(decision.admission().enforced()).isTrue();
+
+        assertThatThrownBy(() -> ContractBootstrapStep.decide(ExecutionEnvironment.DEVELOPMENT,
+                Map.of(EntitlementClass.ENTERPRISE_PRIVATE, Set.of("gateway-core")), manifest, NOW, resolver))
+                .isInstanceOfSatisfying(ContractBreachException.class, breach -> {
+                    assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0012);
+                    assertThat(breach.rawArgs()).containsExactly(DEV_KEY, "enterprise-private",
+                            "declared:enterprise-private");
+                });
+        assertThat(ContractBootstrapStep.decide(ExecutionEnvironment.PRODUCTION, Map.of(), null, NOW, resolver)
+                .contract().edition()).isEqualTo("community");
+    }
+
+    @Test
+    @DisplayName("A manifest that is both expired and short of a declared class reports its time code first")
+    void timeCodeWinsOverTheGateChecks() throws Exception {
+        byte[] manifest = signedManifest(PROD_KEY, List.of("production"), List.of("gateway-core"));
+        Instant afterExpiry = Instant.parse("2030-01-01T00:00:00Z");
+
+        assertThatThrownBy(() -> ContractBootstrapStep.decide(ExecutionEnvironment.PRODUCTION,
+                Map.of(EntitlementClass.ENTERPRISE_PRIVATE, Set.of("gateway-core")), manifest, afterExpiry, resolver))
+                .isInstanceOfSatisfying(ContractBreachException.class,
+                        breach -> assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0003));
+    }
+
+    @Test
+    @DisplayName("The event names the signing key and a developer licence, bound or refused after resolution")
+    void gateRecordsKeyAndDeveloperLicence(@TempDir Path dir) throws Exception {
+        Path services = Files.createDirectories(dir.resolve("classpath/META-INF/services"));
+        Files.writeString(services.resolve(EntitlementRequirement.class.getName()),
+                GatewayRequirement.class.getName() + "\n");
+        Path developer = Files.write(dir.resolve("developer.json"),
+                signedManifest(DEV_KEY, List.of("development"), List.of("gateway-core")));
+        Path production = Files.write(dir.resolve("production.json"),
+                signedManifest(PROD_KEY, List.of("production"), List.of("gateway-core")));
+        Path dump = dir.resolve("gate.jfr");
+        try (Recording recording = new Recording();
+             URLClassLoader loader = new URLClassLoader(
+                     new URL[] {dir.resolve("classpath").toUri().toURL()}, getClass().getClassLoader())) {
+            recording.enable("eu.exeris.kernel.contract.Resolved");
+            recording.start();
+            ContractBootstrapStep.run(config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, developer.toString())),
+                    loader, resolver);
+            ContractBootstrapStep.run(config(Map.of("environment", "production",
+                    ContractBootstrapStep.MANIFEST_PATH_KEY, production.toString())), loader, resolver);
+            assertThatThrownBy(() -> ContractBootstrapStep.run(config(Map.of("environment", "production",
+                    ContractBootstrapStep.MANIFEST_PATH_KEY, developer.toString())), loader, resolver));
+            recording.stop();
+            recording.dump(dump);
+        }
+
+        List<RecordedEvent> events = RecordingFile.readAllEvents(dump).stream()
+                .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.contract.Resolved"))
+                .toList();
+        assertThat(events).extracting(e -> e.getString("keyId") + "|" + e.getBoolean("developerLicence") + "|"
+                        + e.getString("outcome"))
+                .containsExactlyInAnyOrder(
+                        DEV_KEY + "|true|bound",
+                        PROD_KEY + "|false|bound",
+                        DEV_KEY + "|false|" + KernelErrorCodes.EX_LIC_0009);
+    }
+
+    // ── Validity is read through the kernel time source ────────────────────
+
+    @Test
+    @DisplayName("The validity window is judged at the kernel time source's instant, not the platform clock")
+    void validityReadsTheKernelTimeSource(@TempDir Path dir) throws Exception {
+        Path manifest = Files.write(dir.resolve("manifest.json"),
+                signedManifest(PROD_KEY, List.of("development"), List.of("gateway-core")));
+        ConfigProvider config = config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, manifest.toString()));
+        try (URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
+            ContractBreachException expired = catchThrowableOfType(ContractBreachException.class,
+                    () -> ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt("2030-01-01T00:00:00Z"))
+                            .run(() -> ContractBootstrapStep.run(config, empty, resolver)));
+            assertThat(expired).isNotNull();
+            assertThat(expired.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0003);
+
+            ContractBreachException early = catchThrowableOfType(ContractBreachException.class,
+                    () -> ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt("2025-06-01T00:00:00Z"))
+                            .run(() -> ContractBootstrapStep.run(config, empty, resolver)));
+            assertThat(early).isNotNull();
+            assertThat(early.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0006);
+
+            ContractDecision valid = ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt("2026-10-06T12:00:00Z"))
+                    .call(() -> ContractBootstrapStep.run(config, empty, resolver));
+            assertThat(valid.contract().contractId()).isEqualTo("EXR-PHASE0-001");
+        }
+    }
+
+    @Test
+    @DisplayName("A developer manifest's thirty-day window is judged at the kernel time source's instant too")
+    void developerWindowReadsTheKernelTimeSource(@TempDir Path dir) throws Exception {
+        Path manifest = Files.write(dir.resolve("manifest.json"),
+                signedManifest(DEV_KEY, List.of("development"), List.of("gateway-core")));
+        ConfigProvider config = config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, manifest.toString()));
+        try (URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
+            ContractBreachException expired = catchThrowableOfType(ContractBreachException.class,
+                    () -> ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt("2026-12-01T00:00:00Z"))
+                            .run(() -> ContractBootstrapStep.run(config, empty, resolver)));
+
+            assertThat(expired).isNotNull();
+            assertThat(expired.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0003);
+        }
+    }
+
+    private static ManualTimeSource sourceAt(String instant) {
+        return new ManualTimeSource(Duration.between(Instant.EPOCH, Instant.parse(instant)).toNanos());
+    }
+
+    @Test
     @DisplayName("The gate decides UNGATED for the Community fallback: the workload mechanism is inert")
     void fallbackDecidesUngated() throws Exception {
         try (URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
@@ -427,96 +658,62 @@ class ContractBootstrapStepTest {
         }
     }
 
-    @Test
-    @DisplayName("The gate decides UNGATED for a verified manifest too, whatever it grants")
-    void verifiedManifestDecidesUngated(@TempDir Path dir) throws Exception {
-        Path manifest = Files.write(dir.resolve("manifest.json"),
-                signedManifest(List.of("development"), List.of("gateway-core")));
-        try (URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
-            ContractDecision decision = ContractBootstrapStep.run(
-                    config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, manifest.toString())), empty, resolver);
-
-            assertThat(decision.contract().contractId()).isEqualTo("EXR-PHASE0-001");
-            assertThat(decision.admission()).isSameAs(WorkloadAdmission.UNGATED);
-        }
-    }
-
-    private static URLClassLoader loaderDeclaring(Path root, String providerClass) throws Exception {
-        Path services = root.resolve("META-INF/services");
-        Files.createDirectories(services);
-        Files.writeString(services.resolve(EntitlementRequirement.class.getName()), providerClass + "\n");
-        return new URLClassLoader(new URL[] {root.toUri().toURL()}, ContractBootstrapStepTest.class.getClassLoader());
-    }
-
-    /** Test requirement that fails to declare. */
-    public static final class ThrowingRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            throw new IllegalStateException("not ready");
-        }
-    }
-
-    /** Test requirement that declares null. */
-    public static final class NullRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            return null;
-        }
-    }
-
-    /** Test requirement that declares nothing. */
-    public static final class EmptyRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            return Set.of();
-        }
-    }
-
-    /** Test requirement that declares an identifier no manifest could entitle. */
-    public static final class MalformedRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            return Set.of("Gateway Core");
-        }
-    }
-
-    @Test
-    @DisplayName("A classpath with no requirement declares nothing")
-    void noRequirementOnPlainClasspath() {
-        assertThat(RequirementDiscovery.requiredCapabilities(getClass().getClassLoader())).isEmpty();
-    }
-
-    /** Test requirement: two gateway capabilities. */
+    /** Test requirement: one commercial capability. */
     public static final class GatewayRequirement implements EntitlementRequirement {
         @Override
         public Set<String> requiredCapabilities() {
-            return Set.of("gateway-core", "gateway-routing");
+            return Set.of("gateway-core");
         }
-    }
 
-    /** Test requirement: one overlapping and one distinct capability. */
-    public static final class BotRequirement implements EntitlementRequirement {
         @Override
-        public Set<String> requiredCapabilities() {
-            return Set.of("gateway-core", "bot-fingerprinting");
+        public EntitlementClass entitlementClass() {
+            return EntitlementClass.COMMERCIAL;
         }
     }
 
     // ── Fixtures ────────────────────────────────────────────────────────────
 
-    private byte[] signedManifest(List<String> environments, List<String> capabilities) throws Exception {
-        return signedManifest(environments, capabilities, "HARD");
+    private static RequirementDiscovery.DeclaredRequirements declared(String... capabilities) {
+        return declared(EntitlementClass.COMMERCIAL, capabilities);
     }
 
-    private byte[] signedManifest(List<String> environments, List<String> capabilities, String capabilityLevel)
+    private static RequirementDiscovery.DeclaredRequirements declared(
+            EntitlementClass entitlementClass, String... capabilities) {
+        SortedMap<String, EntitlementClass> byId = new TreeMap<>();
+        SortedMap<String, String> providerById = new TreeMap<>();
+        for (String capability : capabilities) {
+            byId.put(capability, entitlementClass);
+            providerById.put(capability, "test-provider");
+        }
+        return new RequirementDiscovery.DeclaredRequirements(byId, providerById);
+    }
+
+    private byte[] signedManifest(String keyId, List<String> environments, List<String> capabilities)
             throws Exception {
+        return signedManifest(keyId, environments, capabilities, "HARD");
+    }
+
+    private byte[] signedManifest(String keyId, List<String> environments, List<String> capabilities,
+                                  String capabilityLevel) throws Exception {
+        return signedManifest(keyId, environments, capabilities, capabilityLevel, "HARD");
+    }
+
+    /** A manifest that fits every scope: a developer key's thirty days, its ceiling, and issuedAt. */
+    private byte[] signedManifest(String keyId, List<String> environments, List<String> capabilities,
+                                  String capabilityLevel, String environmentLevel) throws Exception {
+        boolean developer = DEV_KEY.equals(keyId);
+        String from = developer ? "2026-10-01T00:00:00Z" : "2026-01-01T00:00:00Z";
+        String until = developer ? "2026-10-17T00:00:00Z" : "2027-01-01T00:00:00Z";
         String unsigned = "{\"$schema\":\"https://specs.exeris.eu/schema/v1/license-manifest.json\",\"contract\":{\"id\":\"EXR-PHASE0-001\",\"commercialModel\":\"STANDARD\"},"
                 + "\"entitlement\":{\"edition\":\"commercial\",\"sku\":\"exeris-sku-test\","
                 + "\"licenseMode\":\"SUBSCRIPTION\",\"capabilities\":" + jsonArray(capabilities) + "},"
                 + "\"execution\":{\"environments\":" + jsonArray(environments) + ",\"authorizedInstances\":3,"
-                + "\"validFrom\":\"2026-01-01T00:00:00Z\",\"validUntil\":\"2027-01-01T00:00:00Z\"},"
-                + "\"enforcementRules\":{\"capability\":\"" + capabilityLevel + "\",\"environment\":\"HARD\"},"
-                + "\"issuer\":{\"keyId\":\"" + KEY_ID + "\",\"issuedAt\":\"2026-01-01T00:00:00Z\"}}";
+                + "\"validFrom\":\"" + from + "\",\"validUntil\":\"" + until + "\","
+                + "\"workloadEnvelope\":{\"maxThroughputRps\":50,\"maxConnections\":10,"
+                + "\"growthAllowancePercent\":0}},"
+                + "\"enforcementRules\":{\"capability\":\"" + capabilityLevel + "\",\"environment\":\""
+                + environmentLevel + "\"},"
+                + "\"issuer\":{\"keyId\":\"" + keyId + "\",\"issuedAt\":\"" + from + "\"}}";
         Signature signer = Signature.getInstance("Ed25519");
         signer.initSign(keyPair.getPrivate());
         signer.update(JsonCanonicalizer.canonicalize(unsigned));

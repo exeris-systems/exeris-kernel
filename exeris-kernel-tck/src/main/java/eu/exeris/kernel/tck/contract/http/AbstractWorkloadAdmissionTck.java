@@ -450,13 +450,13 @@ public abstract class AbstractWorkloadAdmissionTck {
 
         @Test
         @DisplayName("UNGATED bound: the load of the enforcement cases is served untouched")
-        void ungatedBound() throws IOException, InterruptedException {
+        void ungatedBound() throws IOException {
             assertServedUntouched(start(WorkloadAdmission.UNGATED, new Probe()));
         }
 
         @Test
         @DisplayName("a gate that reports enforced() == false is never consulted")
-        void unenforcedGateIsNeverConsulted() throws IOException, InterruptedException {
+        void unenforcedGateIsNeverConsulted() throws IOException {
             GateProbe gate = new GateProbe(false, 0, 0);
             StartedServer server = start(gate, new Probe());
 
@@ -469,7 +469,7 @@ public abstract class AbstractWorkloadAdmissionTck {
 
         @Test
         @DisplayName("no binding at all behaves as UNGATED")
-        void unbound() throws IOException, InterruptedException {
+        void unbound() throws IOException {
             assertServedUntouched(start(null, new Probe()));
         }
 

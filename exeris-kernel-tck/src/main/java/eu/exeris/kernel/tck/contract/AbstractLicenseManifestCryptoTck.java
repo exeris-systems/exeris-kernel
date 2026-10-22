@@ -5,7 +5,10 @@
 package eu.exeris.kernel.tck.contract;
 
 import eu.exeris.kernel.spi.contract.EnforcementLevel;
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
+import eu.exeris.kernel.spi.contract.ExecutionEnvironment;
+import eu.exeris.kernel.spi.contract.WorkloadEnvelope;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,10 +22,16 @@ import java.security.KeyPairGenerator;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,12 +39,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * TCK cryptographic verification suite for license manifests per ADR-088.
  *
- * <p>Covers the four assertions of ADR-088's Engineering Protocol item 4 — a bit flip in the capability
- * list breaks the signature, key reordering and reformatting do not, an unregistered {@code keyId} fails
- * with {@code EX-LIC-0002}, and expiry beyond the grace period fails with {@code EX-LIC-0003} (and use before {@code validFrom} with
- * {@code EX-LIC-0006}) — and
- * anchors the canonicalization to a manifest signed by an independent RFC 8785 implementation, so a
- * canonicalizer that agrees only with itself cannot pass. Every evaluation instant is fixed.
+ * <p>Covers the eight assertions of ADR-088's Engineering Protocol item 4. Tests 1 to 4: a bit flip in the
+ * capability list breaks the signature, key reordering and reformatting do not, an unregistered
+ * {@code keyId} fails with {@code EX-LIC-0002}, and expiry beyond the grace period fails with
+ * {@code EX-LIC-0003} (and use before {@code validFrom} with {@code EX-LIC-0006}). Tests 5 to 8 hold a
+ * manifest to the scope of the key that signed it: an environment outside the key's scope
+ * ({@code EX-LIC-0009}), a validity beyond the key's maximum ({@code EX-LIC-0010}), a workload envelope above
+ * the key's ceiling ({@code EX-LIC-0011}), and a requirement of a class the key may not entitle
+ * ({@code EX-LIC-0012}); each has a passing direction control. The suite also anchors the canonicalization
+ * to a manifest signed by an independent RFC 8785 implementation, so a canonicalizer that agrees only with
+ * itself cannot pass. Every evaluation instant is fixed.
  *
  * @since 0.13
  */
@@ -137,6 +150,34 @@ public abstract class AbstractLicenseManifestCryptoTck {
     /** The canonical form of {@link #GOLDEN_UNSIGNED_MANIFEST}, as the independent implementation produced it. */
     protected static final String GOLDEN_CANONICAL = "{\"$schema\":\"https://specs.exeris.eu/schema/v1/license-manifest.json\",\"contract\":{\"commercialModel\":\"CAPACITY\",\"framework\":\"ECSL-1.0\",\"id\":\"EXR-TCK-GOLDEN-0001\"},\"enforcementRules\":{\"authorizedInstances\":\"SOFT\",\"capability\":\"HARD\",\"environment\":\"HARD\",\"workloadEnvelope\":\"AUDIT\"},\"entitlement\":{\"capabilities\":[\"security.tls\",\"gateway.core\",\"gateway.rate-limit\"],\"edition\":\"enterprise\",\"licenseMode\":\"SUBSCRIPTION\",\"sku\":\"exeris-sku-\u20ac-gateway\",\"workloadProfileRef\":\"WP-2026-\u00e9\ud83d\ude00-01\\t\\u001f\"},\"execution\":{\"authorizedInstances\":25,\"environments\":[\"production\",\"dr-hot\"],\"gracePeriodDays\":14,\"validFrom\":\"2026-10-01T00:00:00Z\",\"validUntil\":\"2027-09-30T23:59:59Z\",\"workloadEnvelope\":{\"growthAllowancePercent\":20,\"maxConnections\":50000,\"maxThroughputRps\":200000}},\"issuer\":{\"authority\":\"Exeris \\\"Golden\\\" Issuer / TCK\",\"issuedAt\":\"2026-09-12T12:00:00Z\",\"keyId\":\"tck-golden-k1\"}}";
 
+    /** Connection limit of the scope cases' manifests: the developer ceiling. */
+    private static final int MAX_CONNECTIONS = 10;
+
+    private static final String DEVELOPMENT = ExecutionEnvironment.DEVELOPMENT.id();
+    private static final String STAGING = ExecutionEnvironment.STAGING.id();
+    private static final String PRODUCTION = ExecutionEnvironment.PRODUCTION.id();
+    private static final String AUDIT = EnforcementLevel.AUDIT.name();
+    private static final String SCOPE_CONTRACT_ID = "TCK-SCOPE-001";
+    private static final String GATEWAY_CAPABILITY = "gateway-core";
+
+    /** Issue instant of the scope cases' manifests. */
+    private static final Instant ISSUED = Instant.parse("2026-10-01T00:00:00Z");
+
+    /** Evaluation instant of the scope cases, one day after issue. */
+    private static final Instant SCOPE_NOW = ISSUED.plus(1, ChronoUnit.DAYS);
+
+    private static final Set<String> ALL_ENVIRONMENTS = Set.of(
+            DEVELOPMENT, STAGING, PRODUCTION, "production-load-sim", "dr-cold", "dr-hot");
+
+    /** The scope that restricts nothing: all six environments, no maximum, no ceiling, every class. */
+    private static final TckKeyScope UNRESTRICTED =
+            new TckKeyScope(ALL_ENVIRONMENTS, null, null, Set.of(EntitlementClass.values()));
+
+    /** A developer key's scope: development, 30 days, 50 requests per second and 10 connections. */
+    private static final TckKeyScope DEVELOPER = new TckKeyScope(
+            Set.of(DEVELOPMENT), Duration.ofDays(30), new WorkloadEnvelope(50, 10, 0),
+            Set.of(EntitlementClass.COMMERCIAL));
+
     private static final Instant VALID_FROM = Instant.parse("2026-01-01T00:00:00Z");
     private static final Instant VALID_UNTIL = Instant.parse("2026-06-01T00:00:00Z");
     private static final int GRACE_DAYS = 7;
@@ -150,18 +191,54 @@ public abstract class AbstractLicenseManifestCryptoTck {
     }
 
     /**
+     * What an issuer key is allowed to entitle, in SPI types only so the suite does not depend on a Core
+     * type. The binding maps it to its implementation's scope.
+     *
+     * @param environments environment identifiers a manifest signed by the key may authorize
+     * @param maxValidity  the longest a manifest may stay bootable, measured from {@code issuer.issuedAt} to
+     *                     {@code validUntil} plus the grace period; {@code null} for no maximum
+     * @param ceiling      the largest workload envelope a manifest may grant, which also marks a developer
+     *                     key; {@code null} for no ceiling
+     * @param classes      the entitlement classes the key may entitle
+     */
+    public record TckKeyScope(
+            Set<String> environments, Duration maxValidity, WorkloadEnvelope ceiling, Set<EntitlementClass> classes) {
+    }
+
+    /**
      * Verifies the given license manifest against an evaluation timestamp, trusting exactly one
-     * issuer key. The binding must route the key through the implementation's caller-supplied key
-     * resolution and never through a process-wide trust store.
+     * issuer key with exactly one scope. The binding must route the key through the implementation's
+     * caller-supplied key resolution and never through a process-wide trust store, and the scope checks
+     * must run as they do for the embedded keys.
      *
      * @param manifestJson   manifest payload JSON
      * @param evaluationTime evaluation instant
      * @param issuerKeyId    the only keyId the verification may trust
      * @param issuerKey      the Ed25519 public key for {@code issuerKeyId}
+     * @param scope          what the key may entitle
      * @return validated execution contract
      */
     protected abstract ExecutionContract verifyManifest(
-            String manifestJson, Instant evaluationTime, String issuerKeyId, PublicKey issuerKey);
+            String manifestJson, Instant evaluationTime, String issuerKeyId, PublicKey issuerKey,
+            TckKeyScope scope);
+
+    /**
+     * Runs the contract gate's decision for the declared environment against one issuer key with one scope,
+     * as the kernel's bootstrap does after it has read the manifest and discovered the requirements.
+     *
+     * @param manifestJson   manifest payload JSON, or {@code null} when no manifest is present
+     * @param evaluationTime evaluation instant
+     * @param issuerKeyId    the only keyId the decision may trust
+     * @param issuerKey      the Ed25519 public key for {@code issuerKeyId}
+     * @param scope          what the key may entitle
+     * @param environment    the declared environment identifier
+     * @param requirements   the capability identifiers each entitlement class's requirements declare; empty when
+     *                       no requirement is on the classpath
+     * @return the contract the kernel would run under
+     */
+    protected abstract ExecutionContract decide(
+            String manifestJson, Instant evaluationTime, String issuerKeyId, PublicKey issuerKey,
+            TckKeyScope scope, String environment, Map<EntitlementClass, Set<String>> requirements);
 
     /**
      * Canonicalizes the provided JSON payload according to RFC 8785.
@@ -190,6 +267,20 @@ public abstract class AbstractLicenseManifestCryptoTck {
      */
     protected final ExecutionContract verifyManifest(String manifestJson, Instant evaluationTime) {
         return verifyManifest(manifestJson, evaluationTime, TEST_KEY_ID, keyPair.getPublic());
+    }
+
+    /**
+     * Verifies {@code manifestJson} trusting only {@code issuerKey}, under a scope that restricts nothing.
+     *
+     * @param manifestJson   manifest payload JSON
+     * @param evaluationTime evaluation instant
+     * @param issuerKeyId    the only keyId the verification may trust
+     * @param issuerKey      the Ed25519 public key for {@code issuerKeyId}
+     * @return validated execution contract
+     */
+    protected final ExecutionContract verifyManifest(
+            String manifestJson, Instant evaluationTime, String issuerKeyId, PublicKey issuerKey) {
+        return verifyManifest(manifestJson, evaluationTime, issuerKeyId, issuerKey, UNRESTRICTED);
     }
 
     /**
@@ -449,5 +540,299 @@ public abstract class AbstractLicenseManifestCryptoTck {
 
         assertThat(verifyManifest(manifest, Instant.parse("2999-01-01T00:00:00Z")).validUntil())
                 .isEqualTo(Instant.MAX);
+    }
+
+    // ── Key scope (tests 5 to 8) ────────────────────────────────────────────
+
+    /** A manifest under construction; the defaults conform to {@link #DEVELOPER}. */
+    private static final class Draft {
+        private List<String> environments = List.of(DEVELOPMENT);
+        private Instant issuedAt = ISSUED;
+        private Instant validUntil = ISSUED.plus(16, ChronoUnit.DAYS);
+        private int graceDays = 14;
+        private boolean perpetual;
+        private boolean envelope = true;
+        private long rps = 50;
+        private int growth;
+        private String capabilityRule = "HARD";
+        private String environmentRule = "HARD";
+        private String envelopeRule;
+
+        Draft environments(String... ids) {
+            this.environments = List.of(ids);
+            return this;
+        }
+
+        Draft issuedAt(Instant instant) {
+            this.issuedAt = instant;
+            return this;
+        }
+
+        Draft validUntil(Instant instant) {
+            this.validUntil = instant;
+            return this;
+        }
+
+        Draft graceDays(int days) {
+            this.graceDays = days;
+            return this;
+        }
+
+        Draft perpetual() {
+            this.perpetual = true;
+            return this;
+        }
+
+        Draft noEnvelope() {
+            this.envelope = false;
+            return this;
+        }
+
+        Draft rps(long value) {
+            this.rps = value;
+            return this;
+        }
+
+        Draft rules(String capability, String environment) {
+            this.capabilityRule = capability;
+            this.environmentRule = environment;
+            return this;
+        }
+
+        Draft envelopeRule(String level) {
+            this.envelopeRule = level;
+            return this;
+        }
+
+        String unsigned(String keyId) {
+            List<String> execution = new ArrayList<>(List.of(
+                    "\"environments\":" + environments.stream().map(e -> "\"" + e + "\"")
+                            .collect(Collectors.joining(",", "[", "]")),
+                    "\"authorizedInstances\":5",
+                    "\"validFrom\":\"" + ISSUED + "\""));
+            if (!perpetual) {
+                execution.add("\"validUntil\":\"" + validUntil + "\"");
+            }
+            execution.add("\"gracePeriodDays\":" + graceDays);
+            if (envelope) {
+                execution.add("\"workloadEnvelope\":{\"maxThroughputRps\":" + rps + ",\"maxConnections\":"
+                        + MAX_CONNECTIONS + ",\"growthAllowancePercent\":" + growth + "}");
+            }
+            String rules = "\"capability\":\"" + capabilityRule + "\",\"environment\":\"" + environmentRule + "\""
+                    + (envelopeRule == null ? "" : ",\"workloadEnvelope\":\"" + envelopeRule + "\"");
+            return "{\"$schema\":\"https://specs.exeris.eu/schema/v1/license-manifest.json\","
+                    + "\"issuer\":{\"keyId\":\"" + keyId + "\""
+                    + (issuedAt == null ? "" : ",\"issuedAt\":\"" + issuedAt + "\"") + "},"
+                    + "\"contract\":{\"id\":\"" + SCOPE_CONTRACT_ID + "\",\"commercialModel\":\"STANDARD\"},"
+                    + "\"entitlement\":{\"edition\":\"commercial\",\"sku\":\"exeris-sku-core\","
+                    + "\"licenseMode\":\"" + (perpetual ? "PERPETUAL_INTERNAL" : "SUBSCRIPTION") + "\","
+                    + "\"capabilities\":[\"" + GATEWAY_CAPABILITY + "\"]},"
+                    + "\"execution\":{" + String.join(",", execution) + "},"
+                    + "\"enforcementRules\":{" + rules + "}}";
+        }
+    }
+
+    private String sign(Draft draft) throws Exception {
+        String unsigned = draft.unsigned(TEST_KEY_ID);
+        return withSignature(unsigned, sign(keyPair, canonicalizeJson(unsigned)));
+    }
+
+    private ExecutionContract verifyUnder(TckKeyScope scope, Draft draft) throws Exception {
+        return verifyManifest(sign(draft), SCOPE_NOW, TEST_KEY_ID, keyPair.getPublic(), scope);
+    }
+
+    private void assertScopeBreach(TckKeyScope scope, Draft draft, String errorCode) throws Exception {
+        String manifest = sign(draft);
+        assertBreach(() -> verifyManifest(manifest, SCOPE_NOW, TEST_KEY_ID, keyPair.getPublic(), scope), errorCode);
+    }
+
+    private ExecutionContract decideWith(
+            TckKeyScope scope, String manifest, String environment, Map<EntitlementClass, Set<String>> requirements) {
+        return decide(manifest, SCOPE_NOW, TEST_KEY_ID, keyPair.getPublic(), scope, environment, requirements);
+    }
+
+    @Test
+    @DisplayName("Test 5: an environment outside the key's scope is refused with EX-LIC-0009; inside it passes")
+    void environmentOutsideKeyScope() throws Exception {
+        assertThat(verifyUnder(DEVELOPER, new Draft()).authorizedEnvironments()).containsExactly(DEVELOPMENT);
+
+        String manifest = sign(new Draft().environments(DEVELOPMENT, STAGING));
+        assertThatThrownBy(() -> verifyManifest(manifest, SCOPE_NOW, TEST_KEY_ID, keyPair.getPublic(), DEVELOPER))
+                .isInstanceOf(ContractBreachException.class)
+                .satisfies(e -> {
+                    ContractBreachException breach = (ContractBreachException) e;
+                    assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0009);
+                    assertThat(breach.rawArgs()).containsExactly(TEST_KEY_ID, List.of(STAGING));
+                });
+    }
+
+    @Test
+    @DisplayName("Test 5: no enforcement rule softens an environment breach")
+    void enforcementRulesDoNotSoftenTheEnvironmentScope() throws Exception {
+        TckKeyScope developmentOnly = new TckKeyScope(
+                Set.of(DEVELOPMENT), null, null, Set.of(EntitlementClass.COMMERCIAL));
+        Draft audited = new Draft().environments(DEVELOPMENT, PRODUCTION).rules(AUDIT, AUDIT)
+                .envelopeRule(AUDIT);
+
+        assertScopeBreach(developmentOnly, audited, KernelErrorCodes.EX_LIC_0009);
+        assertThat(verifyUnder(developmentOnly, new Draft().rules(AUDIT, AUDIT)).contractId())
+                .as("control: the same rules over an in-scope environment are the manifest's to set")
+                .isEqualTo(SCOPE_CONTRACT_ID);
+    }
+
+    @Test
+    @DisplayName("Test 5: the declared environment outside the key's scope is refused with EX-LIC-0009 whatever the rules say")
+    void declaredEnvironmentOutsideKeyScope() throws Exception {
+        TckKeyScope developmentOnly = new TckKeyScope(
+                Set.of(DEVELOPMENT), null, null, Set.of(EntitlementClass.COMMERCIAL));
+        String manifest = sign(new Draft().rules("HARD", AUDIT));
+        Map<EntitlementClass, Set<String>> requirements = Map.of(EntitlementClass.COMMERCIAL, Set.of(GATEWAY_CAPABILITY));
+
+        assertThat(decideWith(developmentOnly, manifest, DEVELOPMENT, requirements).contractId())
+                .isEqualTo(SCOPE_CONTRACT_ID);
+        assertThatThrownBy(() -> decideWith(developmentOnly, manifest, PRODUCTION, requirements))
+                .isInstanceOf(ContractBreachException.class)
+                .satisfies(e -> {
+                    ContractBreachException breach = (ContractBreachException) e;
+                    assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0009);
+                    assertThat(breach.rawArgs()).containsExactly(TEST_KEY_ID, List.of(PRODUCTION));
+                });
+    }
+
+    @Test
+    @DisplayName("Test 6: a validity beyond the key's maximum, or one that cannot be measured, is refused with EX-LIC-0010")
+    void validityBeyondKeyMaximum() throws Exception {
+        assertThat(verifyUnder(DEVELOPER, new Draft()).validUntil()).isEqualTo(ISSUED.plus(16, ChronoUnit.DAYS));
+        assertThat(verifyUnder(DEVELOPER, new Draft().graceDays(0).validUntil(ISSUED.plus(30, ChronoUnit.DAYS)))
+                .gracePeriodDays()).as("exactly 30 days with no grace").isZero();
+
+        assertScopeBreach(DEVELOPER,
+                new Draft().validUntil(ISSUED.plus(16, ChronoUnit.DAYS).plusSeconds(1)), KernelErrorCodes.EX_LIC_0010);
+        assertScopeBreach(DEVELOPER,
+                new Draft().graceDays(0).validUntil(ISSUED.plus(30, ChronoUnit.DAYS).plusSeconds(1)),
+                KernelErrorCodes.EX_LIC_0010);
+        assertScopeBreach(DEVELOPER, new Draft().issuedAt(null), KernelErrorCodes.EX_LIC_0010);
+        assertScopeBreach(DEVELOPER, new Draft().perpetual(), KernelErrorCodes.EX_LIC_0010);
+    }
+
+    @Test
+    @DisplayName("Test 6: a validFrom before issuedAt is refused, and a key with no maximum accepts a perpetual manifest")
+    void validityStartsAtIssueAndOnlyBoundedKeysAreBounded() throws Exception {
+        assertScopeBreach(DEVELOPER, new Draft().issuedAt(ISSUED.plusSeconds(1)), KernelErrorCodes.EX_LIC_0010);
+
+        Draft perpetual = new Draft().environments(PRODUCTION).perpetual().noEnvelope();
+        assertThat(verifyUnder(UNRESTRICTED, perpetual).validUntil()).isEqualTo(Instant.MAX);
+        assertThat(verifyUnder(UNRESTRICTED, new Draft().issuedAt(null)).validUntil())
+                .isEqualTo(ISSUED.plus(16, ChronoUnit.DAYS));
+    }
+
+    @Test
+    @DisplayName("Test 7: a workload envelope above the key's ceiling, or absent, is refused with EX-LIC-0011")
+    void envelopeAboveKeyCeiling() throws Exception {
+        assertThat(verifyUnder(DEVELOPER, new Draft()).envelope()).isEqualTo(new WorkloadEnvelope(50, 10, 0));
+
+        assertScopeBreach(DEVELOPER, new Draft().rps(51), KernelErrorCodes.EX_LIC_0011);
+        assertScopeBreach(DEVELOPER, new Draft().noEnvelope(), KernelErrorCodes.EX_LIC_0011);
+        assertThat(verifyUnder(UNRESTRICTED, new Draft().rps(200_000)).envelope().maxThroughputRps())
+                .as("control: a key with no ceiling grants any envelope").isEqualTo(200_000L);
+    }
+
+    @Test
+    @DisplayName("Test 7: a key with a ceiling holds capability and environment rules at HARD; one without, the envelope rule below HARD")
+    void rulesFollowTheKeyKind() throws Exception {
+        assertScopeBreach(DEVELOPER, new Draft().rules("SOFT", "HARD"), KernelErrorCodes.EX_LIC_0013);
+        assertScopeBreach(DEVELOPER, new Draft().rules("HARD", AUDIT), KernelErrorCodes.EX_LIC_0013);
+        assertThat(verifyUnder(DEVELOPER, new Draft().envelopeRule("HARD")).contractId())
+                .as("control: a developer key may hold the envelope at HARD").isEqualTo(SCOPE_CONTRACT_ID);
+
+        assertScopeBreach(UNRESTRICTED, new Draft().noEnvelope().envelopeRule("HARD"), KernelErrorCodes.EX_LIC_0001);
+        assertThat(verifyUnder(UNRESTRICTED, new Draft().noEnvelope().envelopeRule("SOFT").rules("SOFT", AUDIT))
+                .contractId()).as("control: below HARD, and free capability and environment rules")
+                .isEqualTo(SCOPE_CONTRACT_ID);
+    }
+
+    @Test
+    @DisplayName("A scope breach is reported even when the manifest has also expired, and a tampered one fails its signature first")
+    void scopeIsCheckedBeforeTimeAndAfterTheSignature() throws Exception {
+        Draft expiredAndOutside = new Draft().environments(DEVELOPMENT, STAGING)
+                .validUntil(ISSUED.plus(1, ChronoUnit.DAYS)).graceDays(0);
+        String manifest = sign(expiredAndOutside);
+        Instant afterEnd = ISSUED.plus(5, ChronoUnit.DAYS);
+
+        assertBreach(() -> verifyManifest(manifest, afterEnd, TEST_KEY_ID, keyPair.getPublic(), DEVELOPER),
+                KernelErrorCodes.EX_LIC_0009);
+        String tampered = sign(new Draft()).replace("\"development\"", "\"production\"");
+        assertBreach(() -> verifyManifest(tampered, SCOPE_NOW, TEST_KEY_ID, keyPair.getPublic(), DEVELOPER),
+                KernelErrorCodes.EX_LIC_0001);
+    }
+
+    @Test
+    @DisplayName("Test 8: a requirement of a class the key may not entitle is refused with EX-LIC-0012, listed by the manifest or not")
+    void classOutsideKeyScope() throws Exception {
+        TckKeyScope commercialOnly = new TckKeyScope(
+                ALL_ENVIRONMENTS, null, null, Set.of(EntitlementClass.COMMERCIAL));
+        String manifest = sign(new Draft().environments(PRODUCTION).noEnvelope());
+        Map<EntitlementClass, Set<String>> enterprise = Map.of(
+                EntitlementClass.ENTERPRISE_PRIVATE, Set.of("security-bot-fingerprinting"));
+        Map<EntitlementClass, Set<String>> commercial = Map.of(EntitlementClass.COMMERCIAL, Set.of(GATEWAY_CAPABILITY));
+
+        assertThat(decideWith(UNRESTRICTED, manifest, PRODUCTION,
+                Map.of(EntitlementClass.ENTERPRISE_PRIVATE, Set.of(GATEWAY_CAPABILITY))).contractId())
+                .as("control: a key of both classes entitles an enterprise-private requirement the manifest lists")
+                .isEqualTo(SCOPE_CONTRACT_ID);
+        assertThat(decideWith(commercialOnly, manifest, PRODUCTION, commercial).contractId())
+                .isEqualTo(SCOPE_CONTRACT_ID);
+        assertThatThrownBy(() -> decideWith(commercialOnly, manifest, PRODUCTION,
+                Map.of(EntitlementClass.ENTERPRISE_PRIVATE, Set.of(GATEWAY_CAPABILITY))))
+                .as("a listed enterprise-private identifier under a commercial-only key")
+                .isInstanceOf(ContractBreachException.class)
+                .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_LIC_0012));
+        assertThatThrownBy(() -> decideWith(commercialOnly, manifest, PRODUCTION, enterprise))
+                .isInstanceOf(ContractBreachException.class)
+                .satisfies(e -> {
+                    ContractBreachException breach = (ContractBreachException) e;
+                    assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0012);
+                    assertThat(breach.rawArgs()[0]).isEqualTo(TEST_KEY_ID);
+                    assertThat(breach.rawArgs()[1]).isEqualTo("enterprise-private");
+                    assertThat(breach.rawArgs()[2]).isInstanceOf(String.class);
+                });
+    }
+
+    // ── The gate decides in every environment ───────────────────────────────
+
+    @Test
+    @DisplayName("A declared requirement with no manifest halts with EX-LIC-0005 in every environment; with none declared Community boots")
+    void missingManifestHaltsInEveryEnvironment() {
+        Map<EntitlementClass, Set<String>> requirements = Map.of(EntitlementClass.COMMERCIAL, Set.of(GATEWAY_CAPABILITY));
+
+        for (String environment : ALL_ENVIRONMENTS) {
+            assertThatThrownBy(() -> decideWith(UNRESTRICTED, null, environment, requirements))
+                    .as(environment)
+                    .isInstanceOf(ContractBreachException.class)
+                    .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
+                            .isEqualTo(KernelErrorCodes.EX_LIC_0005));
+            assertThat(decideWith(UNRESTRICTED, null, environment, Map.of()).edition())
+                    .as("control: %s with no requirement", environment).isEqualTo("community");
+        }
+    }
+
+    @Test
+    @DisplayName("The manifest's environment and capability checks run in a non-production environment too")
+    void manifestIsEnforcedOutsideProduction() throws Exception {
+        String manifest = sign(new Draft().environments(PRODUCTION).noEnvelope());
+        Map<EntitlementClass, Set<String>> requirements = Map.of(EntitlementClass.COMMERCIAL, Set.of(GATEWAY_CAPABILITY));
+
+        assertThat(decideWith(UNRESTRICTED, manifest, PRODUCTION, requirements).contractId())
+                .isEqualTo(SCOPE_CONTRACT_ID);
+        assertThatThrownBy(() -> decideWith(UNRESTRICTED, manifest, STAGING, requirements))
+                .isInstanceOf(ContractBreachException.class)
+                .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_LIC_0007));
+        assertThatThrownBy(() -> decideWith(UNRESTRICTED, manifest, PRODUCTION,
+                Map.of(EntitlementClass.COMMERCIAL, Set.of(GATEWAY_CAPABILITY, "security-tls"))))
+                .isInstanceOf(ContractBreachException.class)
+                .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_LIC_0004));
     }
 }

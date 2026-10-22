@@ -183,13 +183,13 @@ public abstract class AbstractExecutionContractTck {
     }
 
     @Test
-    @DisplayName("The six environment ids are ADR-088's, and exactly production, production-load-sim and dr-hot need an entitlement")
+    @DisplayName("The six environment ids are ADR-088's, and exactly production, production-load-sim and dr-hot are production classes")
     void environmentClasses() {
         assertThat(Arrays.stream(ExecutionEnvironment.values()).map(ExecutionEnvironment::id))
                 .containsExactlyInAnyOrder(
                         "development", "staging", "production", "production-load-sim", "dr-cold", "dr-hot");
         assertThat(Arrays.stream(ExecutionEnvironment.values())
-                .filter(ExecutionEnvironment::requiresEntitlement)
+                .filter(ExecutionEnvironment::isProductionClass)
                 .map(ExecutionEnvironment::id))
                 .containsExactlyInAnyOrder("production", "production-load-sim", "dr-hot");
         for (ExecutionEnvironment environment : ExecutionEnvironment.values()) {
