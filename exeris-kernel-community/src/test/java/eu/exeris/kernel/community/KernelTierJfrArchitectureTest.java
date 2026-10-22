@@ -37,8 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * event writer, and the JVM can crash. The window is the span from {@link Event#begin()} to
  * {@link Event#commit()}, so nothing that can block, take a lock, park or perform I/O may run
  * inside it. Because that property cannot be read off a call's name, the rule is an allowlist: in a
- * window the only permitted calls are the methods of {@link Event} itself and a short list of
- * side-effect-free JDK calls (see {@link #isPermittedInWindow(JavaCall)}). A call into any other
+ * window the only permitted calls are the methods of {@link Event} itself, a short list of
+ * side-effect-free JDK calls, and the component accessors of two named SPI records,
+ * {@code FlowEngineConfig} and {@code FlowEngineStats}, whose values are plain fields (see
+ * {@link #isPermittedInWindow(JavaCall)}). A call into any other
  * Core, Community, SPI or library method is a violation even when it is harmless today, because the
  * callee may acquire a lock or do I/O tomorrow without touching the event class.
  *

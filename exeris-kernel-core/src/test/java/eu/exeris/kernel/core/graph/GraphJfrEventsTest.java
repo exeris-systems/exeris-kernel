@@ -22,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -35,11 +36,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The graph events are committed once, after the work, and carry the elapsed time as a field.
+ * Each path-finder call and each graph sync outcome commits exactly one event, carrying its fields
+ * and, in {@code elapsedNanos}, a duration that covers the work it measures.
  *
- * <p>An event window that stays open while a graph session or a path finder runs would straddle the
- * carrier-bound event writer when the virtual thread unmounts; committing after the work removes the
- * window, and the elapsed time travels in {@code elapsedNanos} instead.
+ * <p>The stubs occupy a known span of wall-clock time, so a duration measured from the wrong
+ * starting point, or after the work, falls short of that span and fails.
  */
 @DisplayName("Graph: algorithm and sync events are single-phase and carry elapsed time")
 class GraphJfrEventsTest {
@@ -49,6 +50,7 @@ class GraphJfrEventsTest {
     private static final UUID SOURCE = new UUID(0, 1);
     private static final UUID TARGET = new UUID(0, 2);
     private static final int EXPECTED_EVENTS = 5;
+    private static final long WORK_NANOS = Duration.ofMillis(2).toNanos();
 
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -93,7 +95,7 @@ class GraphJfrEventsTest {
         assertThat(algo).allSatisfy(e -> {
             assertThat(e.getString("algorithmName")).isEqualTo("fixed");
             assertThat(e.getBoolean("found")).isTrue();
-            assertThat(e.getDuration("elapsedNanos").isNegative()).isFalse();
+            assertThat(e.getDuration("elapsedNanos")).isGreaterThanOrEqualTo(Duration.ofNanos(WORK_NANOS));
         });
 
         List<RecordedEvent> sync = events.stream().filter(e -> SYNC.equals(e.getEventType().getName())).toList();
@@ -101,8 +103,16 @@ class GraphJfrEventsTest {
         assertThat(sync).allSatisfy(e -> {
             assertThat(e.getString("operationType")).isEqualTo("NODE_DELETE");
             assertThat(e.getString("edgeOrLabel")).isEqualTo("User");
-            assertThat(e.getDuration("elapsedNanos").isNegative()).isFalse();
+            assertThat(e.getDuration("elapsedNanos")).isGreaterThanOrEqualTo(Duration.ofNanos(WORK_NANOS));
         });
+    }
+
+    /** Holds the calling thread for {@link #WORK_NANOS} of wall-clock time without sleeping. */
+    private static void occupy() {
+        long start = System.nanoTime();
+        while (System.nanoTime() - start < WORK_NANOS) {
+            Thread.onSpinWait();
+        }
     }
 
     private static GraphEngine engineFailing(boolean fail) {
@@ -125,14 +135,17 @@ class GraphJfrEventsTest {
         }
 
         @Override public PathResult findShortestPath(UUID src, UUID tgt, EdgeWeightFunction fn) {
+            occupy();
             return found(src, tgt);
         }
 
         @Override public Map<UUID, PathResult> findShortestPaths(UUID src, Set<UUID> targets, EdgeWeightFunction fn) {
+            occupy();
             return Map.of(TARGET, found(src, TARGET));
         }
 
         @Override public List<PathResult> findKShortestPaths(UUID src, UUID tgt, int k, EdgeWeightFunction fn) {
+            occupy();
             return List.of(found(src, tgt));
         }
 
@@ -150,6 +163,7 @@ class GraphJfrEventsTest {
         @Override public void rollback() { /* test stub */ }
         @Override public void upsertNode(String l, UUID id, LoanedBuffer p) { /* test stub */ }
         @Override public void deleteNode(String l, UUID id) {
+            occupy();
             if (fail) {
                 throw new IllegalStateException("simulated delete failure");
             }
