@@ -13,10 +13,12 @@ import eu.exeris.kernel.spi.contract.ExecutionEnvironment;
 import eu.exeris.kernel.spi.contract.WorkloadEnvelope;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 
 import java.security.GeneralSecurityException;
 import java.security.PublicKey;
 import java.security.Signature;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
@@ -36,14 +38,19 @@ import java.util.stream.Collectors;
  * <p>Implements ADR-088 and ADR-089 verification requirements:
  * <ol>
  *   <li>Parses manifest JSON once, with zero external dependencies.</li>
- *   <li>Extracts {@code issuer.keyId} and resolves the trusted public key from {@link TrustedIssuerKeyStore}
- *       (or, outside bootstrap, from a caller-supplied {@link IssuerKeyResolver}).</li>
+ *   <li>Extracts {@code issuer.keyId} and resolves the trusted issuer key, with its {@link IssuerKeyScope},
+ *       from {@link TrustedIssuerKeyStore} (or, outside bootstrap, from a caller-supplied
+ *       {@link IssuerKeyResolver}).</li>
  *   <li>Canonicalizes the parsed tree (excluding the detached {@code "signature"} block) using RFC 8785, so
  *       the bytes verified are the bytes of the values read.</li>
  *   <li>Verifies the 64-byte Ed25519 signature via JDK {@link Signature}.</li>
  *   <li>Checks every field against the v1 schema of ADR-088 §1: exact types, exact enumerations, and the
  *       required fields. A value of the wrong type or outside its enumeration is rejected, never coerced or
  *       replaced by a default.</li>
+ *   <li>Checks the manifest against the scope of the key that signed it: the environments it authorizes
+ *       ({@code EX-LIC-0009}), its validity ({@code EX-LIC-0010}) and its workload envelope
+ *       ({@code EX-LIC-0011}), and for a key with a workload ceiling the enforcement levels it sets
+ *       ({@code EX-LIC-0013}). A scope breach is {@code HARD}: no {@code enforcementRules} entry softens it.</li>
  *   <li>Performs temporal validation against {@code validFrom}, {@code validUntil}, and {@code gracePeriodDays}.</li>
  *   <li>Reports a {@code SOFT} {@code gracePeriod} violation — a warning and a
  *       {@link ContractEnforcementEvent} — when operating within the grace period.</li>
@@ -51,13 +58,15 @@ import java.util.stream.Collectors;
  * </ol>
  *
  * <p>Every schema violation fails with {@code EX-LIC-0001}; the manifest is signed, so a malformed one is
- * an issuer defect and is never read leniently.
+ * an issuer defect and is never read leniently. When several rules fail, the first of the order above
+ * names the code, so a tampered manifest is {@code EX-LIC-0001} and a manifest out of its key's scope is a
+ * scope breach even when it has also expired. The contract gate's own checks (the class of a declared requirement, the
+ * declared environment) run after this verification, so an expired manifest reports its time code before them.
  *
  * @since 0.13
  */
 @SuppressWarnings({
         "PMD.CyclomaticComplexity",
-        "PMD.CognitiveComplexity",
         "PMD.TooManyMethods",
         "PMD.GodClass"
 })
@@ -90,31 +99,46 @@ public final class LicenseManifestVerifier {
     private LicenseManifestVerifier() {}
 
     /**
-     * Verifies the given license manifest JSON string against the current timestamp.
+     * Verifies the given license manifest JSON string against the instant of the kernel time source.
      *
      * @param manifestJson raw JSON string
      * @return materialized execution contract
      * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
      *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
      *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
-     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid;
+     *                                 {@code EX-LIC-0009} to {@code EX-LIC-0011} or {@code EX-LIC-0013} if
+     *                                 it breaks the scope of its issuer key, as
+     *                                 {@link #verifyScoped(String, Instant, IssuerKeyResolver)} lists
      */
     public static ExecutionContract verify(String manifestJson) {
-        return verify(manifestJson, Instant.now());
+        return verifyAtKernelTime(manifestJson, IssuerKeyResolver.embedded());
     }
 
     /**
-     * Verifies the given license manifest JSON bytes against the current timestamp.
+     * Verifies the given license manifest JSON bytes against the instant of the kernel time source.
      *
      * @param manifestBytes UTF-8 JSON bytes
      * @return materialized execution contract
      * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
      *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
      *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
-     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid;
+     *                                 {@code EX-LIC-0009} to {@code EX-LIC-0011} or {@code EX-LIC-0013} if
+     *                                 it breaks the scope of its issuer key, as
+     *                                 {@link #verifyScoped(String, Instant, IssuerKeyResolver)} lists
      */
     public static ExecutionContract verify(byte[] manifestBytes) {
-        return verify(manifestBytes, Instant.now());
+        Objects.requireNonNull(manifestBytes, "manifestBytes must not be null");
+        return verifyAtKernelTime(JsonCanonicalizer.decodeUtf8(manifestBytes), IssuerKeyResolver.embedded());
+    }
+
+    /**
+     * Verifies at the instant the kernel time source reports (ADR-082): the platform clock until a time
+     * provider is bound.
+     */
+    /* default */ static ExecutionContract verifyAtKernelTime(String manifestJson, IssuerKeyResolver keyResolver) {
+        return verify(manifestJson, TimeKernelProviders.timeSource().wallTime(), keyResolver);
     }
 
     /**
@@ -126,7 +150,10 @@ public final class LicenseManifestVerifier {
      * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
      *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
      *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
-     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid;
+     *                                 {@code EX-LIC-0009} to {@code EX-LIC-0011} or {@code EX-LIC-0013} if
+     *                                 it breaks the scope of its issuer key, as
+     *                                 {@link #verifyScoped(String, Instant, IssuerKeyResolver)} lists
      */
     public static ExecutionContract verify(byte[] manifestBytes, Instant evaluationTime) {
         Objects.requireNonNull(manifestBytes, "manifestBytes must not be null");
@@ -142,7 +169,10 @@ public final class LicenseManifestVerifier {
      * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
      *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
      *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
-     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid;
+     *                                 {@code EX-LIC-0009} to {@code EX-LIC-0011} or {@code EX-LIC-0013} if
+     *                                 it breaks the scope of its issuer key, as
+     *                                 {@link #verifyScoped(String, Instant, IssuerKeyResolver)} lists
      */
     public static ExecutionContract verify(String manifestJson, Instant evaluationTime) {
         return verify(manifestJson, evaluationTime, IssuerKeyResolver.embedded());
@@ -163,9 +193,47 @@ public final class LicenseManifestVerifier {
      * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
      *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
      *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
-     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid;
+     *                                 {@code EX-LIC-0009} to {@code EX-LIC-0011} or {@code EX-LIC-0013} if
+     *                                 it breaks the scope of its issuer key, as
+     *                                 {@link #verifyScoped(String, Instant, IssuerKeyResolver)} lists
      */
     public static ExecutionContract verify(
+            String manifestJson, Instant evaluationTime, IssuerKeyResolver keyResolver) {
+        return verifyScoped(manifestJson, evaluationTime, keyResolver).contract();
+    }
+
+    /**
+     * Verifies the given license manifest JSON string like
+     * {@link #verify(String, Instant, IssuerKeyResolver)} and returns, with the contract, the key that
+     * signed it and the {@code issuer.issuedAt} instant it carries.
+     *
+     * <p>The checks run in a fixed order, which decides the code when several rules fail: parse; signature
+     * block, issuer key and its resolution ({@code EX-LIC-0002}); signature ({@code EX-LIC-0001}); schema
+     * ({@code EX-LIC-0001}); the key's scope ({@code EX-LIC-0009}, {@code EX-LIC-0010}, {@code EX-LIC-0011},
+     * then {@code EX-LIC-0013} for a key with a workload ceiling and {@code EX-LIC-0001} for a key without
+     * one that sets the workload envelope to {@code HARD}); the validity window ({@code EX-LIC-0006},
+     * {@code EX-LIC-0003}). No enforcement rule softens a scope breach.
+     *
+     * <p>The kernel bootstrap never calls this overload with a resolver of the caller's choosing; a contract
+     * it returns is not bound into the kernel scope.
+     *
+     * @param manifestJson   raw JSON string
+     * @param evaluationTime evaluation instant for temporal validity
+     * @param keyResolver    resolves {@code issuer.keyId} to a scoped Ed25519 public key
+     * @return the materialized contract, the issuer key that signed it and its {@code issuedAt}
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
+     *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
+     *                                 its issuer key is unknown; {@code EX-LIC-0009} if it authorizes an
+     *                                 environment outside the key's scope; {@code EX-LIC-0010} if its
+     *                                 validity is outside what the key allows; {@code EX-LIC-0011} if its
+     *                                 workload envelope is above the key's ceiling or absent;
+     *                                 {@code EX-LIC-0013} if a key with a ceiling signed a capability or
+     *                                 environment rule below {@code HARD}; {@code EX-LIC-0003} if it expired
+     *                                 beyond its grace period; {@code EX-LIC-0006} if it is not yet valid
+     * @since 0.13
+     */
+    public static VerifiedManifest verifyScoped(
             String manifestJson, Instant evaluationTime, IssuerKeyResolver keyResolver) {
         Objects.requireNonNull(manifestJson, "manifestJson must not be null");
         Objects.requireNonNull(evaluationTime, "evaluationTime must not be null");
@@ -174,10 +242,36 @@ public final class LicenseManifestVerifier {
         Map<String, Object> root = JsonCanonicalizer.parseJsonObject(manifestJson);
 
         byte[] signatureBytes = signatureBytes(root);
-        PublicKey publicKey = keyResolver.resolve(issuerKeyId(root));
-        verifySignature(publicKey, JsonCanonicalizer.canonicalizeDetached(root, "signature"), signatureBytes);
+        TrustedIssuerKey key = keyResolver.resolve(issuerKeyId(root));
+        verifySignature(key.publicKey(), JsonCanonicalizer.canonicalizeDetached(root, "signature"), signatureBytes);
 
-        return materialize(root, evaluationTime);
+        Materialized materialized = materialize(root);
+        checkScope(key, materialized.contract(), materialized.issuedAt());
+        checkTemporalValidity(materialized.contract(), evaluationTime);
+        return new VerifiedManifest(materialized.contract(), key, materialized.issuedAt());
+    }
+
+    /**
+     * A verified manifest: its contract, the issuer key that signed it and the instant the issuer says it
+     * signed.
+     *
+     * @param contract  the materialized, immutable contract
+     * @param key       the issuer key whose signature verified, with its scope
+     * @param issuedAt  {@code issuer.issuedAt}, or {@code null} when the manifest carries none
+     * @since 0.13
+     */
+    public record VerifiedManifest(ExecutionContract contract, TrustedIssuerKey key, Instant issuedAt) {
+
+        /**
+         * Compact constructor rejecting a null contract or key.
+         */
+        public VerifiedManifest {
+            Objects.requireNonNull(contract, "contract must not be null");
+            Objects.requireNonNull(key, "key must not be null");
+        }
+    }
+
+    private record Materialized(ExecutionContract contract, Instant issuedAt) {
     }
 
     // ── Signature ───────────────────────────────────────────────────────────
@@ -233,7 +327,7 @@ public final class LicenseManifestVerifier {
 
     // ── Schema and materialization ──────────────────────────────────────────
 
-    private static ExecutionContract materialize(Map<String, Object> root, Instant evaluationTime) {
+    private static Materialized materialize(Map<String, Object> root) {
         for (String key : root.keySet()) {
             if (!TOP_LEVEL_KEYS.contains(key)) {
                 throw breach("Unknown top-level field '" + key + "' in a v1 manifest");
@@ -242,9 +336,7 @@ public final class LicenseManifestVerifier {
         if (!SCHEMA_V1.equals(root.get("$schema"))) {
             throw breach("$schema must be exactly \"" + SCHEMA_V1 + "\"");
         }
-        Map<?, ?> issuer = requiredObject(root, "issuer");
-        optionalString(issuer, "authority", "issuer.authority");
-        optionalInstant(issuer, "issuedAt", "issuer.issuedAt");
+        Instant issuedAt = issuerIssuedAt(root);
 
         // Contract block
         Map<?, ?> contract = requiredObject(root, "contract");
@@ -283,14 +375,7 @@ public final class LicenseManifestVerifier {
         WorkloadEnvelope envelope = workloadEnvelope(execution);
 
         Instant validFrom = requiredInstant(execution, "validFrom", "execution.validFrom");
-        Instant validUntil;
-        if (execution.containsKey("validUntil")) {
-            validUntil = requiredInstant(execution, "validUntil", "execution.validUntil");
-        } else if (PERPETUAL_INTERNAL.equals(licenseMode)) {
-            validUntil = Instant.MAX;
-        } else {
-            throw breach("execution.validUntil is required unless licenseMode is " + PERPETUAL_INTERNAL);
-        }
+        Instant validUntil = validUntil(execution, licenseMode);
         if (validUntil.isBefore(validFrom)) {
             throw breach("execution.validUntil precedes execution.validFrom");
         }
@@ -298,9 +383,7 @@ public final class LicenseManifestVerifier {
                 ? (int) requiredInteger(execution, "gracePeriodDays", "execution.gracePeriodDays", Integer.MAX_VALUE)
                 : DEFAULT_GRACE_PERIOD_DAYS;
 
-        checkTemporalValidity(contractId, evaluationTime, validFrom, validUntil, gracePeriodDays);
-
-        return new ExecutionContract(
+        ExecutionContract built = new ExecutionContract(
                 contractId,
                 commercialModel,
                 edition,
@@ -315,10 +398,25 @@ public final class LicenseManifestVerifier {
                 gracePeriodDays,
                 enforcementRules(root)
         );
+        return new Materialized(built, issuedAt);
     }
 
-    private static void checkTemporalValidity(
-            String contractId, Instant evaluationTime, Instant validFrom, Instant validUntil, int gracePeriodDays) {
+    /** The last valid instant: required, except under perpetual internal use, where it never ends. */
+    private static Instant validUntil(Map<?, ?> execution, String licenseMode) {
+        if (execution.containsKey("validUntil")) {
+            return requiredInstant(execution, "validUntil", "execution.validUntil");
+        }
+        if (PERPETUAL_INTERNAL.equals(licenseMode)) {
+            return Instant.MAX;
+        }
+        throw breach("execution.validUntil is required unless licenseMode is " + PERPETUAL_INTERNAL);
+    }
+
+    private static void checkTemporalValidity(ExecutionContract contract, Instant evaluationTime) {
+        String contractId = contract.contractId();
+        Instant validFrom = contract.validFrom();
+        Instant validUntil = contract.validUntil();
+        int gracePeriodDays = contract.gracePeriodDays();
         if (evaluationTime.isBefore(validFrom)) {
             throw new ContractBreachException(
                     KernelErrorCodes.EX_LIC_0006,
@@ -327,13 +425,7 @@ public final class LicenseManifestVerifier {
             );
         }
 
-        Instant graceDeadline;
-        if (Instant.MAX.equals(validUntil)
-                || validUntil.isAfter(Instant.MAX.minus(gracePeriodDays + 1L, ChronoUnit.DAYS))) {
-            graceDeadline = Instant.MAX;
-        } else {
-            graceDeadline = validUntil.plus(gracePeriodDays, ChronoUnit.DAYS);
-        }
+        Instant graceDeadline = graceDeadline(validUntil, gracePeriodDays);
 
         if (!Instant.MAX.equals(graceDeadline) && evaluationTime.isAfter(graceDeadline)) {
             throw new ContractBreachException(
@@ -349,6 +441,101 @@ public final class LicenseManifestVerifier {
                     "gracePeriod",
                     EnforcementLevel.SOFT,
                     "validUntil " + validUntil + " passed; grace ends " + graceDeadline));
+        }
+    }
+
+    /** The last instant a manifest boots: {@code validUntil} plus the grace period, or {@link Instant#MAX}. */
+    private static Instant graceDeadline(Instant validUntil, int gracePeriodDays) {
+        if (Instant.MAX.equals(validUntil)
+                || validUntil.isAfter(Instant.MAX.minus(gracePeriodDays + 1L, ChronoUnit.DAYS))) {
+            return Instant.MAX;
+        }
+        return validUntil.plus(gracePeriodDays, ChronoUnit.DAYS);
+    }
+
+    // ── Key scope ───────────────────────────────────────────────────────────
+
+    private static void checkScope(TrustedIssuerKey key, ExecutionContract contract, Instant issuedAt) {
+        IssuerKeyScope scope = key.scope();
+        checkEnvironmentScope(key, contract);
+        if (scope.maxValidity() != null) {
+            checkValidityScope(key, contract, issuedAt);
+        }
+        if (scope.workloadCeiling() != null) {
+            checkCeilingScope(key, contract);
+            checkDeveloperRules(key, contract);
+        } else if (contract.getEnforcement(ExecutionContract.WORKLOAD_ENVELOPE_CONSTRAINT)
+                == EnforcementLevel.HARD) {
+            throw breach("enforcementRules.workloadEnvelope must not be HARD under issuer key " + key.keyId()
+                    + ", which has no workload ceiling");
+        }
+    }
+
+    private static void checkEnvironmentScope(TrustedIssuerKey key, ExecutionContract contract) {
+        Set<String> allowed = key.scope().environments().stream()
+                .map(ExecutionEnvironment::id)
+                .collect(Collectors.toSet());
+        List<String> outside = contract.authorizedEnvironments().stream()
+                .filter(environment -> !allowed.contains(environment))
+                .sorted()
+                .toList();
+        if (!outside.isEmpty()) {
+            throw new ContractBreachException(
+                    KernelErrorCodes.EX_LIC_0009,
+                    "License manifest authorizes environments outside the scope of issuer key " + key.keyId(),
+                    key.keyId(), outside);
+        }
+    }
+
+    private static void checkValidityScope(TrustedIssuerKey key, ExecutionContract contract, Instant issuedAt) {
+        Duration maxValidity = key.scope().maxValidity();
+        Instant lastBoot = graceDeadline(contract.validUntil(), contract.gracePeriodDays());
+        String rule = null;
+        if (issuedAt == null) {
+            rule = "issuer.issuedAt is required under issuer key " + key.keyId();
+        } else if (PERPETUAL_INTERNAL.equals(contract.licenseMode())
+                || Instant.MAX.equals(contract.validUntil())) {
+            rule = "entitlement.licenseMode " + PERPETUAL_INTERNAL + " is not allowed under issuer key "
+                    + key.keyId();
+        } else if (contract.validFrom().isBefore(issuedAt)) {
+            rule = "execution.validFrom precedes issuer.issuedAt";
+        } else if (lastBoot.isAfter(issuedAt.plus(maxValidity))) {
+            rule = "execution.validUntil plus the grace period is more than " + maxValidity.toDays()
+                    + " days after issuer.issuedAt";
+        }
+        if (rule != null) {
+            throw new ContractBreachException(
+                    KernelErrorCodes.EX_LIC_0010,
+                    "License manifest validity is outside the scope of issuer key " + key.keyId() + ": " + rule,
+                    key.keyId(), issuedAt, lastBoot, maxValidity.toDays());
+        }
+    }
+
+    private static void checkCeilingScope(TrustedIssuerKey key, ExecutionContract contract) {
+        WorkloadEnvelope ceiling = key.scope().workloadCeiling();
+        WorkloadEnvelope envelope = contract.envelope();
+        if (envelope.maxThroughputRps() > ceiling.maxThroughputRps()
+                || envelope.maxConnections() > ceiling.maxConnections()
+                || envelope.growthAllowancePercent() > ceiling.growthAllowancePercent()) {
+            throw new ContractBreachException(
+                    KernelErrorCodes.EX_LIC_0011,
+                    "License manifest workload envelope is above the ceiling of issuer key " + key.keyId()
+                            + " or absent",
+                    key.keyId(), envelope.maxThroughputRps(), envelope.maxConnections(),
+                    envelope.growthAllowancePercent());
+        }
+    }
+
+    private static void checkDeveloperRules(TrustedIssuerKey key, ExecutionContract contract) {
+        for (String rule : List.of(ExecutionContract.CAPABILITY_CONSTRAINT, ExecutionContract.ENVIRONMENT_CONSTRAINT)) {
+            EnforcementLevel level = contract.getEnforcement(rule);
+            if (level != EnforcementLevel.HARD) {
+                throw new ContractBreachException(
+                        KernelErrorCodes.EX_LIC_0013,
+                        "Issuer key " + key.keyId() + " has a workload ceiling, so enforcementRules." + rule
+                                + " must be HARD",
+                        key.keyId(), rule, level.name());
+            }
         }
     }
 
@@ -472,10 +659,11 @@ public final class LicenseManifestVerifier {
         }
     }
 
-    private static void optionalInstant(Map<?, ?> map, String key, String path) {
-        if (map.containsKey(key)) {
-            requiredInstant(map, key, path);
-        }
+    /** Reads the issuer block's optional fields and returns {@code issuer.issuedAt}, or {@code null} when absent. */
+    private static Instant issuerIssuedAt(Map<String, Object> root) {
+        Map<?, ?> issuer = requiredObject(root, "issuer");
+        optionalString(issuer, "authority", "issuer.authority");
+        return issuer.containsKey("issuedAt") ? requiredInstant(issuer, "issuedAt", "issuer.issuedAt") : null;
     }
 
     private static ContractBreachException breach(String message) {

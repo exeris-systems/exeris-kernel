@@ -23,6 +23,8 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +51,72 @@ class TrustedIssuerKeyStoreTest {
     );
 
     @Test
+    @DisplayName("The store pins exactly the production, developer and enterprise keys of the 2026 epoch")
+    void pinsExactlyThreeKeys() {
+        Map<String, String> pinned = TrustedIssuerKeyStore.trustedKeyIds().stream()
+                .collect(Collectors.toMap(keyId -> keyId,
+                        keyId -> HexFormat.of().formatHex(TrustedIssuerKeyStore.getPublicKeyBytes(keyId))));
+
+        assertThat(pinned).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "exeris-prod-2026-k1", "bbba57668037f6dc4f1c305a7fac2d2ba0a506611dd6b70bdb9a3ce24a5365c9",
+                "exeris-dev-2026-k1", "2c15e5013d02a45c579e1021aec554292a47b29ac480ae2366df276b547da92e",
+                "exeris-ent-2026-k1", "5c07d772c227fafc491d7c5d5ef0fbcd18830872fc401f4a1f6dcbec23bb6027"));
+    }
+
+    @Test
+    @DisplayName("Every keyId names its family, and its scope is the constant of that family")
+    void everyKeyHoldsTheScopeOfItsFamily() {
+        Pattern naming = Pattern.compile("exeris-(prod|dev|ent)-\\d{4}-k[1-9]\\d*");
+        Map<String, IssuerKeyScope> byFamily = Map.of(
+                "prod", IssuerKeyScope.PROD, "dev", IssuerKeyScope.DEV, "ent", IssuerKeyScope.ENT);
+
+        for (String keyId : TrustedIssuerKeyStore.trustedKeyIds()) {
+            Matcher family = naming.matcher(keyId);
+            assertThat(family.matches()).as("%s follows the naming scheme", keyId).isTrue();
+            TrustedIssuerKey key = TrustedIssuerKeyStore.resolve(keyId);
+            assertThat(key.keyId()).isEqualTo(keyId);
+            assertThat(key.scope()).as("scope of %s", keyId).isEqualTo(byFamily.get(family.group(1)));
+        }
+        assertThat(TrustedIssuerKeyStore.trustedKeyIds().stream().map(id -> id.split("-")[1]))
+                .containsExactlyInAnyOrder("prod", "dev", "ent");
+    }
+
+    @Test
+    @DisplayName("Only the developer key has a workload ceiling, so only it runs under the developer envelope")
+    void onlyTheDeveloperKeyIsDeveloperScoped() {
+        assertThat(TrustedIssuerKeyStore.resolve("exeris-dev-2026-k1").scope().isDeveloperScope()).isTrue();
+        assertThat(TrustedIssuerKeyStore.resolve("exeris-prod-2026-k1").scope().isDeveloperScope()).isFalse();
+        assertThat(TrustedIssuerKeyStore.resolve("exeris-ent-2026-k1").scope().isDeveloperScope()).isFalse();
+    }
+
+    @Test
+    @DisplayName("The embedded resolver resolves every pinned key with its scope")
+    void embeddedResolverServesThePinnedKeys() {
+        for (String keyId : TrustedIssuerKeyStore.trustedKeyIds()) {
+            assertThat(IssuerKeyResolver.embedded().resolve(keyId))
+                    .usingRecursiveComparison().isEqualTo(TrustedIssuerKeyStore.resolve(keyId));
+        }
+        assertThatThrownBy(() -> IssuerKeyResolver.embedded().resolve("exeris-root-2026-k1"))
+                .isInstanceOf(ContractBreachException.class);
+    }
+
+    @Test
+    @DisplayName("The retired root is no longer a trust root: EX-LIC-0002 from every accessor")
+    void retiredRootIsUnknown() {
+        assertThat(TrustedIssuerKeyStore.trustedKeyIds()).doesNotContain("exeris-root-2026-k1");
+        assertThatThrownBy(() -> TrustedIssuerKeyStore.resolve("exeris-root-2026-k1"))
+                .isInstanceOfSatisfying(ContractBreachException.class, breach -> {
+                    assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0002);
+                    assertThat(breach.rawArgs()).containsExactly("exeris-root-2026-k1");
+                });
+        assertThatThrownBy(() -> TrustedIssuerKeyStore.getPublicKeyBytes("exeris-root-2026-k1"))
+                .isInstanceOf(ContractBreachException.class);
+        assertThatThrownBy(() -> TrustedIssuerKeyStore.getPublicKey("exeris-root-2026-k1"))
+                .isInstanceOf(ContractBreachException.class);
+        assertThatThrownBy(() -> TrustedIssuerKeyStore.resolve(null)).isInstanceOf(ContractBreachException.class);
+    }
+
+    @Test
     @DisplayName("No embedded trust root is an RFC 8032 test-vector key")
     void noEmbeddedRootIsAPublishedTestVector() {
         Set<String> embedded = TrustedIssuerKeyStore.trustedKeyIds().stream()
@@ -73,24 +141,26 @@ class TrustedIssuerKeyStoreTest {
         for (String seedHex : RFC8032_TEST_VECTORS.keySet()) {
             KeyPair published = keyPairFromSeed(HexFormat.of().parseHex(seedHex));
 
-            String underRealRoot = signedManifest("exeris-root-2026-k1", published.getPrivate());
-            assertThat(LicenseManifestVerifier.verify(underRealRoot, at,
-                    IssuerKeyResolver.of(Map.of("exeris-root-2026-k1", published.getPublic()))))
-                    .as("control: the forged manifest is schema-valid, so only the trust root can refuse it")
-                    .isNotNull();
-            assertThatThrownBy(() -> LicenseManifestVerifier.verify(underRealRoot, at))
-                    .isInstanceOf(ContractBreachException.class)
-                    .hasMessageContaining("signature verification failed")
-                    .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
-                            .isEqualTo(KernelErrorCodes.EX_LIC_0001));
+            for (String realKeyId : TrustedIssuerKeyStore.trustedKeyIds()) {
+                String underRealRoot = signedManifest(realKeyId, published.getPrivate());
+                assertThat(LicenseManifestVerifier.verify(underRealRoot, at,
+                        IssuerKeyResolver.of(Map.of(realKeyId, published.getPublic()))))
+                        .as("control: the forged manifest is schema-valid, so only the trust root can refuse it")
+                        .isNotNull();
+                assertThatThrownBy(() -> LicenseManifestVerifier.verify(underRealRoot, at))
+                        .isInstanceOf(ContractBreachException.class)
+                        .hasMessageContaining("signature verification failed")
+                        .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
+                                .isEqualTo(KernelErrorCodes.EX_LIC_0001));
+            }
 
-            String underUnknownRoot = signedManifest("exeris-root-2025-k1", published.getPrivate());
+            String underUnknownRoot = signedManifest("exeris-prod-2025-k1", published.getPrivate());
             assertThatThrownBy(() -> LicenseManifestVerifier.verify(underUnknownRoot, at))
                     .isInstanceOf(ContractBreachException.class)
                     .satisfies(e -> {
                         ContractBreachException breach = (ContractBreachException) e;
                         assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0002);
-                        assertThat(breach.rawArgs()).containsExactly("exeris-root-2025-k1");
+                        assertThat(breach.rawArgs()).containsExactly("exeris-prod-2025-k1");
                     });
         }
     }
@@ -115,7 +185,8 @@ class TrustedIssuerKeyStoreTest {
                 .filter(m -> Modifier.isPublic(m.getModifiers()))
                 .map(Method::getName)
                 .collect(Collectors.toSet());
-        assertThat(publicMethods).containsExactlyInAnyOrder("getPublicKeyBytes", "getPublicKey");
+        assertThat(publicMethods)
+                .containsExactlyInAnyOrder("getPublicKeyBytes", "getPublicKey", "resolve", "trustedKeyIds");
 
         for (Field field : TrustedIssuerKeyStore.class.getDeclaredFields()) {
             if (Modifier.isStatic(field.getModifiers())) {
