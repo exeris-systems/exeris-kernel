@@ -159,6 +159,42 @@
     "signature": "eu.exeris.kernel.core.contract.ContractBootstrapStep#run",
     "since": "0.13",
     "adr": "ADR-089",
-    "justification": "Signature: ContractBootstrapStep.run(ConfigProvider, ClassLoader) returns the new ContractDecision, the contract together with the WorkloadAdmission its drivers consult, instead of the bare ExecutionContract; a caller outside the kernel takes .contract() for the old value. KernelBootstrap binds both in one scope, and its package-private Builder.contractGate takes the same type. The gate binds WorkloadAdmission.UNGATED for every contract, so no kernel behaves differently until a contract policy selects the developer-licence gate. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+    "justification": "Signature: ContractBootstrapStep.run(ConfigProvider, ClassLoader) returns the new ContractDecision, the contract together with the WorkloadAdmission its drivers consult, instead of the bare ExecutionContract; a caller outside the kernel takes .contract() for the old value. KernelBootstrap binds both in one scope, and its package-private Builder.contractGate takes the same type. The admission is WorkloadAdmission.UNGATED unless a developer key signed the manifest and an EntitlementRequirement is declared. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.contract.EntitlementRequirement#entitlementClass()",
+    "since": "0.13",
+    "adr": "ADR-089",
+    "justification": "Source-breaking for implementers of a preview interface: entitlementClass() is abstract with no default, so no implementation is silently given the weaker class. Every implementer adds one method returning EntitlementClass.COMMERCIAL or ENTERPRISE_PRIVATE; MIGRATION.md gives the step. The gate checks that the signing key may entitle the class of every declared requirement (EX-LIC-0012), and a null class or one identifier under two classes stops the boot with EX-LIC-0008."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.contract.ExecutionEnvironment#requiresEntitlement()",
+    "since": "0.13",
+    "adr": "ADR-089",
+    "justification": "Renamed to isProductionClass() in a preview package. The accessor answers the same set of environments (production, production-load-sim, dr-hot) and no longer decides whether a manifest is needed: a declared requirement needs one in every environment. Callers change the name; MIGRATION.md records the step."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.ContractBootstrapStep",
+    "since": "0.13",
+    "adr": "ADR-089",
+    "justification": "Behaviour: a declared EntitlementRequirement with no license manifest stops the boot with EX-LIC-0005 in every environment, development included, where outside the production classes the gate booted the Community contract with a SOFT warning. A manifest is verified inside the scope of its signing key in every environment, and the declared environment must lie in that scope (EX-LIC-0009); with a requirement the class of every declared requirement must be one the key may entitle (EX-LIC-0012) and the contract must authorize the environment and each capability at the level its rules set, in every environment. A deployment with an entitlement-requiring artifact and no manifest for a non-production environment obtains one; see MIGRATION.md. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.crypto.IssuerKeyResolver#resolve(java.lang.String)",
+    "since": "0.13",
+    "adr": "ADR-088",
+    "justification": "Signature: resolve returns a TrustedIssuerKey, the public key together with its IssuerKeyScope, instead of a bare PublicKey. A resolver written as a lambda returns the key with a scope; IssuerKeyResolver.of keeps its signature and gives each key the unrestricted ENT scope, and ofScoped takes scoped keys. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.crypto.TrustedIssuerKeyStore",
+    "since": "0.13",
+    "adr": "ADR-088",
+    "justification": "Behaviour: exeris-root-2026-k1 is removed from the embedded trust roots and resolves to EX-LIC-0002; the store pins exeris-prod-2026-k1, exeris-dev-2026-k1 and exeris-ent-2026-k1, each with an IssuerKeyScope that LicenseManifestVerifier.verifyScoped enforces (EX-LIC-0009, EX-LIC-0010, EX-LIC-0011, EX-LIC-0013). resolve and trustedKeyIds() are public. No manifest signed with the removed key was issued. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.AbstractLicenseManifestCryptoTck",
+    "since": "0.13",
+    "adr": "ADR-088",
+    "justification": "TCK contract, source-breaking for bindings: verifyManifest takes a TckKeyScope, and a new abstract decide hook runs the contract gate's decision for a declared environment and the requirements of each entitlement class. Tests 5 to 8 refuse an environment, a validity, a workload envelope and a requirement class outside the signing key's scope, and further cases pin the rule levels, the order of the checks and EX-LIC-0005 in every environment. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
   }
 ]

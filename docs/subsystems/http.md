@@ -561,6 +561,7 @@ The §5.1.2 concurrent-stream cap alone does **not** defend against Rapid Reset:
 - [ADR-061](../adr/ADR-061-declarable-http-route-authorization-policy.md) — Replace the hardcoded `/secure` prefix with a declarable HTTP route-authorization policy
 - [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) — A request names its own peer — the client stops dialling the address its server listens on
 - [ADR-077](../adr/ADR-077-route-declared-connection-lifetime.md) — A route declares how it executes, and the dispatcher draws the connection consequence
+- [ADR-089](../adr/ADR-089.link.md) — the developer-licence workload envelope a driver enforces: the request gate, `429` and the `Exeris-License` header
 
 ## Stability
 

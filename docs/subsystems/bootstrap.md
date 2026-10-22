@@ -113,7 +113,7 @@ The Community subsystem set as `CommunitySubsystemProvider` registers it. Arrows
 ```mermaid
 flowchart TD
     CFG["Config<br/>(resolved by KernelBootstrap<br/>via ServiceLoader of ConfigProvider<br/>before the orchestrator runs)"]
-    LIC["Contract gate<br/>(ContractBootstrapStep, boot() only:<br/>manifest, entitlement, environment<br/>ADR-088 / ADR-089)"]
+    LIC["Contract gate<br/>(ContractBootstrapStep, boot() only:<br/>manifest, key scope, entitlement class, environment<br/>ADR-088 / ADR-089)"]
 
     subgraph FOUNDATION["FOUNDATION (sequential)"]
         MEM[memory]
@@ -279,26 +279,60 @@ to declare it.
 > **The contract gate** is not a `Subsystem` either. `KernelBootstrap.boot()` runs `ContractBootstrapStep`
 > after Config and before the orchestrator, and binds its result, a `ContractDecision` of the contract and a
 > `WorkloadAdmission`, to `ContractKernelProviders.EXECUTION_CONTRACT` and `WORKLOAD_ADMISSION` for
-> the whole kernel scope. The gate binds `WorkloadAdmission.UNGATED` for every contract until a contract policy
-> selects the developer-licence gate; the HTTP and transport drivers read it once in `start()`. The environment comes from the configuration key `environment` (`development` when
-> unset; the kernel profile plays no part). With no license manifest the kernel runs under the Community
-> contract in every environment, unless the environment is `production`, `production-load-sim` or `dr-hot`
-> and an `EntitlementRequirement` is on the classpath — then the boot is refused. A manifest that is present
-> is always verified. `inspect()` initializes nothing, so it does not run the gate and binds no contract.
+> the whole kernel scope; the HTTP and transport drivers read the admission once in `start()`. The environment
+> comes from the configuration key `environment` (`development` when unset; the kernel profile plays no part).
+> `inspect()` initializes nothing, so it does not run the gate and binds no contract. The gate decides in every
+> environment alike; the environment is where the kernel says it runs, never a reason to skip a check:
+>
+> | Manifest | `EntitlementRequirement` declared | Decision |
+> |:--|:--|:--|
+> | none | no | Community contract, `UNGATED` |
+> | none | yes | `EX-LIC-0005`, in every environment |
+> | present | no | verified inside its key's scope; the declared environment must lie in that scope (`EX-LIC-0009`); `UNGATED` |
+> | present | yes | as above, then every declared requirement's class must be one the key may entitle, listed by the manifest or not (`EX-LIC-0012`), then the contract must authorize the environment (`EX-LIC-0007`) and each capability (`EX-LIC-0004`) at the level its enforcement rules set |
+>
+> A manifest signed by the developer key (`exeris-dev-…`), with a requirement declared, binds a
+> `DeveloperWorkloadAdmission`: 50 requests per second and 10 connections at `HARD`, and `Exeris-License:
+> development` on every response. Every other decision binds `WorkloadAdmission.UNGATED`, so a Community-only
+> classpath is never gated. A `HARD` capability or environment breach, and every scope breach, throws out of
+> `boot()` as `ContractBreachException` before any subsystem exists; a scope breach is `HARD` whatever the
+> manifest's `enforcementRules` say. The gate's own checks run after the verifier, including its validity
+> window: the class of a declared requirement (`EX-LIC-0012`) and the declared environment against the key's
+> scope (`EX-LIC-0009`) come last, so a manifest that is expired and also short of a class reports its time code
+> (`EX-LIC-0003` or `EX-LIC-0006`) first. The manifest's validity window is judged at the instant of
+> `TimeKernelProviders.timeSource()`, the platform clock until a time provider is bound.
+>
+> **A key's scope.** The embedded `TrustedIssuerKeyStore` pins three keys, each with an `IssuerKeyScope`.
+> `exeris-prod-…`: all six environments, no maximum validity, no workload ceiling, commercial artifacts.
+> `exeris-dev-…`: `development` only; at most 30 days from `issuer.issuedAt` to `validUntil` plus the grace
+> period, with `issuedAt` required and no `PERPETUAL_INTERNAL`; a workload envelope present and no higher than 50
+> requests per second, 10 connections and a growth allowance of 0; the `capability` and `environment` rules at
+> `HARD`; commercial artifacts. `exeris-ent-…`: as `prod`, and enterprise-private artifacts too. A manifest from a
+> key with no ceiling may not set `workloadEnvelope` to `HARD`: hard-dropping traffic is reserved for the
+> developer licence.
+>
+> **Issuance-facing surface of Core (preview until 1.0).** `IssuerKeyScope`, `TrustedIssuerKey`,
+> `IssuerKeyResolver.ofScoped` and `IssuerKeyResolver.embedded` (the pinned keys, for a post-check of what was signed), `LicenseManifestVerifier.verifyScoped` with `VerifiedManifest`,
+> `TrustedIssuerKeyStore.resolve` and `TrustedIssuerKeyStore.trustedKeyIds()` are public so that a tool which
+> signs licences can verify what it is about to sign under the same rules: a manifest signed by a key of the
+> tool's own, under `IssuerKeyScope.PROD`, `DEV` or `ENT`, either passes `verifyScoped` or fails with the
+> scope code the kernel would raise. `ContractBootstrapStep.decide(environment, requirements, manifest, now,
+> resolver)` is public for the same reason, so a conformance suite can run the gate's decision under a key it
+> holds; its result is never bound into a kernel scope. The bootstrap path never accepts a resolver.
 >
 > **Operators: declare the environment.** With `CommunityConfigProvider` the key `environment` is the system
 > property `-Dexeris.environment` or the variable `EXERIS_ENVIRONMENT`; the manifest path is
-> `-Dexeris.license.manifest.path` or `EXERIS_LICENSE_MANIFEST_PATH`. A production deployment that declares
-> nothing runs as `development`: it is not gated, and if entitlement-requiring code is on the classpath the
-> gate says so with one `SOFT` warning rather than refusing the boot. A value outside the six environment
-> ids fails the boot with `ConfigProviderException` `EX-CFG-1002`; a manifest path bound to a blank value
-> fails it with `EX-LIC-0001`. The manifest is read from `license.manifest.path` when that key is bound (and
-> only from there: the working directory and the classpath are not consulted), else from
+> `-Dexeris.license.manifest.path` or `EXERIS_LICENSE_MANIFEST_PATH`. A deployment that declares nothing runs as
+> `development`, and a manifest whose key does not cover `development` refuses the boot. A value outside the six
+> environment ids fails the boot with `ConfigProviderException` `EX-CFG-1002`; a manifest path bound to a blank
+> value fails it with `EX-LIC-0001`. The manifest is read from `license.manifest.path` when that key is bound
+> (and only from there: the working directory and the classpath are not consulted), else from
 > `license-manifest.json` in the working directory, else from the classpath. The classpath may hold at most
 > one: more than one distinct `license-manifest.json` URL (the same URL reported twice by a loader chain
 > counts once) fails the boot with `EX-LIC-0001`, the message listing every URL, because the first one in
-> classpath order would otherwise decide the contract; bind `license.manifest.path` to choose. An `EntitlementRequirement` that cannot be loaded, throws, or declares `null`,
-> nothing or a malformed capability id fails it with `EX-LIC-0008`, in every environment.
+> classpath order would otherwise decide the contract; bind `license.manifest.path` to choose. An
+> `EntitlementRequirement` that cannot be loaded, throws, or declares `null`, nothing, a malformed capability
+> id or no class, fails it with `EX-LIC-0008`, in every environment.
 
 ---
 
@@ -648,8 +682,8 @@ The full event set, all in category `Exeris Kernel / Bootstrap`: `KernelStart`, 
 `SubsystemStarted`, `KernelBootReady`, `SubsystemStopped`, `KernelShutdownComplete`,
 `CircularDependencyDetected`, `SubsystemHealthTransition`, `SubsystemInitDeadlineExceeded`. The contract gate records each decision as
 `eu.exeris.kernel.contract.Resolved` (`ContractResolvedEvent`, category `Exeris Kernel / Contract`): the
-environment, the manifest source, the bound contract or the error code that refused the boot, and
-`gateDuration`, which is the gate's time outside `KernelBootReady.totalDurationMs`. A `SOFT` or `AUDIT`
+environment, the manifest source, the bound contract or the error code that refused the boot, the signing
+`keyId`, whether the kernel runs under a developer licence (`developerLicence`), and `gateDuration`, which is the gate's time outside `KernelBootReady.totalDurationMs`. A `SOFT` or `AUDIT`
 violation, and a manifest verified inside its grace period, emit `eu.exeris.kernel.contract.Enforcement`
 (`ContractEnforcementEvent`); a `SOFT` one also logs a `WARNING` through `System.Logger`. Each distinct
 violation is reported once per process. Both events exist only while a JFR recording with them enabled is

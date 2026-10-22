@@ -88,7 +88,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, `…SubsystemErrorRoutingTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
-| `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck`, `…EntitlementRequirementTck`; `WorkloadAdmission` by `AbstractWorkloadAdmissionTck` (HTTP) and `AbstractTransportWorkloadAdmissionTck`, bound in Community | — |
+| `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck` (Tests 1–8: the key scope and the gate in every environment), `…EntitlementRequirementTck` (entitlement class); `WorkloadAdmission` by `AbstractWorkloadAdmissionTck` (HTTP) and `AbstractTransportWorkloadAdmissionTck`, bound in Community | — |
 | `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] [^eventisolation] [^eventbuspublish] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
 | `…spi.graph` | **preview** | 0.5.0 | ADR-102 [^graphpath] [^graphscope] | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +4 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
