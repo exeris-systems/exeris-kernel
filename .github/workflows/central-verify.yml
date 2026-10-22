@@ -80,7 +80,7 @@ jobs:
             *)
               version="" ;;
           esac
-          if [ -n "$version" ] && ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-RC[0-9]+)?$'; then
+          if [ -n "$version" ] && ! printf '%s' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-RC[1-9][0-9]*)?$'; then
             echo "::error::'$version' is not a release version (expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-RCn)." >&2
             exit 1
           fi

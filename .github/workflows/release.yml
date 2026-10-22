@@ -3,7 +3,8 @@ name: Release to Maven Central
 # Two triggers, and the split is about what each one is for.
 #
 # **A tag is the release.** `v0.12.0` on a commit that is on `main` builds, signs, gates, attests
-# and uploads. That makes the release a property of the tag rather than of somebody remembering to
+# and uploads. `v1.0.0-RC1` does the same: a release candidate is a tag of the shape
+# vMAJOR.MINOR.PATCH-RC<n> and travels the identical path, with its pom at the tag's version. That makes the release a property of the tag rather than of somebody remembering to
 # fill in a form — and nothing else fires it, because a push to a BRANCH triggers this workflow not
 # at all: a CI fix landing on `main` releases nothing.
 #
@@ -14,21 +15,22 @@ name: Release to Maven Central
 # A tag trigger is safe even before the first release has gone through: a mistyped tag does not
 # become a permanent artifact.
 # `autoPublish=false` in the root POM's `release` profile means this workflow uploads a DEPLOYMENT
-# that a human still has to Publish in the portal, and that can be DROPPED until they do. A mistyped
-# tag costs a dropped deployment, not a permanent artifact. What actually needs guarding is *which
+# that a human still has to Publish in the portal, and that can be DROPPED until they do. It holds
+# for a candidate exactly as for a release: the profile is the only place the setting lives, and no
+# `-D` overrides it. A mistyped tag costs a dropped deployment, not a permanent artifact. What actually needs guarding is *which
 # commit a tag points at* and *whether its version agrees with the pom* — both checked below rather
 # than assumed.
 on:
   push:
     tags:
-      # Deliberately permissive: the strict vMAJOR.MINOR.PATCH check is a step, not this filter.
-      # A filter decides what runs; it is not a guard — a glob also matches a suffixed tag such as
-      # `v0.11.0-preview`, which version sorting places ABOVE `v0.11.0`.
+      # Deliberately permissive: the strict tag check (tools/release-tag) is a step, not this
+      # filter. A filter decides what runs; it is not a guard — a glob also matches a suffixed tag
+      # such as `v0.11.0-preview`, which version sorting places ABOVE `v0.11.0`.
       - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build for a DRY RUN (e.g. 0.12.0) — must not end in -SNAPSHOT'
+        description: 'Version to build for a DRY RUN (e.g. 0.12.0 or 1.0.0-RC1) — MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-RC<n>, never -SNAPSHOT'
         required: true
         type: string
       upload:
@@ -60,6 +62,55 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Refuse a ref that cannot build a release
+        # This step exists because of where the workflow FILE has to live, not because of anything a
+        # caller is likely to type. `workflow_dispatch` only registers a workflow that is present on
+        # the DEFAULT branch: while this file existed on the development line alone, GitHub had no
+        # record of it — `GET /actions/workflows` listed six workflows and not this one — so no ref
+        # could dispatch it, including the no-upload dry run the header offers as "useful from any
+        # branch". The file therefore lands on `main` ahead of the release that needs it, and `main`
+        # at that point carries neither the `release` profile nor the gate scripts.
+        #
+        # A dispatch from such a ref does not fail cleanly on its own. Maven treats `-P release` for
+        # an absent profile as a WARNING and builds on, so the run produces unsigned artifacts and
+        # then dies several minutes later inside a shell step with "No such file or directory" — a
+        # message that names a script and not the cause. This refuses in the first ten seconds and
+        # says which half is missing. It runs before the version is resolved because resolving the
+        # version calls one of the scripts it checks for.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          missing=""
+          add() { missing="${missing:+$missing; }$1"; }
+
+          grep -q '<id>release</id>' pom.xml || add "the 'release' profile in pom.xml"
+          for t in tools/release-readiness/release-readiness.sh \
+                   tools/sbom-gate/sbom-gate.sh \
+                   tools/central-bundle-gate/central-bundle-gate.sh \
+                   tools/release-tag/release-tag.sh \
+                   tools/preview-bytecode-scan/preview-bytecode-scan.sh; do
+            # -x rather than -e: the scripts are committed 100755, and a mode that did not survive
+            # (core.fileMode=false hides a chmod locally) is exit 126 at the point of use, which is
+            # the same class of late, unattributable failure this step exists to move forward.
+            [ -x "$t" ] || add "$t (absent or not executable)"
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error::Ref $GITHUB_REF cannot build a release — missing: $missing" >&2
+            # The remediation differs by trigger, and the tag one is the case this step exists for:
+            # the machinery has to be on the branch BEFORE a release tag is cut from it, so "dispatch
+            # somewhere else" is not advice a tag push can act on.
+            if [ "$EVENT_NAME" = "push" ]; then
+              echo "::error::The tagged commit does not carry the release machinery. Delete the tag," >&2
+              echo "::error::land the release tooling on that branch, and cut the tag again." >&2
+            else
+              echo "::error::Dispatch against a branch that carries the release machinery." >&2
+            fi
+            exit 1
+          fi
+          echo "ok — this ref carries the release profile and the release scripts"
+
       - name: Resolve the version and refuse an unreleasable one
         id: rel
         # Every `${{ }}` this step needs is bound here and read as a shell variable below, rather
@@ -79,22 +130,26 @@ jobs:
           if [ "$EVENT_NAME" = "push" ]; then
             tag="${GITHUB_REF#refs/tags/}"
             # The strict half of the permissive trigger filter. A release tag is exactly
-            # vMAJOR.MINOR.PATCH: `v0.12.0-rc1` and the preview line's own tags are not releases and
-            # must not become one by matching a glob.
-            if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-              echo "::error::$tag is not a release tag (expected vMAJOR.MINOR.PATCH). Nothing released." >&2
+            # vMAJOR.MINOR.PATCH and a release candidate exactly vMAJOR.MINOR.PATCH-RC<n>:
+            # `v0.12.0-rc1` and the preview line's own tags are not releases and must not become
+            # one by matching a glob. The pattern lives in one script, and its controls run first so
+            # a pattern that stopped refusing is caught before a tag depends on it.
+            tools/release-tag/release-tag.sh --self-test
+            if ! version="$(tools/release-tag/release-tag.sh --tag "$tag")"; then
+              echo "::error::$tag is not a release tag (expected vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-RC<n>). Nothing released." >&2
               exit 1
             fi
-            version="${tag#v}"
             upload=true
           else
-            version="${IN_VERSION:-}"
+            tools/release-tag/release-tag.sh --self-test
+            # The same two shapes as a tag, which also refuses -SNAPSHOT: Central refuses SNAPSHOT
+            # release versions.
+            if ! version="$(tools/release-tag/release-tag.sh --version "${IN_VERSION:-}")"; then
+              echo "::error::'${IN_VERSION:-}' is not a releasable version (expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-RC<n>; Central refuses SNAPSHOT)." >&2
+              exit 1
+            fi
             upload="${IN_UPLOAD:-}"
           fi
-
-          case "$version" in
-            *-SNAPSHOT) echo "::error::Central refuses SNAPSHOT release versions." >&2; exit 1 ;;
-          esac
 
           # Releases are cut from main. On a dispatch that is a branch check; on a tag it cannot be,
           # because a tag ref is refs/tags/... and says nothing about which branch its commit is on.
@@ -121,53 +176,6 @@ jobs:
             echo "upload=$upload"
           } >> "$GITHUB_OUTPUT"
           echo "resolved: version=$version upload=$upload"
-
-      - name: Refuse a ref that cannot build a release
-        # This step exists because of where the workflow FILE has to live, not because of anything a
-        # caller is likely to type. `workflow_dispatch` only registers a workflow that is present on
-        # the DEFAULT branch: while this file existed on the development line alone, GitHub had no
-        # record of it — `GET /actions/workflows` listed six workflows and not this one — so no ref
-        # could dispatch it, including the no-upload dry run the header offers as "useful from any
-        # branch". The file therefore lands on `main` ahead of the release that needs it, and `main`
-        # at that point carries neither the `release` profile nor the gate scripts.
-        #
-        # A dispatch from such a ref does not fail cleanly on its own. Maven treats `-P release` for
-        # an absent profile as a WARNING and builds on, so the run produces unsigned artifacts and
-        # then dies several minutes later inside a shell step with "No such file or directory" — a
-        # message that names a script and not the cause. This refuses in the first ten seconds and
-        # says which half is missing.
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          missing=""
-          add() { missing="${missing:+$missing; }$1"; }
-
-          grep -q '<id>release</id>' pom.xml || add "the 'release' profile in pom.xml"
-          for t in tools/release-readiness/release-readiness.sh \
-                   tools/sbom-gate/sbom-gate.sh \
-                   tools/central-bundle-gate/central-bundle-gate.sh \
-                   tools/preview-bytecode-scan/preview-bytecode-scan.sh; do
-            # -x rather than -e: the scripts are committed 100755, and a mode that did not survive
-            # (core.fileMode=false hides a chmod locally) is exit 126 at the point of use, which is
-            # the same class of late, unattributable failure this step exists to move forward.
-            [ -x "$t" ] || add "$t (absent or not executable)"
-          done
-
-          if [ -n "$missing" ]; then
-            echo "::error::Ref $GITHUB_REF cannot build a release — missing: $missing" >&2
-            # The remediation differs by trigger, and the tag one is the case this step exists for:
-            # the machinery has to be on the branch BEFORE a release tag is cut from it, so "dispatch
-            # somewhere else" is not advice a tag push can act on.
-            if [ "$EVENT_NAME" = "push" ]; then
-              echo "::error::The tagged commit does not carry the release machinery. Delete the tag," >&2
-              echo "::error::land the release tooling on that branch, and cut the tag again." >&2
-            else
-              echo "::error::Dispatch against a branch that carries the release machinery." >&2
-            fi
-            exit 1
-          fi
-          echo "ok — this ref carries the release profile and all three gate scripts"
 
       - name: Cache JDK tarball
         id: jdk-cache

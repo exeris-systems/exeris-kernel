@@ -44,14 +44,23 @@ Make the recurring milestone→main integration deterministic. The flow below ma
    - Tag state matches convention (prior releases are tagged on main — confirm before assuming).
 
 7. **Open the next development line.** Branch `development/X.(Y+1).0` off the **finalized** release state on main — post-release fixes (e.g. #233 after 0.10.0) may move the tip; cut from the final commit, not the merge commit. One commit: `chore(release): open development/X.(Y+1).0 — bump reactor to X.(Y+1).0-SNAPSHOT` (all 11 coordinates; grep-verify as in step 2). Push the branch.
+   - **After 0.13.0 the next line is `development/1.0.0` at `1.0.0-SNAPSHOT`, not `development/0.14.0`** (ADR-065 A1.3). Use the same one-commit shape with `1.0.0` for `X.(Y+1).0`. The base resolver (`sort -V | tail -1`) orders `development/1.0.0` after `development/0.13.0`, so nothing else names the new line; `tools/release-tag/release-tag.sh --self-test` asserts that ordering.
 
 8. **Never reuse the integrated branch.** `development/X.Y.0` is done; all new work cuts fresh branches off `development/X.(Y+1).0`.
+   - **Exception: the 1.0 line.** `development/1.0.0` stays open after a release candidate and is done only at `v1.0.0`; fixes found during RC land on it (see step 9).
+
+9. **Release candidates for 1.0.0** (ADR-065 A1). A candidate goes through the same ritual as a release, once per candidate:
+   - A `release(1.0.0-RCn): integrate development/1.0.0 into main` PR whose poms carry `1.0.0-RCn` (all 11 coordinates; grep-verify as in step 2). `development/1.0.0` itself stays at `1.0.0-SNAPSHOT`; the RC version exists on that PR's head and on `main`.
+   - Tag `v1.0.0-RCn` on the resulting commit on `main`. The release workflow accepts exactly `vMAJOR.MINOR.PATCH` and `vMAJOR.MINOR.PATCH-RC<n>` (`tools/release-tag/release-tag.sh`), requires the tag's commit to be on `main` and the root pom's version to equal the tag without its `v`, and uploads with `autoPublish=false`: the deployment is published or dropped by hand in the portal.
+   - A published candidate cannot be withdrawn. A defect found in `RCn` is fixed in `RC(n+1)`; never re-tag.
+   - Fixes land on `development/1.0.0` through ordinary PRs, then reach `main` in the next candidate's `release(1.0.0-RC(n+1))` PR. `v1.0.0` is the same PR with the poms at `1.0.0`.
 
 ## Output
 Checklist status per step (DONE / SKIPPED+reason), the release PR URL, and the new development branch name.
 
 ## Non-Negotiable Rules
 - Release notes describe only published behavior.
+- A release candidate is never re-tagged and never cut from a branch other than `main`.
 - Version flip covers all 11 coordinates, grep-verified — a missed module publishes a stale SNAPSHOT.
 - The next dev line is cut from the finalized release state, not an intermediate commit.
 - `exeris-pr-preflight` runs before the integration PR is pushed.
