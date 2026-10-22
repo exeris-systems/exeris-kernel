@@ -7,13 +7,19 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.http.StreamMatch;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -23,13 +29,15 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * Community: the HTTP/2 connection frame loop — reads and validates frames off the connection's
  * aggregate buffer, decodes completed HEADERS(+CONTINUATION) blocks via {@link Http2SessionContext},
  * accumulates DATA into the matching {@link Http2RequestStreamState}, and on a complete request
  * dispatches it through {@link CommunityHttpRequestDispatcher} before framing and coalescing the
- * response into one write.
+ * response into one write. A request whose route is a stream route is resolved here, on the frame loop,
+ * and then opened, authorized and served by a task forked for that stream alone.
  *
  * <p>Entered from either upgrade path — {@link #handlePriorKnowledge} (the 24-byte connection
  * preface) or {@link #handleUpgrade} (an HTTP/1.1 {@code Upgrade: h2c} request already answered with
@@ -42,7 +50,8 @@ import java.util.Objects;
  * {@link Http2ConnectionWriter}, which orders it against writes from other threads, and a response
  * that the peer's flow-control windows cannot carry yet continues on a task forked into the
  * connection's {@link Http2Connection} scope while the loop goes on reading the frames that open the
- * windows.
+ * windows. A stream route's task holds one slot of the concurrent-stream cap from its registration
+ * until it returns, so the cap bounds the live handler threads as well as the requests in flight.
  */
 // QA-018a extracted four collaborators: Http2SessionContext holds the HPACK decoder, the assembler and
 // the per-stream request state; PendingRequestHeaders accumulates a decoded header block;
@@ -52,8 +61,9 @@ import java.util.Objects;
 // Response serialization and the HPACK encoder live in Http2ConnectionWriter, and the per-connection
 // state is held by Http2Connection.
 // Retained suppressions:
-// - TooManyMethods: frame-loop + dispatcher + frame handlers + response hand-off remain cohesive;
-//   further split deferred.
+// - TooManyMethods / GodClass: frame-loop + dispatcher + frame handlers + the hand-off of both response
+//   paths (respond-once and stream route) are one connection's state machine over one session; splitting
+//   the stream-open path off would hand it the connection, the dispatchers and the allocator again.
 // - UseTryWithResources: the response body changes owner when a continuation task takes it, so it is
 //   closed here only when nothing took it.
 // - AvoidCatchingGenericException: frame-loop catches RuntimeException to surface PROTOCOL_ERROR via GOAWAY.
@@ -66,6 +76,7 @@ import java.util.Objects;
 //   splittable, so further splitting would fragment the frame-loop entry point.
 @SuppressWarnings({
         "PMD.TooManyMethods",
+        "PMD.GodClass",
         "PMD.UseTryWithResources",
         "PMD.AvoidCatchingGenericException",
         "PMD.CloseResource",
@@ -89,6 +100,7 @@ final class CommunityHttp2SessionProcessor {
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
     private final HttpConfig config;
     private final CommunityHttpRequestDispatcher requestDispatcher;
+    private final CommunityHttpStreamDispatcher streamDispatcher;
     private final int readChunkBytes;
     private final int maxAggregateBytes;
 
@@ -96,12 +108,14 @@ final class CommunityHttp2SessionProcessor {
                                    HttpResponseBodyEncoderRegistry encoderRegistry,
                                    HttpConfig config,
                                    CommunityHttpRequestDispatcher requestDispatcher,
+                                   CommunityHttpStreamDispatcher streamDispatcher,
                                    int readChunkBytes,
                                    int maxAggregateBytes) {
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.encoderRegistry = Objects.requireNonNull(encoderRegistry, "encoderRegistry must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.requestDispatcher = Objects.requireNonNull(requestDispatcher, "requestDispatcher must not be null");
+        this.streamDispatcher = Objects.requireNonNull(streamDispatcher, "streamDispatcher must not be null");
         this.readChunkBytes = readChunkBytes;
         this.maxAggregateBytes = maxAggregateBytes;
     }
@@ -500,13 +514,28 @@ final class CommunityHttp2SessionProcessor {
         // Real work credits the Rapid Reset budget (CVE-2023-44487): a peer interleaving genuine
         // requests with cancels nets out and never trips the flood defense.
         connection.session().recordDispatchedRequest();
-        try (LoanedBuffer requestBody = bodyBuffer) {
-            HttpRequest request = new HttpRequest(
-                    decoded.method(),
-                    decoded.path(),
-                    HttpVersion.HTTP_2,
-                    decoded.headers(),
-                    requestBody);
+        HttpRequest request = new HttpRequest(
+                decoded.method(),
+                decoded.path(),
+                HttpVersion.HTTP_2,
+                decoded.headers(),
+                bodyBuffer);
+        // Resolved on the frame loop, before authorization and outside any handler binding: the route
+        // decides which dispatch the request takes, and authorization belongs to the dispatch.
+        StreamMatch match;
+        try {
+            match = streamDispatcher.resolveStreamHandler(request, connection.handler());
+        } catch (RuntimeException resolverDefect) {
+            if (bodyBuffer != null) {
+                bodyBuffer.close();
+            }
+            throw resolverDefect;
+        }
+        if (match != null) {
+            openHttp2Stream(connection, streamId, pendingSendWindowIncrement, request, match);
+            return;
+        }
+        try (bodyBuffer) {
             InMemoryHttp2Exchange exchange =
                     new InMemoryHttp2Exchange(request, connection.transport(), allocator, encoderRegistry);
             requestDispatcher.dispatch(request, exchange, connection.handler());
@@ -520,6 +549,132 @@ final class CommunityHttp2SessionProcessor {
             }
 
             writeHttp2Response(connection, streamId, pendingSendWindowIncrement, response);
+        }
+    }
+
+    /**
+     * Registers a response stream for a request that resolved to a stream route and forks the task
+     * that serves it, which then owns the request body. A stream the writer cannot take has already
+     * been answered with a RST_STREAM by the writer; a scope that cannot take the task resets it here.
+     */
+    private void openHttp2Stream(Http2Connection connection,
+                                 int streamId,
+                                 long pendingSendWindowIncrement,
+                                 HttpRequest request,
+                                 StreamMatch match) {
+        Http2ConnectionWriter writer = connection.writer();
+        Http2OutboundStream out = writer.register(streamId, pendingSendWindowIncrement);
+        if (out == null) {
+            closeBody(request);
+            return;
+        }
+        try {
+            connection.streamScope().fork(() -> runHttp2Stream(connection, out, request, match));
+        } catch (RuntimeException forkFailure) {
+            closeBody(request);
+            writer.resetLocal(out, Http2ErrorCode.INTERNAL_ERROR);
+            writer.release(out);
+            if (LOG.isLoggable(System.Logger.Level.WARNING)) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "HTTP/2 stream task could not be forked", forkFailure);
+            }
+        }
+    }
+
+    private static void closeBody(HttpRequest request) {
+        LoanedBuffer body = request.body();
+        if (body != null) {
+            body.close();
+        }
+    }
+
+    /**
+     * Runs one stream route on the thread forked for it: authorization and the handler, through the
+     * same dispatch the HTTP/1.1 path uses, so a denial is framed on this stream and the handler runs
+     * under the bindings authorization establishes. A handler that fails resets this stream and no
+     * other. The slot is released here, when the task is done and not before.
+     */
+    private Void runHttp2Stream(Http2Connection connection,
+                                Http2OutboundStream out,
+                                HttpRequest request,
+                                StreamMatch match) {
+        Http2ConnectionWriter writer = connection.writer();
+        try {
+            Http2StreamEgress egress = new Http2StreamEgress(
+                    writer, out, connection.transport(), streamDispatcher.allocator());
+            DenialCapture denial = new DenialCapture(request, connection.transport(), allocator, encoderRegistry);
+            requestDispatcher.dispatchStream(request, denial,
+                    () -> streamDispatcher.dispatchHttp2Stream(request, egress, match));
+            InMemoryHttp2Exchange denied = denial.exchangeOrNull();
+            if (denied != null) {
+                HttpResponse response = denied.capturedResponse();
+                writer.respondOnStream(out, response != null
+                        ? response
+                        : HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, HttpVersion.HTTP_2));
+            }
+        } catch (RuntimeException failure) {
+            if (isShed(failure)) {
+                writer.resetLocal(out, Http2ErrorCode.REFUSED_STREAM);
+            } else {
+                if (LOG.isLoggable(System.Logger.Level.WARNING) && !isClosedSignal(failure)) {
+                    LOG.log(System.Logger.Level.WARNING, "Community HTTP/2 stream handler failed", failure);
+                }
+                writer.resetLocal(out, Http2ErrorCode.INTERNAL_ERROR);
+            }
+        } finally {
+            writer.release(out);
+            closeBody(request);
+        }
+        return null;
+    }
+
+    private static boolean isShed(RuntimeException failure) {
+        return failure instanceof TransportException shed
+                && KernelErrorCodes.EX_NET_4006.equals(shed.errorCode());
+    }
+
+    // Both forms mean the stream or its connection ended under the handler, which is the designed end of
+    // a stream and not a defect worth a log line: the engine's own signal and the transport's.
+    private static boolean isClosedSignal(RuntimeException failure) {
+        Throwable current = failure;
+        for (int depth = 0; depth < 4 && current != null; depth++) {
+            if (current instanceof StreamClosedException || current instanceof TransportStreamClosedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    /**
+     * Supplies the exchange a denial is written through, building it only when authorization denies:
+     * an admitted stream writes its own response and never needs one.
+     */
+    private static final class DenialCapture implements Supplier<HttpExchange> {
+        private final HttpRequest request;
+        private final TransportStream transport;
+        private final MemoryAllocator allocator;
+        private final HttpResponseBodyEncoderRegistry encoderRegistry;
+        private InMemoryHttp2Exchange exchange;
+
+        private DenialCapture(HttpRequest request, TransportStream transport, MemoryAllocator allocator,
+                              HttpResponseBodyEncoderRegistry encoderRegistry) {
+            this.request = request;
+            this.transport = transport;
+            this.allocator = allocator;
+            this.encoderRegistry = encoderRegistry;
+        }
+
+        @Override
+        public HttpExchange get() {
+            if (exchange == null) {
+                exchange = new InMemoryHttp2Exchange(request, transport, allocator, encoderRegistry);
+            }
+            return exchange;
+        }
+
+        private InMemoryHttp2Exchange exchangeOrNull() {
+            return exchange;
         }
     }
 

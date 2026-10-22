@@ -7,9 +7,16 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.community.http.Http2ConnectionWriter.SendOutcome;
 import eu.exeris.kernel.community.http.Http2ScriptedTransport.Frame;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.core.http.hpack.HpackDecoder;
+import eu.exeris.kernel.core.http.hpack.HpackDynamicTable;
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FlowController;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
+import eu.exeris.kernel.core.http.sse.SseEventEncoder;
+import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.http.StreamEvent;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
@@ -293,6 +300,7 @@ class Http2ConnectionWriterTest {
         assertThat(failed.join()).isEqualTo(SendOutcome.CLOSED);
         assertThat(parkedSibling.join()).isEqualTo(SendOutcome.CLOSED);
         closeBodies();
+        assertThat(transport.isClosed()).as("the transport is closed, which wakes the frame loop's read").isTrue();
         assertThat(allocator.outstanding()).as("every buffer the writer allocated is closed").isZero();
     }
 
@@ -323,6 +331,62 @@ class Http2ConnectionWriterTest {
     }
 
     @Test
+    @DisplayName("header blocks reach the wire in the order they were encoded")
+    void headerBlocksReachTheWireInEncodingOrder() throws Exception {
+        Http2OutboundStream first = writer.register(1, 0);
+        Http2OutboundStream second = writer.register(3, 0);
+        java.util.concurrent.CountDownLatch encoded = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        Thread[] holder = new Thread[1];
+        writer.afterHeadEncodedForTest(() -> {
+            if (Thread.currentThread() == holder[0]) {
+                encoded.countDown();
+                awaitUninterruptibly(release);
+            }
+        });
+        holder[0] = Thread.ofVirtual().unstarted(() -> writer.writeStreamHead(first));
+        holder[0].start();
+        assertThat(encoded.await(BOUND.toSeconds(), TimeUnit.SECONDS)).isTrue();
+
+        // The first head is encoded and not yet written. The second head's block refers to the entries the
+        // first inserted, so it must not reach the wire before the first does.
+        Thread contender = Thread.ofVirtual().start(() -> writer.writeStreamHead(second));
+        Http2ScriptedTransport.awaitCondition(
+                () -> writer.hasQueuedWriter(contender) || !transport.seen().isEmpty(), BOUND,
+                "the second head is queued behind the first, or has overtaken it");
+        release.countDown();
+        holder[0].join(BOUND);
+        contender.join(BOUND);
+
+        HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), ALLOCATOR, 65_536, 65_536);
+        List<Frame> heads = transport.seen().stream()
+                .filter(f -> f.type() == Http2FrameType.HEADERS.code()).toList();
+        assertThat(heads).extracting(Frame::streamId).containsExactly(1, 3);
+        for (Frame head : heads) {
+            List<String> fields = new ArrayList<>();
+            decoder.decode(MemorySegment.ofArray(head.payload()), 0, head.payload().length,
+                    (name, value, sensitive) -> fields.add(name + "=" + value));
+            assertThat(fields).containsExactly(":status=200",
+                    "content-type=text/event-stream; charset=utf-8", "cache-control=no-cache");
+        }
+    }
+
+    private static void awaitUninterruptibly(java.util.concurrent.CountDownLatch latch) {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                latch.await();
+                break;
+            } catch (InterruptedException _) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @Test
     @DisplayName("a failed header allocation closes the slice and gives both windows their credit back")
     void failedFrameAllocationClosesTheSliceAndRestoresCredit() {
         FailingHeaderAllocator failing = new FailingHeaderAllocator(allocator);
@@ -343,6 +407,185 @@ class Http2ConnectionWriterTest {
         body.close();
         full.close();
         assertThat(allocator.outstanding()).as("the slice taken before the failure was closed").isZero();
+    }
+
+    // ------------------------------------------------------------------ events
+
+    @Test
+    @DisplayName("a transport release between the cap check and the park is not lost")
+    void transportReleaseBetweenCheckAndParkIsNotLost() {
+        Http2ScriptedTransport holding = new Http2ScriptedTransport(true);
+        Http2ConnectionWriter capped = Http2ConnectionWriter.create(holding, allocator, 100, 1);
+        Http2OutboundStream stream = capped.register(1, 0);
+        assertThat(eventSender(capped, stream, "first").start().join()).isEqualTo(SendOutcome.WRITTEN);
+        capped.beforeParkForTest(holding::releaseHeld);
+
+        EventSender second = eventSender(capped, stream, "second").start();
+
+        assertThat(second.join()).isEqualTo(SendOutcome.WRITTEN);
+        assertThat(holding.seen()).filteredOn(f -> f.type() == DATA).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("an event parks on the transport-outstanding cap while both windows are wide open")
+    void emitParksOnTheOutstandingCapWhenThePeerGrantsButDoesNotRead() throws Exception {
+        Http2ScriptedTransport holding = new Http2ScriptedTransport(true);
+        Http2ConnectionWriter capped = Http2ConnectionWriter.create(holding, allocator, 100, 8);
+        capped.beforeParkForTest(parks::release);
+        capped.applyConnectionWindowUpdate(Http2FlowController.MAX_WINDOW_SIZE
+                - Http2FlowController.DEFAULT_WINDOW_SIZE);
+        Http2OutboundStream stream = capped.register(1, 0);
+        capped.applyStreamWindowUpdate(1, Http2FlowController.MAX_WINDOW_SIZE
+                - Http2FlowController.DEFAULT_WINDOW_SIZE);
+        assertThat(eventSender(capped, stream, "first event, larger than the cap").start().join())
+                .isEqualTo(SendOutcome.WRITTEN);
+
+        EventSender second = eventSender(capped, stream, "second").start();
+        awaitParks(1);
+        assertThat(holding.seen()).as("the second event waits for the transport")
+                .filteredOn(f -> f.type() == DATA).hasSize(1);
+
+        holding.releaseHeld();
+
+        assertThat(second.join()).isEqualTo(SendOutcome.WRITTEN);
+        assertThat(holding.seen()).filteredOn(f -> f.type() == DATA).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("an event larger than the cap is admitted when the stream is below the cap")
+    void anEventLargerThanTheCapIsAdmittedBelowIt() {
+        Http2ScriptedTransport holding = new Http2ScriptedTransport(true);
+        Http2ConnectionWriter capped = Http2ConnectionWriter.create(holding, allocator, 100, 4);
+        Http2OutboundStream stream = capped.register(1, 0);
+
+        assertThat(eventSender(capped, stream, "x".repeat(100)).start().join()).isEqualTo(SendOutcome.WRITTEN);
+        holding.releaseHeld();
+    }
+
+    @Test
+    @DisplayName("an event that fits is one DATA frame holding its SSE framing, and its bytes return to the cap")
+    void wholeEventIsOneFrame() throws Exception {
+        Http2OutboundStream stream = writer.register(1, 0);
+        StreamEvent event = StreamEvent.of("tick", "payload");
+
+        assertThat(eventSender(writer, stream, event).start().join()).isEqualTo(SendOutcome.WRITTEN);
+
+        List<Frame> data = transport.seen().stream().filter(f -> f.type() == DATA).toList();
+        assertThat(data).hasSize(1);
+        assertThat(data.getFirst().payload()).isEqualTo(SseEventEncoder.encode(event));
+        assertThat(data.getFirst().isEndStream()).isFalse();
+        assertThat(stream.outstandingBytes.get()).as("the transport released the buffer").isZero();
+        assertThat(allocator.outstanding()).isZero();
+    }
+
+    @Test
+    @DisplayName("an event larger than a frame is cut at 16 KiB from one buffer, contiguous on the wire")
+    void largeEventSplitsIntoContiguousFrames() {
+        Http2OutboundStream stream = writer.register(1, 0);
+        StreamEvent event = StreamEvent.of("x".repeat(40_000));
+
+        assertThat(eventSender(writer, stream, event).start().join()).isEqualTo(SendOutcome.WRITTEN);
+
+        List<Frame> frames = transport.seen();
+        assertThat(frames).extracting(f -> f.payload().length)
+                .containsExactly(16_384, 16_384, SseEventEncoder.encodedLength(event) - 2 * 16_384);
+        java.io.ByteArrayOutputStream joined = new java.io.ByteArrayOutputStream();
+        frames.forEach(f -> joined.writeBytes(f.payload()));
+        assertThat(joined.toByteArray()).isEqualTo(SseEventEncoder.encode(event));
+        assertThat(allocator.outstanding()).isZero();
+    }
+
+    @Test
+    @DisplayName("an event waiting for credit past its deadline reports DEADLINE and writes nothing")
+    void deadlinePassingWhileParkedReportsDeadline() {
+        writer.applyInitialWindowSize(0);
+        Http2OutboundStream stream = writer.register(1, 0);
+
+        EventSender sender = eventSender(writer, stream, StreamEvent.of("late"),
+                System.currentTimeMillis() + 150L).start();
+
+        assertThat(sender.join()).isEqualTo(SendOutcome.DEADLINE);
+        assertThat(transport.seen()).noneMatch(f -> f.type() == DATA);
+        assertThat(allocator.outstanding()).isZero();
+    }
+
+    @Test
+    @DisplayName("an interrupted park reports CLOSED and leaves the interrupt flag set")
+    void interruptedParkReportsClosed() throws Exception {
+        writer.applyInitialWindowSize(0);
+        Http2OutboundStream stream = writer.register(1, 0);
+        EventSender sender = eventSender(writer, stream, StreamEvent.of("x")).start();
+        awaitParks(1);
+
+        sender.thread.interrupt();
+
+        assertThat(sender.join()).isEqualTo(SendOutcome.CLOSED);
+        assertThat(sender.interruptedAfter).isTrue();
+    }
+
+    @Test
+    @DisplayName("the stream head is HEADERS with END_HEADERS and without END_STREAM, and only while open")
+    void streamHeadIsHeadersWithoutEndStream() {
+        Http2OutboundStream stream = writer.register(1, 0);
+
+        assertThat(writer.writeStreamHead(stream)).isTrue();
+
+        Frame head = transport.awaitFrame(f -> f.type() == Http2FrameType.HEADERS.code(), BOUND);
+        assertThat(head.streamId()).isEqualTo(1);
+        assertThat(head.flags()).isEqualTo(0x04);
+        writer.resetByPeer(1);
+        assertThat(writer.writeStreamHead(stream)).as("a stream the peer reset gets no head").isFalse();
+    }
+
+    @Test
+    @DisplayName("ending a stream writes an empty DATA frame with END_STREAM once, without credit")
+    void endStreamWritesOneEmptyDataFrameWithoutCredit() {
+        writer.applyInitialWindowSize(0);
+        Http2OutboundStream stream = writer.register(1, 0);
+
+        writer.endStream(stream);
+        writer.endStream(stream);
+
+        List<Frame> frames = transport.seen();
+        assertThat(frames).hasSize(1);
+        assertThat(frames.getFirst().type()).isEqualTo(DATA);
+        assertThat(frames.getFirst().payload()).isEmpty();
+        assertThat(frames.getFirst().isEndStream()).isTrue();
+        assertThat(stream.state).isEqualTo(Http2OutboundStream.State.END_STREAM_SENT);
+    }
+
+    @Test
+    @DisplayName("a stream refused for a full table gets RST_STREAM(REFUSED_STREAM)")
+    void registerOnAFullTableRefusesTheStream() {
+        Http2ConnectionWriter small = Http2ConnectionWriter.create(transport, allocator, 1, 64 * 1024);
+        assertThat(small.register(1, 0)).isNotNull();
+
+        assertThat(small.register(3, 0)).isNull();
+
+        Frame rst = transport.awaitFrame(f -> f.type() == RST_STREAM && f.streamId() == 3, BOUND);
+        assertThat(Http2Frames.readInt32(rst.payload(), 0)).isEqualTo(Http2ErrorCode.REFUSED_STREAM.code());
+    }
+
+    @Test
+    @DisplayName("a response on a stream goes out as HEADERS then the body, parking for credit, and closes the body")
+    void respondOnStreamParksForCreditAndClosesTheBody() throws Exception {
+        writer.applyInitialWindowSize(100);
+        Http2OutboundStream stream = writer.register(1, 0);
+        LoanedBuffer body = body(250);
+        Thread thread = Thread.ofVirtual().unstarted(() -> writer.respondOnStream(stream,
+                new HttpResponse(HttpStatus.UNAUTHORIZED, HttpVersion.HTTP_2, List.of(), body)));
+        thread.start();
+        awaitParks(1);
+        assertThat(dataBytes(1)).isEqualTo(100);
+
+        writer.applyStreamWindowUpdate(1, 150);
+        thread.join(BOUND);
+
+        assertThat(thread.isAlive()).isFalse();
+        assertThat(dataBytes(1)).isEqualTo(250);
+        Frame last = transport.awaitFrame(f -> f.type() == DATA && f.isEndStream(), BOUND);
+        assertThat(last.streamId()).isEqualTo(1);
+        assertThat(allocator.outstanding()).as("the body is closed by respondOnStream").isZero();
     }
 
     // ------------------------------------------------------------------ slots
@@ -370,6 +613,19 @@ class Http2ConnectionWriterTest {
         Sender sender = new Sender(stream, body, (int) length);
         senders.add(sender);
         return sender;
+    }
+
+    private EventSender eventSender(Http2ConnectionWriter target, Http2OutboundStream stream, String data) {
+        return eventSender(target, stream, StreamEvent.of(data), 0L);
+    }
+
+    private EventSender eventSender(Http2ConnectionWriter target, Http2OutboundStream stream, StreamEvent event) {
+        return eventSender(target, stream, event, 0L);
+    }
+
+    private EventSender eventSender(Http2ConnectionWriter target, Http2OutboundStream stream, StreamEvent event,
+                                    long deadlineEpochMillis) {
+        return new EventSender(target, stream, event, deadlineEpochMillis);
     }
 
     private LoanedBuffer body(int length) {
@@ -454,6 +710,38 @@ class Http2ConnectionWriterTest {
         }
     }
 
+    /** A virtual thread calling {@code sendEvent} for one event. */
+    private final class EventSender {
+        private final Thread thread;
+        private volatile SendOutcome outcome;
+        private volatile boolean interruptedAfter;
+
+        private EventSender(Http2ConnectionWriter target, Http2OutboundStream stream, StreamEvent event,
+                            long deadlineEpochMillis) {
+            this.thread = Thread.ofVirtual().unstarted(() -> {
+                outcome = target.sendEvent(stream, event, SseEventEncoder.encodedLength(event),
+                        deadlineEpochMillis, 0L, allocator);
+                interruptedAfter = Thread.currentThread().isInterrupted();
+            });
+        }
+
+        private EventSender start() {
+            thread.start();
+            senders.add(new Sender(thread));
+            return this;
+        }
+
+        private SendOutcome join() {
+            try {
+                thread.join(BOUND);
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+            assertThat(thread.isAlive()).as("sender finished within the bound").isFalse();
+            return outcome;
+        }
+    }
+
     /** A virtual thread calling {@code sendBody} for one whole body. */
     private final class Sender {
         private final Thread thread;
@@ -464,6 +752,11 @@ class Http2ConnectionWriterTest {
             this.body = body;
             this.thread = Thread.ofVirtual().unstarted(
                     () -> outcome = writer.sendBody(stream, body, 0, length, true));
+        }
+
+        private Sender(Thread thread) {
+            this.body = null;
+            this.thread = thread;
         }
 
         private Sender start() {
@@ -482,7 +775,9 @@ class Http2ConnectionWriterTest {
         }
 
         private void closeBody() {
-            body.close();
+            if (body != null) {
+                body.close();
+            }
         }
     }
 }

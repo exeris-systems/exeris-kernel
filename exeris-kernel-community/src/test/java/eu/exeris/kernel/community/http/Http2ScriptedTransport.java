@@ -46,7 +46,11 @@ final class Http2ScriptedTransport implements TransportStream {
     private int cursor;
     private boolean eofSeen;
 
+    private static final byte[] HEAD_END = {'\r', '\n', '\r', '\n'};
+
     private final Object reassemblyLock = new Object();
+    private boolean expectUpgradeHead;
+    private String upgradeHead;
     private final ByteArrayOutputStream pending = new ByteArrayOutputStream();
     private final LinkedBlockingQueue<Frame> frames = new LinkedBlockingQueue<>();
     private final List<Frame> all = new CopyOnWriteArrayList<>();
@@ -117,6 +121,23 @@ final class Http2ScriptedTransport implements TransportStream {
 
     // ------------------------------------------------------------------ outbound
 
+    /**
+     * Makes the first outbound bytes an HTTP/1.1 response head, as an {@code h2c} upgrade writes before
+     * any frame: the head is kept for {@link #upgradeHead()} and not parsed as frames.
+     */
+    void expectUpgradeResponse() {
+        synchronized (reassemblyLock) {
+            expectUpgradeHead = true;
+        }
+    }
+
+    /** The HTTP/1.1 head written ahead of the frames, or {@code null} when none has arrived. */
+    String upgradeHead() {
+        synchronized (reassemblyLock) {
+            return upgradeHead;
+        }
+    }
+
     @Override
     public void write(MemorySegment source, int length) {
         accept(source, length);
@@ -153,7 +174,15 @@ final class Http2ScriptedTransport implements TransportStream {
                 pending.writeBytes(bytes);
                 byte[] buffered = pending.toByteArray();
                 int offset = 0;
-                while (buffered.length - offset >= FRAME_HEADER) {
+                if (expectUpgradeHead) {
+                    int end = indexOf(buffered, HEAD_END);
+                    if (end >= 0) {
+                        upgradeHead = new String(buffered, 0, end, java.nio.charset.StandardCharsets.US_ASCII);
+                        offset = end + HEAD_END.length;
+                        expectUpgradeHead = false;
+                    }
+                }
+                while (!expectUpgradeHead && buffered.length - offset >= FRAME_HEADER) {
                     int payloadLength = ((buffered[offset] & 0xFF) << 16)
                             | ((buffered[offset + 1] & 0xFF) << 8) | (buffered[offset + 2] & 0xFF);
                     if (buffered.length - offset < FRAME_HEADER + payloadLength) {
@@ -185,6 +214,19 @@ final class Http2ScriptedTransport implements TransportStream {
         } finally {
             inWrite.set(false);
         }
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            int j = 0;
+            while (j < needle.length && haystack[i + j] == needle[j]) {
+                j++;
+            }
+            if (j == needle.length) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static void awaitUninterruptibly(CountDownLatch latch) {
@@ -288,6 +330,30 @@ final class Http2ScriptedTransport implements TransportStream {
             }
             Thread.yield();
         }
+    }
+
+    /**
+     * Waits until the thread published in {@code thread} is parked inside the writer's credit wait: the
+     * same observation the stream TCK makes of an emitter, taken from its stack.
+     */
+    static void awaitParkedInCredit(java.util.concurrent.atomic.AtomicReference<Thread> thread, Duration timeout) {
+        awaitCondition(() -> {
+            Thread emitter = thread.get();
+            if (emitter == null) {
+                return false;
+            }
+            Thread.State state = emitter.getState();
+            if (state != Thread.State.WAITING && state != Thread.State.TIMED_WAITING) {
+                return false;
+            }
+            for (StackTraceElement frame : emitter.getStackTrace()) {
+                if ("acquireCredit".equals(frame.getMethodName())
+                        && frame.getClassName().endsWith("Http2ConnectionWriter")) {
+                    return true;
+                }
+            }
+            return false;
+        }, timeout, "the emitter is parked in the writer's credit wait");
     }
 
     // ------------------------------------------------------------------ rest of the contract

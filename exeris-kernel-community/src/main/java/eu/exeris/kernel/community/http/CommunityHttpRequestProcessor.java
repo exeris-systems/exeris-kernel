@@ -89,6 +89,24 @@ public final class CommunityHttpRequestProcessor {
     /* default */ CommunityHttpRequestProcessor(MemoryAllocator allocator,
                                                 HttpResponseBodyEncoderRegistry encoderRegistry,
                                                 HttpConfig config) {
+        this(allocator, encoderRegistry, config, null, null);
+    }
+
+    /**
+     * Creates a processor from the dispatchers it would otherwise build itself. The seam tests use to
+     * run the request loop over a dispatcher pair with their own admission, deadline and allocator.
+     *
+     * @param allocator         the allocator for request and response buffers
+     * @param encoderRegistry   the response body encoders
+     * @param config            the HTTP configuration
+     * @param requestDispatcher the request dispatcher, or {@code null} to build the default
+     * @param streamDispatcher  the stream dispatcher, or {@code null} to build the default
+     */
+    /* default */ CommunityHttpRequestProcessor(MemoryAllocator allocator,
+                                                HttpResponseBodyEncoderRegistry encoderRegistry,
+                                                HttpConfig config,
+                                                CommunityHttpRequestDispatcher requestDispatcher,
+                                                CommunityHttpStreamDispatcher streamDispatcher) {
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.encoderRegistry = Objects.requireNonNull(encoderRegistry, "encoderRegistry must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
@@ -115,18 +133,23 @@ public final class CommunityHttpRequestProcessor {
         // is read on the admission path, which runs on reactor threads outside this carrier scope.
         HttpRoutePolicy routePolicy = HttpKernelProviders.httpRoutePolicy().orElse(null);
 
-        this.requestDispatcher = new CommunityHttpRequestDispatcher(
-                this.allocator,
-                securityInterceptor,
-                persistenceEngine,
-                requestBodyDecoderRegistry,
-                routePolicy);
-        this.streamDispatcher = new CommunityHttpStreamDispatcher(this.allocator);
+        this.requestDispatcher = requestDispatcher != null
+                ? requestDispatcher
+                : new CommunityHttpRequestDispatcher(
+                        this.allocator,
+                        securityInterceptor,
+                        persistenceEngine,
+                        requestBodyDecoderRegistry,
+                        routePolicy);
+        this.streamDispatcher = streamDispatcher != null
+                ? streamDispatcher
+                : new CommunityHttpStreamDispatcher(this.allocator);
         this.http2SessionProcessor = new CommunityHttp2SessionProcessor(
                 this.allocator,
                 this.encoderRegistry,
                 this.config,
                 this.requestDispatcher,
+                this.streamDispatcher,
                 READ_CHUNK_BYTES,
                 MAX_AGGREGATE_BYTES);
         this.upgradeDetector = new CommunityHttpH2cUpgradeDetector(this.config, this.http2SessionProcessor);

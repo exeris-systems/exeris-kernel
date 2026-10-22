@@ -596,7 +596,8 @@ public abstract class AbstractHttpStreamExchangeTck {
         List<StreamEvent> awaitEvents(int count);
 
         /**
-         * Blocks until the client observes a clean end-of-stream (graceful {@code close()} FIN).
+         * Blocks until the client observes the protocol's clean end of stream (a FIN on HTTP/1.1,
+         * END_STREAM on HTTP/2) after a graceful {@code close()}.
          *
          * @return {@code true} if a clean end-of-stream was observed
          */
@@ -634,8 +635,9 @@ public abstract class AbstractHttpStreamExchangeTck {
         long outstandingLoans();
 
         /**
-         * Stalls the client read side so the egress window fills and the emitting VT parks. Only called
-         * when {@link #supportsBackpressureProbe()} is {@code true}.
+         * Stops the client returning credit, by not reading or by withholding flow-control credit while
+         * it still reads, so the egress window fills and the emitting VT parks. Only called when
+         * {@link #supportsBackpressureProbe()} is {@code true}.
          */
         default void stallClient() {
             throw new UnsupportedOperationException("stallClient not wired by this binding");

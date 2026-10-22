@@ -37,6 +37,15 @@ public final class StreamClosedEvent extends Event {
     public long streamId;
 
     /**
+     * The protocol's id for the stream on its connection: the HTTP/2 stream id, {@code 0} for HTTP/1.1,
+     * where the transport stream is the whole connection. Together with {@code streamId} it tells two
+     * streams of one connection apart.
+     */
+    @Label("Protocol Stream ID")
+    @Description("The protocol's stream id on its connection; 0 for HTTP/1.1.")
+    public int protocolStreamId;
+
+    /**
      * Count of SSE events written to the stream before this graceful close.
      */
     @Label("Events Emitted")
@@ -61,6 +70,17 @@ public final class StreamClosedEvent extends Event {
      * @param eventsEmitted events emitted before close
      */
     public static void emit(long streamId, long eventsEmitted) {
+        emit(streamId, 0, eventsEmitted);
+    }
+
+    /**
+     * Emits a graceful stream-closed event for a stream of a multiplexed protocol.
+     *
+     * @param streamId         the transport stream identifier
+     * @param protocolStreamId the protocol's stream id on its connection, {@code 0} where there is none
+     * @param eventsEmitted    events emitted before close
+     */
+    public static void emit(long streamId, int protocolStreamId, long eventsEmitted) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -69,6 +89,7 @@ public final class StreamClosedEvent extends Event {
             return;
         }
         event.streamId = streamId;
+        event.protocolStreamId = protocolStreamId;
         event.eventsEmitted = eventsEmitted;
         event.commit();
     }
