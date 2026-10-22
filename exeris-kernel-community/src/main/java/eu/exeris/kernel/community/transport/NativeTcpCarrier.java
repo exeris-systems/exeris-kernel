@@ -980,15 +980,16 @@ public final class NativeTcpCarrier implements TransportEngine {
             NativeTcpConnection connection = null;
             NativeTcpStream stream = null;
             boolean slotReserved = false;
-            boolean admitted = false;
+            WorkloadAdmission admittedBy = null;
             boolean streamBound = false;
             boolean connectionManagedByStreamLifecycle = false;
             try {
                 // The workload gate decides first and the connection is closed untouched: no byte is
                 // written and no handshake starts, so a refused connection costs the peer nothing to
                 // read and the carrier nothing to unwind.
-                GateOutcome gate = admitThroughGate();
-                admitted = gate == GateOutcome.ADMITTED;
+                WorkloadAdmission gateInForce = workloadAdmission.get();
+                GateOutcome gate = admitThroughGate(gateInForce);
+                admittedBy = admittingGate(gate, gateInForce);
                 slotReserved = gate != GateOutcome.REFUSED && tryReserveConnectionSlot();
                 if (!slotReserved) {
                     refuseAtAccept(currentChannel, gate);
@@ -1008,7 +1009,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 streamBound = true;
                 beforeAcceptedRegistration.run();
                 ChannelRuntimeRegistry.ChannelRuntimeState runtime =
-                        registerRuntime(stream, currentChannel, admitted);
+                        registerRuntime(stream, currentChannel, admittedBy);
                 // Registered: the slot and the admission are released by the stream's close from here
                 // on, not by the finally below. A refused registration leaves them to the finally.
                 connectionManagedByStreamLifecycle = true;
@@ -1018,7 +1019,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 releaseFailedAccept(currentChannel, connection, stream, streamBound);
             } finally {
                 if (!connectionManagedByStreamLifecycle) {
-                    releaseUnmanaged(slotReserved, admitted);
+                    releaseUnmanaged(slotReserved, admittedBy);
                 }
             }
             acceptedChannel = acceptOne();
@@ -1035,11 +1036,16 @@ public final class NativeTcpCarrier implements TransportEngine {
         REFUSED
     }
 
-    private GateOutcome admitThroughGate() {
+    /** The gate that holds the connection's admission, or {@code null} when the connection holds none. */
+    private static WorkloadAdmission admittingGate(GateOutcome outcome, WorkloadAdmission gateInForce) {
+        return outcome == GateOutcome.ADMITTED ? gateInForce : null;
+    }
+
+    private GateOutcome admitThroughGate(WorkloadAdmission gateInForce) {
         if (!workloadAdmissionEnforced.get()) {
             return GateOutcome.NOT_ENFORCED;
         }
-        if (workloadAdmission.get().tryAdmitConnection()) {
+        if (gateInForce.tryAdmitConnection()) {
             return GateOutcome.ADMITTED;
         }
         gateRefusedConnections.incrementAndGet();
@@ -1056,14 +1062,14 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /**
      * Releases what an accepted connection holds when its setup ended before a stream took ownership of
-     * the slot and the admission.
+     * the slot and the admission; the admission goes back to the gate that granted it.
      */
-    private void releaseUnmanaged(boolean slotReserved, boolean admitted) {
+    private void releaseUnmanaged(boolean slotReserved, WorkloadAdmission admittedBy) {
         if (slotReserved) {
             activeConnections.decrementAndGet();
         }
-        if (admitted) {
-            workloadAdmission.get().connectionClosed();
+        if (admittedBy != null) {
+            admittedBy.connectionClosed();
         }
     }
 
@@ -1252,8 +1258,8 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private ChannelRuntimeRegistry.ChannelRuntimeState registerRuntime(NativeTcpStream stream,
                                                                        SocketChannel channel,
-                                                                       boolean inboundAdmitted) {
-        return channelRuntimeRegistry.registerRuntime(stream, channel, ENGINE_NOT_RUNNING, inboundAdmitted);
+                                                                       WorkloadAdmission admittedBy) {
+        return channelRuntimeRegistry.registerRuntime(stream, channel, ENGINE_NOT_RUNNING, admittedBy);
     }
 
     private ChannelRuntimeRegistry.ChannelRuntimeState resolveRuntime(SocketChannel channel) {
@@ -1353,8 +1359,9 @@ public final class NativeTcpCarrier implements TransportEngine {
             activeConnections.decrementAndGet();
             // Once per lifecycle, like the slot above, and only for a connection the gate admitted:
             // an outbound connection never took an admission.
-            if (runtime.inboundAdmitted()) {
-                workloadAdmission.get().connectionClosed();
+            WorkloadAdmission admittedBy = runtime.admittedBy();
+            if (admittedBy != null) {
+                admittedBy.connectionClosed();
             }
         }
     }
