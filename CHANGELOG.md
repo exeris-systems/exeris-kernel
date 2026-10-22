@@ -315,6 +315,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   its end; a local `close()` or `reset(long)` still discards them.
   `AbstractTransportStreamTck` gains the cases that pin the reader's wake on the stream's own `close()` and on the
   peer's `reset(long)`.
+- **The Central bundle is clean on Maven 3.10, and the release dry run builds it.** `central-publishing-maven-plugin` moves to 0.12.0, which deletes the `maven-metadata-local.xml`, `_remote.repositories` and `.locks` files Maven 3.10 writes into the staging repository and 0.11.0 left in the bundle, where Central refuses it. `release.yml`'s dry run now runs `deploy -DskipUpload=true`, and `tools/central-bundle-gate/central-bundle-gate.sh` (with `--self-test`) fails a bundle holding any entry outside `<group>/<artifact>/<version>/`, any file in a version directory not named `<artifact>-<version>…` (which catches `maven-metadata-*`, `_remote.repositories` and `.locks`), or a version directory without its `.pom`.
 - **HTTP/2 respond-once responses honour the peer's connection and stream flow-control windows.** The
   session applies `WINDOW_UPDATE` and `SETTINGS_INITIAL_WINDOW_SIZE`; a body the windows cannot carry
   yet finishes on a task that waits for credit while the frame loop keeps reading, and every write to
