@@ -56,6 +56,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   apart by `(streamId, protocolStreamId)`. `StreamBackpressurePark` also gains `windowBytes`, the smaller of
   the stream's and the connection's window at the park and `-1` on HTTP/1.1. The existing `emit` overloads
   remain.
+- **Changed (Core): `ContractBootstrapStep.run` returns a `ContractDecision` instead of an `ExecutionContract` (ADR-089).** The decision pairs the contract with the `WorkloadAdmission` the drivers consult; a caller outside the kernel reads `.contract()` for the old value. The admission is `WorkloadAdmission.UNGATED` for every contract, so behaviour is unchanged.
 - **`PaqsScheduler` no longer reports a peer-closed stream as a handler failure.** A handler that ends with
   `EX-NET-4008` is recorded as `StreamLifecycle` outcome `PEER_CLOSED`, logged at `DEBUG` with the stream id
   and engine, and emits no `PaqsHandlerFailure` event. Only the thrown exception's own type counts: a failure
@@ -151,6 +152,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   own, authorized by the dispatch HTTP/1.1 uses, and holds a `SETTINGS_MAX_CONCURRENT_STREAMS` slot until its
   handler returns; a peer `GOAWAY` or the end of the connection ends every stream. Core gains `StreamEgress`,
   the protocol side of a held-open stream, which `HttpStreamEngine` runs over.
+- **The developer-licence workload-admission mechanism (ADR-089): `spi.contract.WorkloadAdmission`, its
+  `ContractKernelProviders.WORKLOAD_ADMISSION` slot, the Core limiter and Community enforcement. It is inert:
+  the contract gate binds `WorkloadAdmission.UNGATED` for every contract, so no kernel behaves differently
+  until a contract policy selects the developer gate.** Under an enforced gate a driver admits each inbound
+  connection at accept and closes a refused one before it writes a byte; asks the gate before each HTTP/1.1
+  message and each HTTP/2 stream, an HTTP/2 stream route included, is routed or forked, and answers a refused one `429` with `Retry-After: 1` (HTTP/2:
+  `HEADERS` with `END_STREAM`, not `RST_STREAM`); and stamps `Exeris-License: development` on every final
+  response and every `101`, dropping any application header of that name. `DeveloperWorkloadAdmission` is
+  the limiter: the generic cell rate algorithm with a one-second burst, and a bounded connection counter,
+  both lock-free and allocation-free. A driver reads the slot once in `start()`; a read on a connection
+  thread finds it unbound. `ContractBootstrapStep.run` now returns a `ContractDecision`, and
+  `KernelBootstrap` binds the contract and the gate together. **For anyone binding the TCK:**
+  `AbstractWorkloadAdmissionTck` (HTTP) and `AbstractTransportWorkloadAdmissionTck` are new abstract suites a
+  server-side HTTP or transport driver binds; the Enterprise engines bind them when they move to 0.13.
 - **A closed `TransportStream` says who closed it.** `read`, `write` and `queueWrite` on a closed stream throw
   `TransportStreamClosedException`, an `IllegalStateException` carrying `EX-NET-4008` when the stream's remote
   end was observed first (or the transport tore it down) and `EX-NET-4009` when it was closed through this

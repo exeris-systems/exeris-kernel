@@ -88,7 +88,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, `…SubsystemErrorRoutingTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
-| `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck`, `…EntitlementRequirementTck` | — |
+| `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck`, `…EntitlementRequirementTck`; `WorkloadAdmission` by `AbstractWorkloadAdmissionTck` (HTTP) and `AbstractTransportWorkloadAdmissionTck`, bound in Community | — |
 | `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] [^eventisolation] [^eventbuspublish] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
 | `…spi.graph` | **preview** | 0.5.0 | ADR-102 [^graphpath] [^graphscope] | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +4 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
@@ -103,7 +103,7 @@ this is informational and **not** a dependency of the open-core surface.
 
 **Slot holders.** A `stable` signature names no `preview` type (ADR-100 §3). The `ScopedValue` slots
 of the `preview` surfaces therefore live in the package that owns their type:
-`…spi.contract.ContractKernelProviders` (`EXECUTION_CONTRACT`), `…spi.graph.GraphKernelProviders`
+`…spi.contract.ContractKernelProviders` (`EXECUTION_CONTRACT`, `WORKLOAD_ADMISSION`), `…spi.graph.GraphKernelProviders`
 (`GRAPH_PROVIDER`, `GRAPH_ENGINE`) and `…spi.time.TimeKernelProviders` (`TIME_SOURCE`). The graph and
 time members released in 0.5 and 0.12 stay on `KernelProviders` as `@Deprecated(forRemoval = true)`
 bridges that are the holders' own `ScopedValue` instances, and are removed in the first 1.0 release

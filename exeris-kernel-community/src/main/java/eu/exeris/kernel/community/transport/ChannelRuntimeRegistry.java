@@ -49,7 +49,24 @@ final class ChannelRuntimeRegistry {
      *                               if the registry is sealed
      */
     ChannelRuntimeState registerRuntime(NativeTcpStream stream, SocketChannel channel, String refusal) {
-        ChannelRuntimeState runtime = new ChannelRuntimeState(channel, stream, channelOwner);
+        return registerRuntime(stream, channel, refusal, false);
+    }
+
+    /**
+     * Registers a new channel/stream pair, recording whether the connection holds an admission of the
+     * workload gate that its close must release.
+     *
+     * @param stream          the stream reading and writing {@code channel}
+     * @param channel         the channel to register
+     * @param refusal         what to report if the registry is sealed
+     * @param inboundAdmitted {@code true} when the connection was admitted by the workload gate
+     * @return the runtime state created for this pair
+     * @throws IllegalStateException if {@code channel} is already registered, or ({@code refusal})
+     *                               if the registry is sealed
+     */
+    ChannelRuntimeState registerRuntime(NativeTcpStream stream, SocketChannel channel, String refusal,
+                                        boolean inboundAdmitted) {
+        ChannelRuntimeState runtime = new ChannelRuntimeState(channel, stream, channelOwner, inboundAdmitted);
         synchronized (admissionLock) {
             if (sealed) {
                 throw new IllegalStateException(refusal);
@@ -110,10 +127,13 @@ final class ChannelRuntimeRegistry {
         private final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner;
         private final AtomicReference<NativeTcpReactor> owner = new AtomicReference<>();
         private final AtomicBoolean lifecycleCleanup = new AtomicBoolean(false);
+        private final boolean inboundAdmitted;
 
         private ChannelRuntimeState(SocketChannel channel,
                                     NativeTcpStream stream,
-                                    ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner) {
+                                    ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner,
+                                    boolean inboundAdmitted) {
+            this.inboundAdmitted = inboundAdmitted;
             this.channel = channel;
             this.stream = stream;
             this.socketBackend = stream.plainSocketBackendName();
@@ -126,6 +146,14 @@ final class ChannelRuntimeRegistry {
 
         NativeTcpStream stream() {
             return stream;
+        }
+
+        /**
+         * Whether the connection holds an admission of the workload gate; fixed at registration so the
+         * single lifecycle cleanup releases exactly the admissions that were taken.
+         */
+        boolean inboundAdmitted() {
+            return inboundAdmitted;
         }
 
         String socketBackend() {

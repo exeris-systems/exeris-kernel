@@ -4,6 +4,8 @@
  */
 package eu.exeris.kernel.core.bootstrap;
 
+import eu.exeris.kernel.core.contract.ContractDecision;
+import eu.exeris.kernel.core.contract.DeveloperWorkloadAdmission;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
@@ -12,6 +14,8 @@ import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.contract.ContractKernelProviders;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
+import eu.exeris.kernel.spi.contract.WorkloadEnvelope;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
 import org.junit.jupiter.api.BeforeEach;
@@ -140,10 +144,52 @@ class ContractPhaseZeroBootstrapTest {
                 "exeris-sku-sentinel", Set.of("gateway.core"), Set.of("production"), 1, null, null, null, 0, null);
         AtomicReference<ExecutionContract> bound = new AtomicReference<>();
 
-        builder(false).contractGate((config, loader) -> decided).build()
+        builder(false).contractGate((config, loader) -> new ContractDecision(decided, WorkloadAdmission.UNGATED))
+                .build()
                 .boot(() -> bound.set(ContractKernelProviders.executionContract()));
 
         assertThat(bound.get()).isSameAs(decided);
+    }
+
+    @Test
+    @DisplayName("The workload gate bound in the kernel scope is the very gate the contract gate returned")
+    void boundAdmissionIsTheGatesAdmission() throws Exception {
+        ExecutionContract decided = ExecutionContract.communityFallback();
+        WorkloadAdmission gate = new DeveloperWorkloadAdmission(decided.contractId(), new WorkloadEnvelope(50, 10, 0));
+        AtomicReference<WorkloadAdmission> bound = new AtomicReference<>();
+        AtomicReference<Boolean> plainThreadSeesIt = new AtomicReference<>();
+
+        builder(false).contractGate((config, loader) -> new ContractDecision(decided, gate)).build()
+                .boot(() -> {
+                    bound.set(ContractKernelProviders.workloadAdmission());
+                    Thread child = Thread.ofVirtual().start(
+                            () -> plainThreadSeesIt.set(ContractKernelProviders.WORKLOAD_ADMISSION.isBound()));
+                    try {
+                        child.join();
+                    } catch (InterruptedException _) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+
+        assertThat(bound.get()).isSameAs(gate);
+        assertThat(plainThreadSeesIt.get())
+                .as("a thread started with Thread.ofVirtual inherits no binding, so a driver reads the slot in start()")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("inspect() binds no workload gate, so a reader sees UNGATED")
+    void inspectBindsNoAdmission() throws Exception {
+        AtomicReference<Boolean> bound = new AtomicReference<>();
+        AtomicReference<WorkloadAdmission> seen = new AtomicReference<>();
+
+        bootstrap(true).inspect(() -> {
+            bound.set(ContractKernelProviders.WORKLOAD_ADMISSION.isBound());
+            seen.set(ContractKernelProviders.workloadAdmission());
+        });
+
+        assertThat(bound.get()).isFalse();
+        assertThat(seen.get()).isSameAs(WorkloadAdmission.UNGATED);
     }
 
     // ── Fixtures ────────────────────────────────────────────────────────────

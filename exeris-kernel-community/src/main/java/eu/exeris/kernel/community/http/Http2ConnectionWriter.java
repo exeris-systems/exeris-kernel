@@ -13,6 +13,7 @@ import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.core.http.jfr.StreamBackpressureParkEvent;
 import eu.exeris.kernel.core.http.sse.SseEventEncoder;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.StreamEvent;
@@ -122,6 +123,8 @@ final class Http2ConnectionWriter {
     private static final String HEADER_CACHE_CONTROL = "cache-control";
     private static final String EVENT_STREAM_TYPE = "text/event-stream; charset=utf-8";
     private static final String NO_CACHE = "no-cache";
+    /** HTTP/2 field names are lower case on the wire. */
+    private static final String LICENCE_HEADER_LOWER = WorkloadAdmission.LICENCE_HEADER.toLowerCase(Locale.ROOT);
 
     private final TransportStream transport;
     private final MemoryAllocator allocator;
@@ -131,6 +134,7 @@ final class Http2ConnectionWriter {
     private final Http2FlowController connectionWindow = new Http2FlowController();
     private final Http2OutboundStream[] streams;
     private final int outstandingCapBytes;
+    private final boolean licenceMarker;
     private int streamCount;
     private volatile int openStreamCount;
     private int peerInitialWindowSize = Http2FlowController.DEFAULT_WINDOW_SIZE;
@@ -151,7 +155,9 @@ final class Http2ConnectionWriter {
     private Http2ConnectionWriter(TransportStream transport,
                                   MemoryAllocator allocator,
                                   int maxStreams,
-                                  int outstandingCapBytes) {
+                                  int outstandingCapBytes,
+                                  boolean licenceMarker) {
+        this.licenceMarker = licenceMarker;
         this.transport = transport;
         this.allocator = allocator;
         this.encodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
@@ -173,7 +179,27 @@ final class Http2ConnectionWriter {
                                         MemoryAllocator allocator,
                                         int maxStreams,
                                         int outstandingCapBytes) {
-        return new Http2ConnectionWriter(transport, allocator, maxStreams, outstandingCapBytes);
+        return create(transport, allocator, maxStreams, outstandingCapBytes, false);
+    }
+
+    /**
+     * Creates the writer of one connection, optionally stamping the developer-licence marker on every
+     * response head it encodes.
+     *
+     * @param transport           the connection's transport stream
+     * @param allocator           allocator for control and header frames
+     * @param maxStreams          most response streams tracked at once
+     * @param outstandingCapBytes bytes a stream may have queued at the transport before it parks
+     * @param licenceMarker       whether every response head carries
+     *                            {@link WorkloadAdmission#LICENCE_HEADER}
+     * @return a writer with the default flow-control windows
+     */
+    /* default */ static Http2ConnectionWriter create(TransportStream transport,
+                                        MemoryAllocator allocator,
+                                        int maxStreams,
+                                        int outstandingCapBytes,
+                                        boolean licenceMarker) {
+        return new Http2ConnectionWriter(transport, allocator, maxStreams, outstandingCapBytes, licenceMarker);
     }
 
     // ------------------------------------------------------------------ any thread
@@ -573,6 +599,10 @@ final class Http2ConnectionWriter {
                 position = encoder.encodeHeader(target, position, HEADER_STATUS, "200", false);
                 position = encoder.encodeHeader(target, position, HEADER_CONTENT_TYPE, EVENT_STREAM_TYPE, false);
                 position = encoder.encodeHeader(target, position, HEADER_CACHE_CONTROL, NO_CACHE, false);
+                if (licenceMarker) {
+                    position = encoder.encodeHeader(
+                            target, position, LICENCE_HEADER_LOWER, WorkloadAdmission.DEVELOPMENT_MARKER, false);
+                }
                 Runnable encoded = afterHeadEncodedHook.get();
                 if (encoded != null) {
                     encoded.run();
@@ -1067,11 +1097,17 @@ final class Http2ConnectionWriter {
                 hasContentLength = true;
             }
             if (Http2SessionContext.isConnectionSpecificHeader(header.name())
-                    || header.name().startsWith(":")) {
+                    || header.name().startsWith(":")
+                    || licenceMarker && WorkloadAdmission.LICENCE_HEADER.equalsIgnoreCase(header.name().strip())) {
                 continue;
             }
             position = encoder.encodeHeader(
                     target, position, header.name().toLowerCase(Locale.ROOT), header.value(), false);
+        }
+
+        if (licenceMarker) {
+            position = encoder.encodeHeader(
+                    target, position, LICENCE_HEADER_LOWER, WorkloadAdmission.DEVELOPMENT_MARKER, false);
         }
 
         LoanedBuffer body = response.body();

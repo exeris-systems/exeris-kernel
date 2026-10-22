@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.websocket;
 
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpStatus;
@@ -55,9 +56,16 @@ final class CommunityWebSocketUpgrade {
         }
     }
 
+    /**
+     * Negotiates the upgrade under a workload gate: while it is enforced, the handshake counts as one
+     * request, is refused {@code 429} when the ceiling is spent, and every status line written here, the
+     * {@code 101} included, carries the developer-licence marker.
+     */
     /* default */ static Outcome negotiate(TransportStream stream, WebSocketConfig config,
                                            WebSocketHandshakeHandler handshakeHandler,
-                                           MemoryAllocator allocator) {
+                                           MemoryAllocator allocator,
+                                           WorkloadAdmission admission,
+                                           boolean marker) {
         CommunityWebSocketUpgradeRequest.Parsed parsed =
                 CommunityWebSocketUpgradeRequest.read(stream, allocator);
         if (parsed.request() == null) {
@@ -66,14 +74,18 @@ final class CommunityWebSocketUpgrade {
             // unparsed stream is how a scanner gets a reply worth measuring. A request that WAS
             // complete but is not a GET is well-formed and gets its 400.
             if (parsed.malformed()) {
-                respondRefusal(stream, HttpStatus.BAD_REQUEST, allocator);
+                respondRefusal(stream, HttpStatus.BAD_REQUEST, allocator, marker, false);
             }
             return Outcome.refused();
         }
         HttpRequest request = parsed.request();
+        // Before the origin check and the handshake callback, so a refused handshake reaches neither.
+        if (refusedAsThrottled(stream, admission, allocator, marker)) {
+            return Outcome.refused();
+        }
         String key = request.firstHeader("Sec-WebSocket-Key").orElse(null);
         if (!isUpgradeRequest(request) || key == null || key.isBlank()) {
-            respondRefusal(stream, HttpStatus.BAD_REQUEST, allocator);
+            respondRefusal(stream, HttpStatus.BAD_REQUEST, allocator, marker, false);
             return Outcome.refused();
         }
 
@@ -91,16 +103,16 @@ final class CommunityWebSocketUpgrade {
         // attacker who need only omit one header.
         String origin = request.firstHeader("Origin").orElse(null);
         if (origin != null && !config.allowedOrigins().contains(origin)) {
-            respondRefusal(stream, HttpStatus.FORBIDDEN, allocator);
+            respondRefusal(stream, HttpStatus.FORBIDDEN, allocator, marker, false);
             return Outcome.refused();
         }
 
-        return applyCallback(stream, request, key, handshakeHandler, allocator);
+        return applyCallback(stream, request, key, handshakeHandler, allocator, marker);
     }
 
     private static Outcome applyCallback(TransportStream stream, HttpRequest request, String key,
                                          WebSocketHandshakeHandler handshakeHandler,
-                                         MemoryAllocator allocator) {
+                                         MemoryAllocator allocator, boolean marker) {
         WebSocketHandshake decision = handshakeHandler == null
                 ? WebSocketHandshake.accept()
                 : handshakeHandler.decide(request);
@@ -110,10 +122,10 @@ final class CommunityWebSocketUpgrade {
             HttpStatus status = decision == null
                     ? HttpStatus.FORBIDDEN
                     : decision.refusalStatus().orElse(HttpStatus.FORBIDDEN);
-            respondRefusal(stream, status, allocator);
+            respondRefusal(stream, status, allocator, marker, false);
             return Outcome.refused();
         }
-        respondAccept(stream, key, decision.subprotocol().orElse(null), allocator);
+        respondAccept(stream, key, decision.subprotocol().orElse(null), allocator, marker);
         return new Outcome(true, decision.subprotocol());
     }
 
@@ -150,7 +162,7 @@ final class CommunityWebSocketUpgrade {
 
 
     private static void respondAccept(TransportStream stream, String key, String subprotocol,
-                                      MemoryAllocator allocator) {
+                                      MemoryAllocator allocator, boolean marker) {
         StringBuilder response = new StringBuilder(160)
                 .append("HTTP/1.1 101 Switching Protocols" + CRLF
                         + "Upgrade: websocket" + CRLF
@@ -160,17 +172,29 @@ final class CommunityWebSocketUpgrade {
         if (subprotocol != null) {
             response.append("Sec-WebSocket-Protocol: ").append(subprotocol).append(CRLF);
         }
-        response.append(CRLF);
+        response.append(CommunityWebSocketLicence.markerLine(marker)).append(CRLF);
         writeAscii(stream, response.toString(), allocator);
     }
 
+    /** Counts the handshake as one request and answers {@code 429} when the gate refuses it. */
+    private static boolean refusedAsThrottled(TransportStream stream, WorkloadAdmission admission,
+                                              MemoryAllocator allocator, boolean enforced) {
+        if (!enforced || admission.tryAdmitRequest()) {
+            return false;
+        }
+        respondRefusal(stream, HttpStatus.TOO_MANY_REQUESTS, allocator, true, true);
+        return true;
+    }
+
     private static void respondRefusal(TransportStream stream, HttpStatus status,
-                                       MemoryAllocator allocator) {
+                                       MemoryAllocator allocator, boolean marker, boolean throttled) {
         // Connection: close, and no body. A refused upgrade has nothing to say that is not already
         // in the status, and a body on a connection the client expects to become a WebSocket would
         // be read as frames.
         writeAscii(stream, "HTTP/1.1 " + status.code() + " " + status.reasonPhrase() + CRLF
                 + "Connection: close" + CRLF
+                + CommunityWebSocketLicence.retryAfterLine(throttled)
+                + CommunityWebSocketLicence.markerLine(marker)
                 + "Content-Length: 0" + CRLF + CRLF, allocator);
     }
 

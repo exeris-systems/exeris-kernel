@@ -4,12 +4,14 @@
  */
 package eu.exeris.kernel.core.bootstrap;
 
+import eu.exeris.kernel.core.contract.ContractDecision;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.bootstrap.SubsystemProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -674,7 +676,7 @@ class KernelBootstrapShutdownTest {
                 .contractGate((config, loader) -> {
                     inGate.countDown();
                     awaitUninterruptibly(releaseGate);
-                    return DECIDED;
+                    return new ContractDecision(DECIDED, WorkloadAdmission.UNGATED);
                 })
                 .build();
         AtomicBoolean mainRan = new AtomicBoolean();
@@ -702,7 +704,7 @@ class KernelBootstrapShutdownTest {
         KernelBootstrap bootstrap = builder(new RecordingShutdownHookRegistry(), null)
                 .contractGate((config, loader) -> {
                     gateRuns.incrementAndGet();
-                    return DECIDED;
+                    return new ContractDecision(DECIDED, WorkloadAdmission.UNGATED);
                 })
                 .build();
         CountDownLatch mainEntered = new CountDownLatch(1);

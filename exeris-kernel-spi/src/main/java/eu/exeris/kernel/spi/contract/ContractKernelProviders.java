@@ -46,6 +46,21 @@ public final class ContractKernelProviders {
      */
     public static final ScopedValue<ExecutionContract> EXECUTION_CONTRACT = ScopedValue.newInstance();
 
+    /**
+     * The active {@link WorkloadAdmission}: the gate the contract decided.
+     *
+     * <p>Bound together with {@link #EXECUTION_CONTRACT} by {@code KernelBootstrap.boot()}. Inside a booted
+     * kernel the slot is always bound: it holds the developer-licence gate when a developer envelope is in
+     * force and {@link WorkloadAdmission#UNGATED} otherwise. It is unbound only outside a kernel scope and
+     * inside {@code KernelBootstrap.inspect()}, which binds no contract.
+     *
+     * @apiNote Reach the binding through {@link #workloadAdmission()}. A driver reads it once in its
+     *          {@code start()}, which runs inside the kernel scope, and keeps the reference; a read on
+     *          an I/O or request thread sees no binding and enforces nothing.
+     * @since 0.13
+     */
+    public static final ScopedValue<WorkloadAdmission> WORKLOAD_ADMISSION = ScopedValue.newInstance();
+
     private ContractKernelProviders() {
         // Static ScopedValue slot only — never instantiated.
     }
@@ -62,5 +77,19 @@ public final class ContractKernelProviders {
      */
     public static ExecutionContract executionContract() {
         return EXECUTION_CONTRACT.get();
+    }
+
+    /**
+     * Returns the active {@link WorkloadAdmission}, or {@link WorkloadAdmission#UNGATED} when none is
+     * bound.
+     *
+     * <p>Outside a kernel scope there is no contract and so nothing to enforce. Inside a booted kernel
+     * a driver must call this from {@code start()} and keep the result.
+     *
+     * @return the bound admission gate, never {@code null}
+     * @since 0.13
+     */
+    public static WorkloadAdmission workloadAdmission() {
+        return WORKLOAD_ADMISSION.orElse(WorkloadAdmission.UNGATED);
     }
 }

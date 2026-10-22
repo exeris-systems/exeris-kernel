@@ -11,6 +11,7 @@ import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.contract.ExecutionEnvironment;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
 import jdk.jfr.Recording;
@@ -413,6 +414,31 @@ class ContractBootstrapStepTest {
         assertThat(events).extracting(e -> e.getString("environment") + "|" + e.getString("source") + "|"
                         + e.getString("contractId") + "|" + e.getString("outcome"))
                 .containsExactlyInAnyOrder("staging|none|COMMUNITY|bound", "|none||" + KernelErrorCodes.EX_CFG_1002);
+    }
+
+    @Test
+    @DisplayName("The gate decides UNGATED for the Community fallback: the workload mechanism is inert")
+    void fallbackDecidesUngated() throws Exception {
+        try (URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
+            ContractDecision decision = ContractBootstrapStep.run(config(Map.of()), empty);
+
+            assertThat(decision.admission()).isSameAs(WorkloadAdmission.UNGATED);
+            assertThat(decision.contract().edition()).isEqualTo("community");
+        }
+    }
+
+    @Test
+    @DisplayName("The gate decides UNGATED for a verified manifest too, whatever it grants")
+    void verifiedManifestDecidesUngated(@TempDir Path dir) throws Exception {
+        Path manifest = Files.write(dir.resolve("manifest.json"),
+                signedManifest(List.of("development"), List.of("gateway-core")));
+        try (URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
+            ContractDecision decision = ContractBootstrapStep.run(
+                    config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, manifest.toString())), empty, resolver);
+
+            assertThat(decision.contract().contractId()).isEqualTo("EXR-PHASE0-001");
+            assertThat(decision.admission()).isSameAs(WorkloadAdmission.UNGATED);
+        }
     }
 
     private static URLClassLoader loaderDeclaring(Path root, String providerClass) throws Exception {

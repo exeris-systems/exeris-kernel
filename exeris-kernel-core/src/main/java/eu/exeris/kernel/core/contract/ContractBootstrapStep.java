@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.contract.EnforcementLevel;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.contract.ExecutionEnvironment;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
@@ -83,7 +84,8 @@ public final class ContractBootstrapStep {
      * @param config      active configuration provider; {@code null} declares no environment
      * @param classLoader loader that discovers {@link EntitlementRequirement} implementations and the
      *                    classpath manifest
-     * @return the contract the kernel runs under
+     * @return the contract the kernel runs under and the workload gate its drivers consult;
+     *         the gate is {@link WorkloadAdmission#UNGATED} until a contract activates a developer envelope
      * @throws ContractBreachException with {@code EX-LIC-0001} (a manifest that cannot be read or fails the
      *                                 schema or its signature), {@code EX-LIC-0002} (unknown issuer key),
      *                                 {@code EX-LIC-0003} / {@code EX-LIC-0006} (outside its validity window),
@@ -94,7 +96,20 @@ public final class ContractBootstrapStep {
      * @throws ConfigProvider.ConfigProviderException with {@code EX-CFG-1002} if the declared
      *                                 environment names none of the six environment classes
      */
-    public static ExecutionContract run(ConfigProvider config, ClassLoader classLoader) {
+    public static ContractDecision run(ConfigProvider config, ClassLoader classLoader) {
+        return run(config, classLoader, IssuerKeyResolver.embedded());
+    }
+
+    /**
+     * Runs the gate against an injected issuer key resolution, so a test can sign the manifest it reads.
+     *
+     * @param config      active configuration provider; {@code null} declares no environment
+     * @param classLoader loader that discovers requirements and the classpath manifest
+     * @param keyResolver issuer key resolution; {@link #run(ConfigProvider, ClassLoader)} passes the embedded one
+     * @return the contract the kernel runs under and the workload gate its drivers consult
+     */
+    /* default */ static ContractDecision run(ConfigProvider config, ClassLoader classLoader,
+                                              IssuerKeyResolver keyResolver) {
         long start = System.nanoTime();
         String environmentId = "";
         String source = NO_SOURCE;
@@ -109,10 +124,10 @@ public final class ContractBootstrapStep {
             source = manifest == null ? NO_SOURCE : manifest.source();
             ExecutionContract contract = decide(
                     environment, required, manifest == null ? null : manifest.bytes(),
-                    Instant.now(), IssuerKeyResolver.embedded());
+                    Instant.now(), keyResolver);
             ContractResolvedEvent.emit(environmentId, source, contract.contractId(), contract.edition(),
                     "bound", System.nanoTime() - start);
-            return contract;
+            return new ContractDecision(contract, WorkloadAdmission.UNGATED);
         } catch (ExerisKernelException refused) {
             ContractResolvedEvent.emit(environmentId, source, "", "", refused.errorCode(),
                     System.nanoTime() - start);

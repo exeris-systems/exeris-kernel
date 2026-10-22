@@ -277,8 +277,10 @@ to declare it.
 > before the orchestrator runs — it is not a `Subsystem`. `Exceptions` is not a Subsystem layer.
 >
 > **The contract gate** is not a `Subsystem` either. `KernelBootstrap.boot()` runs `ContractBootstrapStep`
-> after Config and before the orchestrator, and binds its result to `ContractKernelProviders.EXECUTION_CONTRACT` for
-> the whole kernel scope. The environment comes from the configuration key `environment` (`development` when
+> after Config and before the orchestrator, and binds its result, a `ContractDecision` of the contract and a
+> `WorkloadAdmission`, to `ContractKernelProviders.EXECUTION_CONTRACT` and `WORKLOAD_ADMISSION` for
+> the whole kernel scope. The gate binds `WorkloadAdmission.UNGATED` for every contract until a contract policy
+> selects the developer-licence gate; the HTTP and transport drivers read it once in `start()`. The environment comes from the configuration key `environment` (`development` when
 > unset; the kernel profile plays no part). With no license manifest the kernel runs under the Community
 > contract in every environment, unless the environment is `production`, `production-load-sim` or `dr-hot`
 > and an `EntitlementRequirement` is on the classpath — then the boot is refused. A manifest that is present
@@ -365,7 +367,7 @@ runs the stop; every other caller returns only after it completed.
 - Offers `KernelBootstrap.inspect(Runnable)`, which resolves the sorted subsystem inventory without calling
   any `initialize()` or `start()`, and without running the contract gate
 - Runs the Phase 0 contract gate (`eu.exeris.kernel.core.contract.ContractBootstrapStep`) before the
-  orchestrator, and binds `ContractKernelProviders.EXECUTION_CONTRACT`
+  orchestrator, and binds `ContractKernelProviders.EXECUTION_CONTRACT` and `WORKLOAD_ADMISSION`
 
 ---
 

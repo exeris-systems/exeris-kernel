@@ -51,6 +51,7 @@ final class CommunityHttpStreamDispatcher {
     private final StreamAdmissionController admissionController;
     private final ToLongFunction<HttpRequest> authDeadline;
     private final AtomicInteger activeStreams = new AtomicInteger(0);
+    private final boolean licenceMarker;
 
     /* default */ CommunityHttpStreamDispatcher(MemoryAllocator allocator) {
         this(allocator, null);
@@ -59,6 +60,19 @@ final class CommunityHttpStreamDispatcher {
     /* default */ CommunityHttpStreamDispatcher(MemoryAllocator allocator,
                                                 StreamAdmissionController admissionController) {
         this(allocator, admissionController, NO_AUTH_DEADLINE);
+    }
+
+    /**
+     * Creates a dispatcher whose streams carry the developer-licence marker when asked.
+     *
+     * @param allocator           the per-stream allocator
+     * @param admissionController the streaming-occupancy ceiling, or {@code null} when none is wired
+     * @param licenceMarker       whether every HTTP/1.1 stream head carries the developer-licence marker
+     */
+    /* default */ CommunityHttpStreamDispatcher(MemoryAllocator allocator,
+                                                StreamAdmissionController admissionController,
+                                                boolean licenceMarker) {
+        this(allocator, admissionController, NO_AUTH_DEADLINE, licenceMarker);
     }
 
     /**
@@ -73,9 +87,17 @@ final class CommunityHttpStreamDispatcher {
     /* default */ CommunityHttpStreamDispatcher(MemoryAllocator allocator,
                                                 StreamAdmissionController admissionController,
                                                 ToLongFunction<HttpRequest> authDeadline) {
+        this(allocator, admissionController, authDeadline, false);
+    }
+
+    private CommunityHttpStreamDispatcher(MemoryAllocator allocator,
+                                          StreamAdmissionController admissionController,
+                                          ToLongFunction<HttpRequest> authDeadline,
+                                          boolean licenceMarker) {
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.admissionController = admissionController;
         this.authDeadline = Objects.requireNonNull(authDeadline, "authDeadline must not be null");
+        this.licenceMarker = licenceMarker;
     }
 
     /**
@@ -150,7 +172,7 @@ final class CommunityHttpStreamDispatcher {
         }
         activeStreams.incrementAndGet();
         HttpStreamEngine engine = HttpStreamEngine.open(
-                request, stream, allocator, authDeadlineEpochMillis, CREDIT_WINDOW_BYTES);
+                request, stream, allocator, authDeadlineEpochMillis, CREDIT_WINDOW_BYTES, licenceMarker);
         return runHandler(engine, match);
     }
 

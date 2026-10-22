@@ -22,6 +22,12 @@ package eu.exeris.kernel.spi.http;
  *   engine.close()                           → engine (CLOSED, resources released)
  * </pre>
  *
+ * <h2>Developer-licence envelope</h2>
+ * <p>An engine reads {@link eu.exeris.kernel.spi.contract.ContractKernelProviders#workloadAdmission()}
+ * once in {@link #start()} and honours the obligations of
+ * {@link eu.exeris.kernel.spi.contract.WorkloadAdmission}: connection refusal at accept, request
+ * refusal before any handler runs, and the {@code Exeris-License} marker on every final response.
+ *
  * <p><b>Ownership:</b> the engine owns everything it binds — the listening port, its connections
  * and their off-heap buffers — and releases them on {@link #close()}, which stops a running engine
  * first and is idempotent
