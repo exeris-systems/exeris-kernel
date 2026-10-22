@@ -47,6 +47,16 @@ public class ContractResolvedEvent extends Event {
     @Description("Edition of the bound contract, or empty when the boot was refused")
     public String edition;
 
+    /** Identifier of the issuer key that signed the manifest, or empty when none was verified. */
+    @Label("Issuer Key ID")
+    @Description("Identifier of the issuer key that signed the manifest, or empty when none was verified")
+    public String keyId;
+
+    /** Whether the kernel runs under a developer licence, its workload envelope held at HARD. */
+    @Label("Developer Licence")
+    @Description("Whether the kernel runs under a developer licence, its workload envelope held at HARD")
+    public boolean developerLicence;
+
     /** 'bound', or the error code that refused the boot. */
     @Label("Outcome")
     @Description("'bound', or the error code that refused the boot")
@@ -70,17 +80,27 @@ public class ContractResolvedEvent extends Event {
     }
 
     /**
+     * What the gate decided, as the event records it.
+     *
+     * @param environment      declared environment id, or empty
+     * @param source           manifest source, or {@code none}
+     * @param contractId       bound contract id, or empty
+     * @param edition          bound edition, or empty
+     * @param keyId            issuer key that signed the manifest, or empty when none was verified
+     * @param developerLicence whether the kernel runs under a developer licence
+     * @param outcome          {@code bound}, or the refusing error code
+     */
+    public record Resolution(String environment, String source, String contractId, String edition,
+                             String keyId, boolean developerLicence, String outcome) {
+    }
+
+    /**
      * Emits the event if Flight Recorder is initialized and the event is enabled.
      *
-     * @param environment   declared environment id, or empty
-     * @param source        manifest source, or {@code none}
-     * @param contractId    bound contract id, or empty
-     * @param edition       bound edition, or empty
-     * @param outcome       {@code bound}, or the refusing error code
+     * @param resolution    what the gate decided
      * @param durationNanos time the gate took
      */
-    public static void emit(String environment, String source, String contractId, String edition,
-                            String outcome, long durationNanos) {
+    public static void emit(Resolution resolution, long durationNanos) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -88,11 +108,13 @@ public class ContractResolvedEvent extends Event {
         if (!event.isEnabled()) {
             return;
         }
-        event.environment = environment;
-        event.source = source;
-        event.contractId = contractId;
-        event.edition = edition;
-        event.outcome = outcome;
+        event.environment = resolution.environment();
+        event.source = resolution.source();
+        event.contractId = resolution.contractId();
+        event.edition = resolution.edition();
+        event.keyId = resolution.keyId();
+        event.developerLicence = resolution.developerLicence();
+        event.outcome = resolution.outcome();
         event.gateDuration = durationNanos;
         event.commit();
     }

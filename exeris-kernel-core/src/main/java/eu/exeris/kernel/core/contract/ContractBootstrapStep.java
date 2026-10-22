@@ -7,11 +7,11 @@ package eu.exeris.kernel.core.contract;
 import eu.exeris.kernel.core.contract.crypto.IssuerKeyResolver;
 import eu.exeris.kernel.core.contract.crypto.JsonCanonicalizer;
 import eu.exeris.kernel.core.contract.crypto.LicenseManifestVerifier;
+import eu.exeris.kernel.core.contract.crypto.TrustedIssuerKey;
 import eu.exeris.kernel.core.contract.jfr.ContractResolvedEvent;
 import eu.exeris.kernel.core.contract.jfr.ContractViolationReporter;
 import eu.exeris.kernel.spi.config.ConfigProvider;
-import eu.exeris.kernel.spi.contract.ContractViolation;
-import eu.exeris.kernel.spi.contract.EnforcementLevel;
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.contract.ExecutionEnvironment;
@@ -19,11 +19,16 @@ import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -32,28 +37,34 @@ import java.util.stream.Collectors;
  * {@code KernelBootstrap.boot()} that runs once, after configuration and before any subsystem is
  * initialized, so a refused boot has allocated no off-heap memory and bound no socket.
  *
- * <p>It decides which {@link ExecutionContract} the kernel runs under:
+ * <p>It decides which {@link ExecutionContract} the kernel runs under, and which {@link WorkloadAdmission}
+ * its drivers consult, in every environment alike:
  * <ul>
- *   <li>No manifest, and either the declared {@link ExecutionEnvironment} needs no entitlement or no
- *       {@link EntitlementRequirement} is on the classpath: the Community fallback. The Community
- *       edition is unrestricted, so a kernel carrying no entitlement-requiring code boots in every
+ *   <li>No requirement and no manifest: the Community fallback and {@link WorkloadAdmission#UNGATED}. The
+ *       Community edition is unrestricted, so a kernel carrying no entitlement-requiring code boots in every
  *       environment without a manifest.</li>
- *   <li>No manifest, a production-class environment, and at least one requirement: the boot stops
- *       with {@code EX-LIC-0005}. In any other environment the same situation is reported as a
- *       {@code SOFT} warning, because entitlement-requiring code then runs ungated.</li>
- *   <li>A manifest: it is verified against the embedded trust roots, whatever the environment. In a
- *       production-class environment the contract must then authorize that environment and every
- *       required capability, at the levels its enforcement rules set: a {@code HARD} breach stops the
- *       boot, a {@code SOFT} or {@code AUDIT} one is reported through {@link ContractViolationReporter}
- *       and the boot continues.</li>
+ *   <li>At least one {@link EntitlementRequirement} and no manifest: the boot stops with
+ *       {@code EX-LIC-0005}, development included.</li>
+ *   <li>A manifest, whether or not a requirement is declared: it is verified against the embedded trust roots
+ *       inside the scope of the key that signed it, and the declared environment must lie in that scope
+ *       ({@code EX-LIC-0009}, {@code HARD} whatever the enforcement rules say).</li>
+ *   <li>A manifest and at least one requirement: the key must also be allowed to entitle the class of every
+ *       declared requirement, whether or not the manifest lists it ({@code EX-LIC-0012}); then the contract
+ *       must authorize the declared environment and every required capability at the levels its enforcement
+ *       rules set. A {@code HARD} breach stops the boot; a {@code SOFT} or {@code AUDIT} one is reported
+ *       through {@link ContractViolationReporter} and the boot continues.</li>
+ *   <li>A manifest signed by a developer key and at least one requirement: the decision carries a
+ *       {@link DeveloperWorkloadAdmission} holding the manifest's envelope at {@code HARD}. Any other
+ *       combination carries {@link WorkloadAdmission#UNGATED}.</li>
  * </ul>
  *
  * <p>The environment comes only from the configuration key {@value ExecutionEnvironment#CONFIG_KEY};
  * the kernel profile, which governs how much an error discloses, plays no part in it.
  *
  * <p>Every {@link EntitlementRequirement} on the classpath is loaded and checked in every environment; one
- * that cannot be loaded, throws, or returns {@code null}, an empty set or a malformed capability
- * identifier stops the boot with {@code EX-LIC-0008}.
+ * that cannot be loaded, throws, or returns {@code null}, an empty set, a malformed capability
+ * identifier or a {@code null} class, or declares one identifier under two classes, stops the boot with
+ * {@code EX-LIC-0008}.
  *
  * <p>The manifest is read from the file the configuration key {@value #MANIFEST_PATH_KEY} names. When
  * that key is bound, the file must be readable — a blank, missing or unreadable configured path stops the
@@ -61,8 +72,11 @@ import java.util.stream.Collectors;
  * reads {@code license-manifest.json} from the working directory, then from the classpath. A manifest
  * larger than 64 KiB is refused.
  *
+ * <p>Validity is judged at the instant the kernel {@link TimeKernelProviders#timeSource() time source}
+ * reports, which is the platform clock until a time provider is bound.
+ *
  * <p>Each decision is recorded as one {@link ContractResolvedEvent}: environment, manifest source, bound
- * contract or refusing error code, and duration.
+ * contract or refusing error code, the signing key and whether it is a developer key, and duration.
  *
  * @since 0.13
  */
@@ -88,9 +102,11 @@ public final class ContractBootstrapStep {
      *                                 schema or its signature), {@code EX-LIC-0002} (unknown issuer key),
      *                                 {@code EX-LIC-0003} / {@code EX-LIC-0006} (outside its validity window),
      *                                 {@code EX-LIC-0004} / {@code EX-LIC-0007} (a {@code HARD} capability or
-     *                                 environment breach), {@code EX-LIC-0005} (a production class with a
-     *                                 declared requirement and no manifest) or {@code EX-LIC-0008} (an
-     *                                 {@code EntitlementRequirement} that breaks its contract)
+     *                                 environment breach), {@code EX-LIC-0005} (a declared requirement and no
+     *                                 manifest), {@code EX-LIC-0008} (an {@code EntitlementRequirement} that
+     *                                 breaks its contract), {@code EX-LIC-0009} to {@code EX-LIC-0011} and
+     *                                 {@code EX-LIC-0013} (outside the scope of the issuer key) or
+     *                                 {@code EX-LIC-0012} (a requirement of a class the key may not entitle)
      * @throws ConfigProvider.ConfigProviderException with {@code EX-CFG-1002} if the declared
      *                                 environment names none of the six environment classes
      */
@@ -111,6 +127,7 @@ public final class ContractBootstrapStep {
         long start = System.nanoTime();
         String environmentId = "";
         String source = NO_SOURCE;
+        ResolvedKey resolved = new ResolvedKey();
         try {
             ExecutionEnvironment environment = declaredEnvironment(config);
             environmentId = environment.id();
@@ -120,71 +137,145 @@ public final class ContractBootstrapStep {
                     Path.of(ManifestLocator.DEFAULT_MANIFEST_FILENAME),
                     classLoader);
             source = manifest == null ? NO_SOURCE : manifest.source();
-            ExecutionContract contract = decide(
+            ContractDecision decision = decide(
                     environment, required, manifest == null ? null : manifest.bytes(),
-                    Instant.now(), keyResolver);
-            ContractResolvedEvent.emit(environmentId, source, contract.contractId(), contract.edition(),
-                    "bound", System.nanoTime() - start);
-            return new ContractDecision(contract, WorkloadAdmission.UNGATED);
+                    TimeKernelProviders.timeSource().wallTime(), keyResolver, resolved);
+            ContractResolvedEvent.emit(new ContractResolvedEvent.Resolution(
+                    environmentId, source, decision.contract().contractId(), decision.contract().edition(),
+                    resolved.keyId, decision.admission().enforced(), "bound"), System.nanoTime() - start);
+            return decision;
         } catch (ExerisKernelException refused) {
-            ContractResolvedEvent.emit(environmentId, source, "", "", refused.errorCode(),
+            ContractResolvedEvent.emit(new ContractResolvedEvent.Resolution(
+                    environmentId, source, "", "", resolved.keyId, false, refused.errorCode()),
                     System.nanoTime() - start);
             throw refused;
         }
     }
 
     /**
-     * Decides the execution contract from already-resolved inputs.
+     * Decides the execution contract and the workload gate from already-resolved inputs, against an issuer key
+     * resolution of the caller's choosing.
      *
-     * @param environment          declared environment
-     * @param requirements         what the classpath's requirements declare
-     * @param manifestBytes        manifest content, or {@code null} when no manifest was found
-     * @param now                  evaluation instant for temporal validity
-     * @param keyResolver          issuer key resolution; {@link #run} always passes the embedded one
-     * @return the contract the kernel runs under
+     * <p>This is the gate's own decision, exposed so that a conformance suite and a tool that signs licences can
+     * run it under a key they hold: the policy is the one {@link #run(ConfigProvider, ClassLoader)} applies,
+     * in every environment alike. Its result is never bound into a kernel scope, and the bootstrap path never
+     * accepts a resolver.
+     *
+     * <p>The order of the checks decides which code wins. The manifest is verified first, by
+     * {@link LicenseManifestVerifier#verifyScoped}: signature, schema, the key's scope, then the validity
+     * window. Only then do the checks of this gate run: the class of every requirement ({@code EX-LIC-0012}),
+     * the declared environment against the key's scope ({@code EX-LIC-0009}), and the contract's own
+     * environment and capability checks. A manifest that is both expired and unable to entitle a declared
+     * class therefore reports its time code first.
+     *
+     * @param environment  declared environment
+     * @param requirements capability identifiers each entitlement class's requirements declare; empty when no
+     *                     requirement is on the classpath
+     * @param manifest     manifest content, or {@code null} when no manifest was found
+     * @param now          evaluation instant for temporal validity
+     * @param keyResolver  issuer key resolution
+     * @return the contract the kernel would run under and the workload gate its drivers would consult
+     * @throws ContractBreachException as {@link #run(ConfigProvider, ClassLoader)} lists
+     * @since 0.13
      */
-    /* default */ static ExecutionContract decide(
+    public static ContractDecision decide(
+            ExecutionEnvironment environment,
+            Map<EntitlementClass, Set<String>> requirements,
+            byte[] manifest,
+            Instant now,
+            IssuerKeyResolver keyResolver) {
+        SortedMap<String, EntitlementClass> byId = new TreeMap<>();
+        SortedMap<String, String> providerById = new TreeMap<>();
+        requirements.forEach((entitlementClass, ids) -> ids.forEach(id -> {
+            byId.put(id, entitlementClass);
+            providerById.put(id, "declared:" + entitlementClass.id());
+        }));
+        return decide(environment, new RequirementDiscovery.DeclaredRequirements(byId, providerById),
+                manifest, now, keyResolver);
+    }
+
+    /* default */ static ContractDecision decide(
             ExecutionEnvironment environment,
             RequirementDiscovery.DeclaredRequirements requirements,
             byte[] manifestBytes,
             Instant now,
             IssuerKeyResolver keyResolver) {
-        List<String> required = List.copyOf(requirements.byId().keySet());
-        if (manifestBytes == null) {
-            return withoutManifest(environment, required);
-        }
-        ExecutionContract contract = LicenseManifestVerifier.verify(
-                JsonCanonicalizer.decodeUtf8(manifestBytes), now, keyResolver);
-        if (environment.isProductionClass()) {
-            contract.assertEnvironment(environment.id()).ifPresent(ContractViolationReporter::report);
-            for (String capability : required) {
-                contract.assertCapability(capability).ifPresent(ContractViolationReporter::report);
-            }
-        }
-        return contract;
+        return decide(environment, requirements, manifestBytes, now, keyResolver, new ResolvedKey());
     }
 
-    private static ExecutionContract withoutManifest(ExecutionEnvironment environment, List<String> required) {
-        ExecutionContract fallback = ExecutionContract.communityFallback();
-        if (required.isEmpty()) {
-            return fallback;
-        }
-        if (environment.isProductionClass()) {
+    private static ContractDecision decide(
+            ExecutionEnvironment environment,
+            RequirementDiscovery.DeclaredRequirements requirements,
+            byte[] manifestBytes,
+            Instant now,
+            IssuerKeyResolver keyResolver,
+            ResolvedKey resolved) {
+        if (manifestBytes == null) {
+            if (requirements.isEmpty()) {
+                return new ContractDecision(ExecutionContract.communityFallback(), WorkloadAdmission.UNGATED);
+            }
             throw new ContractBreachException(
                     KernelErrorCodes.EX_LIC_0005,
-                    "No license manifest found, and environment '" + environment.id()
-                            + "' requires an entitlement for " + required,
+                    "No license manifest found, and code on the classpath requires an entitlement for "
+                            + requirements.byId().keySet(),
                     environment.id(),
-                    required);
+                    List.copyOf(requirements.byId().keySet()));
         }
-        ContractViolationReporter.report(new ContractViolation(
-                fallback.contractId(),
-                ExecutionContract.ENVIRONMENT_CONSTRAINT,
-                EnforcementLevel.SOFT,
-                "entitlement-requiring capabilities " + required + " run without a license manifest"
-                        + " because environment '" + environment.id() + "' is not a production class;"
-                        + " declare the environment if this is production"));
-        return fallback;
+        // The key is recorded when it is resolved, so a refusal raised inside the verifier still names it.
+        IssuerKeyResolver recording = keyId -> {
+            TrustedIssuerKey resolvedKey = keyResolver.resolve(keyId);
+            resolved.keyId = resolvedKey.keyId();
+            return resolvedKey;
+        };
+        LicenseManifestVerifier.VerifiedManifest verified = LicenseManifestVerifier.verifyScoped(
+                JsonCanonicalizer.decodeUtf8(manifestBytes), now, recording);
+        ExecutionContract contract = verified.contract();
+        TrustedIssuerKey key = verified.key();
+        if (!requirements.isEmpty()) {
+            assertClassesEntitled(key, requirements);
+        }
+        assertDeclaredEnvironmentInScope(key, environment);
+        if (requirements.isEmpty()) {
+            return new ContractDecision(contract, WorkloadAdmission.UNGATED);
+        }
+        contract.assertEnvironment(environment.id()).ifPresent(ContractViolationReporter::report);
+        for (String capability : requirements.byId().keySet()) {
+            contract.assertCapability(capability).ifPresent(ContractViolationReporter::report);
+        }
+        WorkloadAdmission admission = key.scope().isDeveloperScope()
+                ? new DeveloperWorkloadAdmission(contract.contractId(), contract.envelope())
+                : WorkloadAdmission.UNGATED;
+        return new ContractDecision(contract, admission);
+    }
+
+    /** The key must be allowed to entitle the class of every requirement, whether or not the manifest lists it. */
+    private static void assertClassesEntitled(
+            TrustedIssuerKey key, RequirementDiscovery.DeclaredRequirements requirements) {
+        for (Map.Entry<String, EntitlementClass> declared : requirements.byId().entrySet()) {
+            if (!key.scope().classes().contains(declared.getValue())) {
+                throw new ContractBreachException(
+                        KernelErrorCodes.EX_LIC_0012,
+                        "Issuer key " + key.keyId() + " may not entitle the " + declared.getValue().id()
+                                + " requirement declared for " + declared.getKey(),
+                        key.keyId(), declared.getValue().id(), requirements.providerById().get(declared.getKey()));
+            }
+        }
+    }
+
+    /** The declared environment is outside what the key may entitle whatever the manifest and its rules say. */
+    private static void assertDeclaredEnvironmentInScope(TrustedIssuerKey key, ExecutionEnvironment environment) {
+        if (!key.scope().environments().contains(environment)) {
+            throw new ContractBreachException(
+                    KernelErrorCodes.EX_LIC_0009,
+                    "Declared environment '" + environment.id() + "' is outside the scope of issuer key "
+                            + key.keyId(),
+                    key.keyId(), List.of(environment.id()));
+        }
+    }
+
+    /** The key a manifest was verified with, for the decision record; confined to the booting thread. */
+    private static final class ResolvedKey {
+        private String keyId = "";
     }
 
     /* default */ static ExecutionEnvironment declaredEnvironment(ConfigProvider config) {

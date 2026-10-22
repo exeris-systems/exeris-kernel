@@ -106,24 +106,28 @@ class ContractPhaseZeroBootstrapTest {
     }
 
     @Test
-    @DisplayName("Development with a declared requirement and no manifest boots under the Community contract")
-    void developmentIsNotGated() throws Exception {
-        AtomicReference<ExecutionContract> bound = new AtomicReference<>();
-
-        bootstrap(true).boot(() -> bound.set(ContractKernelProviders.executionContract()));
-
-        assertThat(bound.get().edition()).isEqualTo("community");
-        assertThat(INITIALIZED).hasValue(1);
+    @DisplayName("Development, a declared requirement, no manifest: boot fails with EX-LIC-0005 and no subsystem initializes")
+    void developmentWithRequirementWithoutManifestHalts() throws Exception {
+        assertThatThrownBy(() -> bootstrap(true).boot(() -> { }))
+                .isExactlyInstanceOf(ContractBreachException.class)
+                .satisfies(e -> assertThat(((ContractBreachException) e).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_LIC_0005));
+        assertThat(INITIALIZED).hasValue(0);
     }
 
     @Test
-    @DisplayName("The kernel profile does not make an environment production")
+    @DisplayName("The kernel profile does not declare the environment: the refusal names development")
     void prodProfileAloneIsNotProduction() throws Exception {
         CONFIG.put("kernel.profile", "prod");
 
-        bootstrap(true).boot(() -> { });
-
-        assertThat(INITIALIZED).hasValue(1);
+        assertThatThrownBy(() -> bootstrap(true).boot(() -> { }))
+                .isExactlyInstanceOf(ContractBreachException.class)
+                .satisfies(e -> {
+                    ContractBreachException breach = (ContractBreachException) e;
+                    assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0005);
+                    assertThat(breach.rawArgs()[0]).isEqualTo("development");
+                });
+        assertThat(INITIALIZED).hasValue(0);
     }
 
     @Test
