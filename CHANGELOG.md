@@ -150,6 +150,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `timeSource()` to `spi.time.TimeKernelProviders`, with the behaviour of each unchanged
   (`timeSource()` returns `TimeSource.SYSTEM` when unbound). A `stable` signature no longer names a
   `preview` type once the bridges below are gone. `StableSignatureArchitectureTest` enforces it.
+- **Graph: the published Community churn-to-data contract is `< 23x`, the bound `GraphChurnRatioTck` enforces (was `< 20x`, "met in the faster regime").** The Community Bolt path settles into one of two allocation regimes per JVM, 17.5–17.9x and 20.8x on `development/0.13.0`, so a single `< 20x` figure held in one regime and failed in the other; `graph.md` §2 now publishes the bound that covers both, with the observed range as its description. `GraphChurnRatioTck.documentedContract()` returns 23.0 for Community. The SQL/PGQ path has no churn binding, and `graph.md` no longer claims a JDBC figure. `EX-GRPH-5005` / `ExcessiveAllocationException` stay declared and are documented as reserved (nothing throws them). Documentation, TCK and Javadoc only; no signature changes.
 
 - **The identity a declared `@Schedule` job runs as is ruled (ADR-057 Amendment A1, docs and TCK only).**
   The kernel issues no service principal at 1.0: a declared job is submitted with only

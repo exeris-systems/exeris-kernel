@@ -794,7 +794,7 @@ public final class KernelErrorCodes {
     public static final String EX_GRPH_5004 = "EX-GRPH-5004";
 
     /**
-     * Excessive allocation detected: graph driver exceeded pre-defined churn threshold.
+     * Excessive allocation: a graph driver exceeded its churn budget. Reserved; no kernel code path emits it.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>

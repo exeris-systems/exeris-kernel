@@ -27,9 +27,9 @@ The **Graph subsystem** is a semantic synthesis engine. It transforms structured
 traversable relationships using a unified **MATCH DSL**, bridging the gap between relational storage and graph
 logic.
 
-- **The Allocation Gap Mitigation:** Standard Bolt/JDBC drivers measure 17.4–20.8x allocation-to-data ratio in
-  practice, settling into one of two allocation regimes on the Community Bolt path (see §2). Exeris Community
-  supports these drivers against a documented `< 20x` contract, met in the faster regime.
+- **The Allocation Gap Mitigation:** On the Community Neo4j Bolt path the measured allocation-to-data ratio is
+  17.5–20.8x across two per-JVM regimes, against a `< 23x` contract that `GraphChurnRatioTck` enforces
+  (see §2). The SQL/PGQ path is not measured.
 - **Unified MATCH DSL:** A protocol-blind query surface — the same `GraphSession` calls render to plain SQL
   (PostgreSQL, via recursive CTEs) or Cypher (Neo4j / Memgraph / FalkorDB) depending on the active
   `GraphDialect` — the same business code works on both. A separate Core class, `MatchDslTranspiler`,
@@ -62,41 +62,48 @@ swapped.
 
 ### 2. Metric Transparency (Churn-to-Data Ratio)
 
-Exeris does not mask the cost of its abstraction. In TCK mode, every driver reports a **Churn-to-Data Ratio**:
-bytes allocated per byte of graph data transferred. `GraphChurnRatioTck` measures the ratio over a fan-out
-traversal. The tier contract is Community
-`< 20x`, Enterprise `< 1x`; what the TCK *fails the build on* is a regression bound at or above it, for the
-reason set out below.
+Exeris does not mask the cost of its abstraction. A driver's **Churn-to-Data Ratio** is the bytes it
+allocates per byte of graph data it returns, and `GraphChurnRatioTck` measures it over a 1-hop
+traversal returning 500 ids. The figure the TCK fails the build on is the published contract:
+Community `< 23x`, Enterprise `< 1x`.
 
 Two properties of that measurement follow from what the ratio is *about*, and both are load-bearing:
 
 - **The numerator counts driver allocation.** The documented cost is the driver's, not the kernel's, so the
-  measurement uses the exact per-thread allocated-bytes delta, not a JFR event
-  stream filtered to `eu.exeris.*` types. On the Community Bolt path the kernel's own share is ~1% of the total;
-  a filtered numerator would exclude the thing being measured, and would report a perfect `0.0` for a driver that
-  allocated gigabytes outside the `eu.exeris` namespace.
-- **The traversal must return a result set.** The ratio is per byte of data transferred, so the workload has to
-  carry enough data for the fixed per-round-trip cost to amortise. A 1-hop traversal returning a single id costs
-  ~11.7 KB of allocation for 16 bytes of payload — a ratio in the 700s that measures session and protocol setup
-  rather than churn per data byte.
+  measurement uses the exact per-thread allocated-bytes delta, not a JFR event stream filtered to
+  `eu.exeris.*` types. On the Community Bolt path the kernel's own share is ~1% of the total; a filtered
+  numerator would exclude the thing being measured.
+- **The traversal must return a result set.** The ratio is per byte of data returned, so the workload has to
+  carry enough data for the fixed per-round-trip cost to amortise. A 1-hop traversal returning a single id
+  costs ~11.7 KB of allocation for 16 bytes of payload, a ratio in the 700s that measures session and
+  protocol setup rather than churn per data byte.
 
-**Measured, and it does not land on one number.** On the Community Bolt path the ratio settles into one of two
-regimes, chosen once per JVM and then held for the life of the process (three JVMs × 4 200 traversals each, no
-window mixing):
+**Measured: two regimes, one bound.** On the Community Neo4j Bolt path (`CommunityGraphChurnRatioTckIT`)
+the ratio settles into one of two allocation regimes, chosen once per JVM and held for the life of the
+process:
 
-| Regime | Bytes / traversal | Ratio | Against the `< 20x` contract |
-|:---|---:|---:|:---|
-| fast | ~142 000 | 17.4 – 18.0x | inside |
-| slow | ~166 000 | 20.5 – 20.8x | **breached** |
+| Regime | Bytes / traversal | Ratio |
+|:---|---:|---:|
+| fast | ~142 000 | 17.5 – 17.9x |
+| slow | ~166 500 | 20.8x |
 
-Roughly two runs in seven take the slow regime (4 of 14 observed processes). The `< 20x` figure above is
-therefore the contract, not a description of every run; `GraphChurnRatioTck` enforces a higher *regression* bound so that a pre-existing regime
-choice does not read as a regression, and reports the contract alongside each measurement. Closing the gap — or
-deciding which figure is the honest one to publish — is tracked in `docs/ROADMAP.md`.
+1 of 16 fresh processes took the slow regime. The Community contract covers both: a process in either
+regime meets `< 23x`, and the published figure is the observed range, 17.5–20.8x, not the fast regime
+alone. The bound sits about 10% above the slow-regime ceiling, and a change adding 128 bytes per
+returned row breaches it from either regime. Kernel-owned allocation is ~1% of the total, so the split
+lies in the driver path or in how the JIT compiles it; its cause is not established.
 
-A cold process does not meet the contract at all: allocation runs 18.0–18.3x over the first hundred traversals
-and 19.9–20.6x over the second, a JIT recompilation transient, before settling from traversal ~200 onward. The
-published ratio is a steady-state figure.
+What the figure covers:
+
+- **Steady state.** A fresh JVM allocates 18.0–18.3x over its first hundred traversals and 19.9–20.6x over
+  the second, a JIT recompilation transient, before settling. The transient stays inside the bound; the
+  published range is the settled one, and the TCK discards 300 warm-up traversals before measuring.
+- **The Bolt path only.** The SQL/PGQ (JDBC) path has no churn binding and no published figure. A PGQ
+  binding has to run its traversals inside a caller-supplied persistence scope, which
+  `GraphChurnRatioTck` does not offer, and Exeris publishes no churn figure for a path a binding does
+  not measure.
+- **Semantic bytes.** The denominator counts 16 bytes per returned UUID, not the 36-character string the
+  wire carries, which makes the ratio larger and the bound stricter than counting transferred bytes.
 
 ### 3. No-Arena Policy (L0 Enforcement at L2)
 
@@ -151,12 +158,13 @@ fails the call and nothing is deleted.
 | `EX-GRPH-5002` | Query Execution Failure   | `[0] String queryType, [1] String detail`                            |
 | `EX-GRPH-5003` | Dual-Write Sync Failure   | `[0] String edgeType, [1] String detail`                             |
 | `EX-GRPH-5004` | Path Not Found            | `[0] long sourceMost, [1] long sourceLeast, [2] long targetMost, [3] long targetLeast` |
-| `EX-GRPH-5005` | Excessive Allocation      | `[0] String driverName, [1] long bytesAllocated, [2] long bytesXfer` — Thrown as: `ExcessiveAllocationException` (`eu.exeris.kernel.spi.exceptions.graph.ExcessiveAllocationException`) |
+| `EX-GRPH-5005` | Excessive Allocation      | `[0] String driverName, [1] long bytesAllocated, [2] long bytesXfer` — Reserved: declared as `ExcessiveAllocationException` (`eu.exeris.kernel.spi.exceptions.graph.ExcessiveAllocationException`); nothing throws it |
 
-**`EX-GRPH-5005` status:** `ExcessiveAllocationException` is declared in the SPI and its `rawArgs` layout is
-covered by `GraphExceptionLayoutTest`, but no kernel code path throws it — a driver self-reporting a breach at
-runtime would be its first caller. TCK enforcement of the ratio does not go through it: `GraphChurnRatioTck`
-fails the build with an assertion carrying the measured ratio, the allocated bytes and the transferred bytes.
+**`EX-GRPH-5005` status: reserved.** `ExcessiveAllocationException` is declared in the stable `spi.exceptions`
+surface and its `rawArgs` layout is covered by `GraphExceptionLayoutTest`, but no kernel code path throws it.
+It is kept for a driver that reports a churn-budget breach at runtime. The churn contract itself is enforced at
+build time by `GraphChurnRatioTck`, which fails with an assertion carrying the measured ratio, the allocated
+bytes and the transferred bytes.
 
 ---
 
@@ -304,8 +312,8 @@ Guarded: the four traversal methods (`traverseBreadthFirst`, `streamBfsJson`, `t
 
 | Driver                          | Tier        | Status      | Production Ready? | Notes                                                    |
 |:--------------------------------|:------------|:-----------:|:-----------------:|:---------------------------------------------------------|
-| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible. Shortest-path adjacency treats `INCOMING` as outgoing (known gap). `CommunityGraphSessionPostgresContractTckIT` runs the SQL/PGQ dialect against a live PostgreSQL instance. |
-| Neo4j Bolt (Java driver)        | Community   | ✅ TRL-3    | ✅ Yes             | Standard Bolt driver, heap allocating (17.4–20.8x churn measured across two regimes, see §2). Shortest-path adjacency treats `INCOMING` as outgoing (known gap). |
+| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible. Shortest-path adjacency treats `INCOMING` as outgoing (known gap). `CommunityGraphSessionPostgresContractTckIT` runs the SQL/PGQ dialect against a live PostgreSQL instance. Churn is not measured (see §2). |
+| Neo4j Bolt (Java driver)        | Community   | ✅ TRL-3    | ✅ Yes             | Standard Bolt driver, heap allocating (17.5–20.8x churn across two regimes, `< 23x` contract, see §2). Shortest-path adjacency treats `INCOMING` as outgoing (known gap). |
 | Memgraph Bolt                   | Community   | ✅ TRL-3    | ✅ Yes             | Same driver as Neo4j Bolt (Bolt protocol compatible). Shortest-path adjacency treats `INCOMING` as outgoing (known gap). |
 
 ---

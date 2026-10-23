@@ -196,7 +196,7 @@ to `HARD`), then the validity window (`EX-LIC-0006`, `EX-LIC-0003`).
 | `EX-GRPH-5002` | Query Execution Failure    | `[0] String queryType, [1] String detail`                        |
 | `EX-GRPH-5003` | Dual-Write Sync Failure    | `[0] String edgeType, [1] String detail`                         |
 | `EX-GRPH-5004` | Path Not Found             | `[0] long sourceMost, [1] long sourceLeast, [2] long targetMost, [3] long targetLeast` |
-| `EX-GRPH-5005` | Excessive Allocation       | `[0] String driverName, [1] long bytesAllocated, [2] long xfer`  |
+| `EX-GRPH-5005` | Excessive Allocation       | `[0] String driverName, [1] long bytesAllocated, [2] long xfer` (reserved; not thrown) |
 
 ### Events (`EX-EVENT-`)
 
