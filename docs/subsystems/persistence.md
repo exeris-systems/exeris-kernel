@@ -400,6 +400,7 @@ shed) are covered by the Community admission tests.
 | `EX-PERS-5006` | Interceptor Initialization Error | `[0] String interceptorClass, [1] String isolationKey`            |
 | `EX-PERS-5007` | No Provider on Classpath         | `[0] String message` — **Fatal:** add a persistence provider implementation jar |
 | `EX-PERS-5008` | RowCursor Type Outside Accessor Domain (since 0.12, ADR-080 §2) | `[0] String declaredTypeName, [1] Integer columnIndex, [2] String accessor` |
+| `EX-PERS-5009` | Role Bypasses Row-Level Security (since 0.13, ADR-012 §4c.4) | `[0] String providerName, [1] String roleName, [2] String attribute` |
 
 **Privacy note for `EX-PERS-5001`:** The `sanitizedConnectionUrl` field MUST have the `user:password@` userinfo
 segment stripped before capture. Emitting raw credentials constitutes a CWE-532 violation. See
@@ -666,6 +667,7 @@ no unauthorized data ever reaches the application layer and no unguarded mutatio
 
 ## Owning ADRs
 
+- [ADR-012](../adr/ADR-012-security-trust-model-upgrade-for-resource-server-validation-and-fail-closed-runtime.md) — Security Trust Model Upgrade (row-level-security reference policy, bypass-role boot check)
 - [ADR-022](../adr/ADR-022-persistence-spi-extension-instant-binders.md) — Persistence SPI Extension — Instant Binders and Readers
 - [ADR-035](../adr/ADR-035-persistence-admission-control-tunability.md) — Persistence Admission Control Tunability and Small-Pool Recalibration
 - [ADR-073](../adr/ADR-073-schema-history-ledger.md) — The migration runner gets a schema-history ledger, and stops relying on every migration being idempotent
