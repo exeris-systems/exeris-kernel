@@ -409,10 +409,9 @@ final class NativeTcpStream implements TransportStream {
      * copied into buffered pending writes, which a TLS stream always uses and which may still
      * drain before this call returns.
      *
-     * <p>May park the caller while the stream's outbound queue is at its bound, until the peer has
-     * taken enough bytes or the stream ends; it never parks a reactor thread, and a write made on one
-     * queues past the bound instead. A write that throws after parking may already have queued a
-     * prefix of {@code source}.
+     * <p>May park the caller while the outbound queue is at its bound, until the peer takes enough or
+     * the stream ends; a reactor thread never parks and queues past the bound instead. A write that
+     * throws after parking may already have queued a prefix of {@code source}.
      *
      * @param source off-heap segment containing the data to send; this stream never retains a
      *               reference to it after the call returns
@@ -425,6 +424,7 @@ final class NativeTcpStream implements TransportStream {
      * @throws TlsHandshakeException    if the TLS handshake failed ({@code EX-NET-2001}), including a
      *                                   server certificate that failed verification
      * @throws TransportException       if an unrecoverable send failure occurs ({@code EX-NET-4002})
+     * @throws IllegalStateException    if another thread is parked as the writer, or the park is interrupted
      */
     @Override
     public void write(MemorySegment source, int length) {

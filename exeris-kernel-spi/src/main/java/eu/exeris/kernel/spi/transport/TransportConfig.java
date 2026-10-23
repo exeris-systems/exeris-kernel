@@ -166,10 +166,9 @@ public record TransportConfig(
     }
 
     /**
-     * Bridge constructor for callers written before the outbound write bound became configurable.
-     *
-     * <p>Applies {@link #DEFAULT_MAX_QUEUED_WRITE_BYTES}, so a stream built from such a
-     * configuration is protected against a peer that stops reading.
+     * Creates a configuration with the default outbound write bound,
+     * {@link #DEFAULT_MAX_QUEUED_WRITE_BYTES}, so a stream built from it is protected against a peer
+     * that stops reading.
      *
      * @param mode              operational mode
      * @param bindAddress       listener bind address
