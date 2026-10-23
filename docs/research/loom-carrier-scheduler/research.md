@@ -183,8 +183,9 @@ not a locality result, and is reported as one.
   is a separate track with its own visibility rules.
 - **Product-line placement.** Whether any of this code belongs on `preview` or `main` is decided
   after the Decision section, through ADR-051's successor, not on this branch.
-- **Saturation throughput as a claim.** On a 6-core desktop the closed-loop spread between arms is
-  inside run-to-run variance; saturation only sets the rate ladder.
+- **Saturation throughput as a claim.** Saturation only sets the rate ladder: three JVMs per arm
+  cannot carry a comparison. Maximum throughput is measured in its own campaign, with its own
+  registered hypothesis, against the scheduler's next revision, with the current `D` as control.
 
 ---
 
