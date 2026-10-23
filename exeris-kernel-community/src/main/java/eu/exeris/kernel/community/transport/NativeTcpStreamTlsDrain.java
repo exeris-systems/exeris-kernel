@@ -141,8 +141,9 @@ final class NativeTcpStreamTlsDrain {
      * @throws TransportException ({@code EX-NET-4002}) if the engine reported an unrecoverable
      *                            status while the peer had not ended the stream; the stream is already
      *                            aborting
-     * @throws TransportStreamClosedException if the peer ended the stream: the session is gone or the
-     *                            remote end was observed; the stream is already aborting
+     * @throws TransportStreamClosedException ({@code EX-NET-4008}) if the peer ended the stream: the
+     *                            session is gone, the remote end was observed, or the write's errno
+     *                            says reset; the stream is already aborting
      */
     /* default */ int drain(NativeTcpStreamPendingWrite pending) {
         TlsStatus status;
