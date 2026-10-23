@@ -87,6 +87,45 @@ reproduction, not a subtle one.
 The ladders also re-measure `D` at 70 % with the 30 ms backend, where the backend stalled in 9 of
 10 trials of the first campaign; whether that recurs is a result either way.
 
+The second revision of the scheduler, arm `D2`, changes what the capacity ladders found
+separating `D` from `B_pin` (Implementation Notes, *Scheduler v2*). Every change sits behind a
+property whose default is `D`'s behaviour, so `D` and `D2` run from one kernel build with different
+properties, and `D2` is the property set frozen after a pilot that is not evidence. The ladders'
+saturation trials motivate it without supporting it: with the 30 ms backend both custom-scheduler
+arms spend about three times the stock arms' context switches per request in the server JVM (1.03
+for `D` against 0.32 for `B_pin`) and 13–16 % more cycles per request, and carry 11–17 % less at
+saturation.
+
+> **HYP-THROUGHPUT (v2).** Per regime, `D2` sustains a higher open-loop rate than the pinned stock
+> scheduler (`B_pin`).
+>
+> *Falsified*, per regime, if `D2`'s highest sustained rate is not above `B_pin`'s on a ladder of
+> 50 % and 70–130 % of `A_iso`'s saturation in steps of 5 %, 5 fresh JVMs per cell, arms `A_iso`,
+> `B_pin`, `D` and `D2`. A rate is sustained by an arm when at least 4 of its trials are valid and
+> every valid trial carried it; an arm's highest sustained rate is the highest rate up to which
+> every rate is sustained.
+
+Beside the ladder, each arm runs closed-loop at the regime's connection count and at four times
+it, 7 fresh JVMs per cell, for requests per second and requests per CPU; a pair differs when its
+exact two-sided Mann–Whitney p is below the Holm-adjusted threshold over all pairs and the medians
+differ by at least 2 %. The mechanism is predicted with it: `D2`'s context switches and cycles per
+request lie inside `B_pin`'s trial range. A rate gain without that fall is not the idle policy's.
+The reading follows `B_pin`'s rule: `D2` above `B_pin` is throughput the scheduler adds beyond
+pinning; above `D` but not above `B_pin`, v2 removes v1's cost and pinning carries the rest; not
+above `D`, v2 changes nothing measurable.
+
+> **Tail guard and p99 follow-up (v2).** The same ladder applies HYP-CAPACITY's objectives and pass
+> rule to every arm.
+>
+> *v2 is rejected* if, in either regime, `D2`'s capacity is below `D`'s. `D2`'s p99 at every rung,
+> against `D` and `B_pin`, is the follow-up to HYP-TAIL and HYP-CAPACITY: v2 changes the scheduling
+> that held `D`'s tail near capacity, so those results are re-measured for it, not carried over.
+
+The campaign starts from a boot in which the Docker daemon has not run. Before it, `D` from the v2
+build runs against `D` from `bc26f9a0e8fc` at 85 % in both regimes, 5 fresh JVMs each, accepted by
+`B_float`'s rule; if it is not accepted, the v2 build's `D` is the control and no earlier campaign
+is compared with `D2`.
+
 HYP-TAIL and HYP-CPU are independent of HYP-CACHE. A track that confirms HYP-TAIL and refutes
 HYP-CACHE is a scheduling result,
 not a locality result, and is reported as one.
@@ -135,6 +174,10 @@ not a locality result, and is reported as one.
 | cycles, instructions, L2 / L3 misses per request | `perf stat` (Zen 3 `amd_l3`) | A_iso, D | HYP-CACHE |
 | CPU-seconds per request | `pidstat` / `perf stat` | all | HYP-CPU |
 | JFR (scheduler, park/unpark, GC) | JFR, single-phase events only | D, A_iso | Diagnosis, not headline |
+| Highest sustained rate, 50 % and 70–130 % | `wrk2`, open loop | A_iso, B_pin, D, D2 | HYP-THROUGHPUT, v2 tail guard |
+| Requests per second and per CPU, 1× and 4× connections | `wrk`, closed loop | A_iso, B_pin, D, D2 | HYP-THROUGHPUT, secondary |
+| Context switches and cycles per request | `perf stat` | A_iso, B_pin, D, D2 | HYP-THROUGHPUT mechanism |
+| Placement paths, steals, timed parks | scheduler counters | D, D2 | v2 pilot, diagnosis |
 
 ### How it will be measured
 
@@ -183,9 +226,14 @@ not a locality result, and is reported as one.
   is a separate track with its own visibility rules.
 - **Product-line placement.** Whether any of this code belongs on `preview` or `main` is decided
   after the Decision section, through ADR-051's successor, not on this branch.
-- **Saturation throughput as a claim.** Saturation only sets the rate ladder: three JVMs per arm
-  cannot carry a comparison. Maximum throughput is measured in its own campaign, with its own
-  registered hypothesis, against the scheduler's next revision, with the current `D` as control.
+- **Saturation throughput as a claim.** In the v1 campaigns saturation only sets the rate ladder:
+  three JVMs per arm cannot carry a comparison. Maximum throughput is HYP-THROUGHPUT's, measured
+  against v2 with `D` as control.
+- **A blocked carrier.** `D`'s carriers are plain `Thread`s, so nothing compensates when one
+  blocks; the SPI offers no way to start a replacement. v2 does not address it; its stealing only
+  lets the other carrier drain the blocked one's queue.
+- **A carrier-local timer.** v2 counts timed parks and their cancellations; a timer serviced on the
+  carriers is considered only if timed parks approach one per request.
 
 ---
 
@@ -222,6 +270,47 @@ itself to a free CPU when it starts and releases it when it ends, because the po
 workers after 30 s and starts new ones. With `loom.bench.pinned.bind=false` it binds nothing (arm
 `B_float`).
 
+**Scheduler v2.** Each change is behind an `exeris.locality.*` property read once at
+construction, with v1's behaviour as its default; an implementation chosen by a property is held
+in a final field, and a class needed only by a non-default value is never loaded with the default,
+so `D`'s code paths stay those of v1.
+
+- **Resolution and routing.** The current carrier is resolved from the running thread: a carrier
+  thread is its own carrier, a virtual thread's is the carrier it is mounted on, and any other
+  thread is remote (`carrierResolve`). In v1 a virtual thread not made by a carrier's factory
+  resolves no carrier, so what it starts goes to a random carrier. Read sub-pollers are routed by
+  `VirtualThreadTask#preferredCarrier`, which the JDK sets for them, instead of by thread name, and
+  are never moved (`poller.route`); the carrier factory passes its carrier as the preferred one
+  (`factory.preferredCarrier`). A virtual thread's carrier lives in its task attachment, which
+  lives as long as the thread; v1's per-thread `ScopedValue` would name the wrong carrier once a
+  thread moves.
+- **Idle policy.** A carrier with an empty queue polls for a bounded time before it parks
+  (`idle.spinNs`), staying `RUNNING` while it does, so the wakeup handshake — compare-and-set to
+  `PARKED`, re-check the queue, park — is unchanged. A producer reads the state before swapping it
+  (`wakeup`), which is sound only because its enqueue is a volatile publication ordered before the
+  read.
+- **Queues.** Each carrier owns a work-stealing deque that it pushes and pops without atomics on the
+  fast path, plus an inbox for other threads' wakeups that only it drains (`queue`). A wakeup issued
+  from the target carrier itself goes to the deque (`selfWakeup`); the yield budget is checked every
+  K tasks rather than after each (`yield.checkEvery`).
+- **Balancing.** A carrier about to park takes a batch from the other carriers' deques and becomes
+  the home of what it takes (`steal`, `steal.batch`); a started thread goes to the shorter of two
+  carriers' queues instead of the starting carrier's (`place`), measured apart from stealing.
+- **Timed parks** are counted through a delegating `schedule` override (`timer.count`).
+- **Optional, off unless the pilot needs them:** sub-pollers ahead of the queue
+  (`poller.priority`); a single next-to-run slot for a self-wakeup (`lifoSlot`).
+
+The pilot checks, before the property set is frozen: context switches and futex calls per request
+with carrier switches recorded per thread, the spin's cost in CPU at 50 % and in requests per CPU,
+how many threads each placement path placed under `D`, timed parks per request, whether stealing
+removes `D`'s tail advantage at 85 %, and whether the I/O-bound 70 % rung stays bimodal.
+
+Per-carrier FIFO queues run a woken waiter after everything queued ahead of it, so code running on
+them inherits every unfair lock it uses: in an early mock backend a `LinkedBlockingDeque.takeFirst`
+pool starved callers to their timeout under the custom scheduler and not under the stock pool, and a fair
+`Semaphore` fixed it. The stock pool's FIFO is equally unfair; its stealing hides it. v2 changes no
+default for this, and the pilot reports whether stealing does the same for `D2`.
+
 Open items, in the order they block measurement:
 
 1. **Where the pilot's carrier CPU went.** The carrier loop parks correctly when its queue is
@@ -252,7 +341,9 @@ Open items, in the order they block measurement:
    proposed to the product line on its own.
 7. **Timed parks.** The scheduler does not override `schedule(Runnable, long, TimeUnit)`, so timed
    parks are serviced by the JDK's `VirtualThread-unparker` platform thread and resume carriers
-   with a cross-CPU unpark. Not a HYP-TAIL axis; a question for the loom-dev report.
+   with a cross-CPU unpark. Not a HYP-TAIL axis. The Loom maintainers state that every timed park
+   goes through it, that most of those tasks are cancelled, and that running them on carriers is
+   allowed; v2 counts them before any carrier-local timer is built.
 
 ---
 
@@ -328,7 +419,8 @@ Diagnostic runs (exploratory, recorders attached): `exeris-benchmarks`
 `results/raw/loom-carrier-scheduler-diag/20261015T041646Z-h71112fae47da` and
 `20261015T093021Z-h596d216ecca5`; the report's §5.5 summarises them.
 
-Next, in order: why the backend stalls under pinned carriers at I/O-bound 70 % — a 60 s warmup
+Next, in order: scheduler v2 — the pilot, the equivalence check, then HYP-THROUGHPUT with the
+tail guard (Hypothesis); why the backend stalls under pinned carriers at I/O-bound 70 % — a 60 s warmup
 (does the jump follow the mock's age or the measurement phase), a JIT, deoptimisation and pinning
 record of the mock with its `ForkJoinPool` size, and the arrival pattern at the mock under `B_pin`
 against `A_iso` (same algorithm, only the binding differs); what keeps `A_iso`'s carriers 6 points
