@@ -149,6 +149,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   (`timeSource()` returns `TimeSource.SYSTEM` when unbound). A `stable` signature no longer names a
   `preview` type once the bridges below are gone. `StableSignatureArchitectureTest` enforces it.
 
+- **The identity a declared `@Schedule` job runs as is ruled (ADR-057 Amendment A1, docs and TCK only).**
+  The kernel issues no service principal at 1.0: a declared job is submitted with only
+  `SecurityProvider.systemStorageContext()` bound and runs with no `PrincipalContext`. A declaration on a
+  `TENANT` or `UNIVERSE` entity, or on an action that requires a role or a permission or declares none,
+  is refused at build time by the tooling, and N replicas fire a declared job N times. The either-context
+  refusal rule is unchanged and the `storageContextOrSystem()` fallback of a principal-only submission is
+  documented in `docs/subsystems/scheduling.md`. `AbstractJobSchedulerTck` gains a case asserting that a
+  storage-only submission runs with no principal bound. No signature changes.
+
 ### Deprecated
 
 - **`findShortestPath(UUID, UUID)` is deprecated for removal before the graph SPI is promoted.** Use `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` instead.

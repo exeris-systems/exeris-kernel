@@ -9,6 +9,7 @@
 | **Owning Repo** | `exeris-kernel`                                                                            |
 | **Driven By**   | `docs/ROADMAP.md` §"Runtime: `JobScheduler` SPI" and §"Platform Baseline for 1.0 GA"         |
 | **Compliance**  | [No Waste Compute](../whitepaper.md); ADR-012 (identity carried across the job boundary)    |
+| **Amended**     | 2026-10-23 — A1: the identity a declared job runs as, see [Amendments](#amendments)         |
 
 ## Context and Problem Statement
 
@@ -88,6 +89,8 @@ scoped-ban exception.**
      identity that scheduled it, which may since have lost the rights it holds. Re-validating a token at
      dispatch time is out of scope here, and named as such below, because it is an identity decision
      rather than a scheduling one.
+   _(Amended 2026-10-23: the obligation also governs a submission generated from a declaration, and
+   the kernel adds no identity for it — see Amendments, A1.)_
 
 6. **`JobHandle.cancel` plus shutdown drain constitute the structured lifecycle boundary.** CLAUDE.md
    forbids unstructured concurrency in orchestration paths. Dispatching on bare virtual threads satisfies
@@ -172,6 +175,8 @@ scoped-ban exception.**
   than absorbing them.
 - **1.0 GA scope.** `docs/ROADMAP.md` marks the v0.11/v0.12 SPI row — including `JobScheduler` —
   explicitly post-1.0. This SPI ships in v0.11 and 1.0 is not gated on it.
+  _(Amended 2026-10-23: superseded by ADR-100 §1 — `eu.exeris.kernel.spi.scheduling` is `stable` at 1.0;
+  see Amendments, A1.)_
 
 ## Cross-references
 
@@ -210,3 +215,49 @@ slices:
    convention.
 5. **Registry check:** `EX-JOB-*` codes present in `KernelErrorCodes` before any throw site references
    them.
+
+## Amendments
+
+- **2026-10-23 — A1: the identity a declared job runs as.** Obligation 5 governs every submission,
+  including one generated from a declaration with no submitting request, such as SDK `@Schedule`
+  (ADR-072). The kernel adds no identity of its own for such a job. This amendment is additive: it
+  changes no signature of `eu.exeris.kernel.spi.scheduling`.
+  1. **Principal.** At 1.0 the kernel issues no service principal, and a driver binds no principal or
+     storage context it did not capture. A declared job is submitted inside a scope that binds only
+     `KernelProviders.STORAGE_CONTEXT`, to `SecurityProvider.systemStorageContext()`, and it runs with
+     no `PrincipalContext` bound. A declared job is not an authenticated user, so a declaration is
+     refused at build time whether its action requires a role or a permission or declares none: with
+     no principal bound, a requirement can only fail or be bypassed by a call placed below its check,
+     and an action with an empty role set is no exception, because "no requirement" would otherwise
+     read as "open to any caller", an authority a declared job never earned. Every SDK `@Action` either
+     names roles or, with an empty role set, requires an authenticated caller, so at 1.0 no declaration
+     passes: `@Schedule` stays reserved until a service principal exists. A named service principal,
+     when the kernel adds one, is issued by `SecurityProvider`, takes its roles from application
+     configuration and never from a design-time annotation, and arrives as an addition to the security
+     surface — a new type or a `default` method — that the submitter binds before calling `submit`.
+     `JobScheduler` and `JobDescriptor` do not change for it: identity crosses this seam by capture, so
+     a new identity source needs no scheduling signature. A `JobDescriptor` component and a `submit`
+     overload carrying identity are ruled out, because each would put a second identity path into the
+     scheduling contract.
+  2. **Storage context.** `systemStorageContext()` carries no isolation key, so it is admissible only
+     for a declared job on a `GLOBAL`-scoped entity. A declaration on a tenant-partitioned entity
+     (`TENANT` or `UNIVERSE`) is refused at build time. A per-tenant fan-out needs a tenant enumeration
+     the kernel does not provide; if one is added, it is a new seam and an addition. The build-time
+     check sees the declaring entity only: a body that reaches tenant-partitioned data under the system
+     context runs without a tenant predicate, which is the body's responsibility, as it is for any code
+     that binds the system context.
+  3. **Replicas.** The in-process driver is single-node. A declared job in an application running N
+     replicas fires on each, N times per trigger, and a declared action must be idempotent under that.
+     Single-firing across nodes arrives with the cross-node coordination seam, as a property of a
+     different `JobSchedulerProvider`, with no signature change.
+  4. **Refusal scope.** The refusal in obligation 5 applies to a submission with neither context
+     bound, and it is unchanged. A submission with either one dispatches and rebinds only what was
+     captured. A submission with a principal and no storage context reaches persistence through
+     `KernelProviders.storageContextOrSystem()`, which yields the system context; a submitter that
+     needs tenant isolation binds the storage context explicitly. `AbstractJobSchedulerTck` pins that
+     a storage-only submission runs with no `PrincipalContext` bound.
+
+  The "1.0 GA scope" bullet under *What is NOT in scope* is superseded by ADR-100 §1:
+  `eu.exeris.kernel.spi.scheduling` is `stable` at 1.0. `@Schedule` stays outside the 1.0.0 freeze
+  under ADR-072 obligation 8 until the exeris-tooling transcription exists. The build-time refusals
+  above live in exeris-tooling; until it implements them `@Schedule` stays inert there.
