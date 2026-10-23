@@ -274,8 +274,11 @@ Arm `B_pin` is not kernel code: it is `PinnedForkJoinScheduler` in the `exeris-b
 target, so the capacity ladders measure the same kernel commit as the first campaigns. It builds
 its pool with the built-in scheduler's arguments and properties, its workers are the JDK's
 `CarrierThread`s (so the carrier-only paths — lazy submit after a park, external submit on yield,
-compensation around blocking calls — apply to them), and it takes the two submit paths the JDK
-reserves for the built-in scheduler by identity under the same conditions. Each worker binds
+compensation around blocking calls — apply to them), and it takes the submit path the JDK
+reserves for the built-in scheduler by identity in `start()` under the same condition. Its
+`onContinue` lazy-submits an unpark issued from a virtual thread on one of its workers, where the
+built-in scheduler calls `execute()`, which may signal an idle worker; `B_float` shares the
+difference, and the capacity report's §1.1 states what it affects. Each worker binds
 itself to a free CPU when it starts and releases it when it ends, because the pool retires idle
 workers after 30 s and starts new ones. With `loom.bench.pinned.bind=false` it binds nothing (arm
 `B_float`).
