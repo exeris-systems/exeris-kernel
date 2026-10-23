@@ -11,11 +11,11 @@ status: active
 
 | Attribute      | Value                                                  |
 |:---------------|:-------------------------------------------------------|
-| **Status**     | **ACCEPTED** (2025-12-11, upd. 2026-10-20)             |
+| **Status**     | **ACCEPTED** (2025-12-11, upd. 2026-10-23)             |
 | **Deciders**   | Arkadiusz Przychocki                                   |
-| **Date**       | 2025-12-11 (Updated: 2026-10-20)                       |
+| **Date**       | 2025-12-11 (Updated: 2026-10-23)                       |
 | **Compliance** | [Strategic Pillar: No-Waste Compute](../whitepaper.md) |
-| **Amended**    | 2026-10-20 — initialization deadline on §5 (EX-BOOT-0003); 2026-10-07 — §5 Kernel Lifecycle and Process Termination (**ACCEPTED** 2026-10-08), see [Amendments](#amendments) |
+| **Amended**    | 2026-10-23 — a send to a vanished peer on §3 (EX-NET-4008); 2026-10-20 — initialization deadline on §5 (EX-BOOT-0003); 2026-10-07 — §5 Kernel Lifecycle and Process Termination (**ACCEPTED** 2026-10-08), see [Amendments](#amendments) |
 
 ## Context and Problem Statement
 
@@ -67,6 +67,9 @@ We reject the concept of a "QUIC-only" kernel.
 - **Enterprise Tier:** **QUIC / HTTP/3** using **Panama FFM** and **io_uring** for direct kernel-bypass I/O
   (RFC 9000).
 - **PAQS:** Priority-Aware Queue Scheduler integrated at the transport edge.
+- **A send to a vanished peer** reports the closed-stream signal for the peer (`EX-NET-4008`), with the
+  transport failure as its cause, and a TLS `close_notify` ends writes in Community.
+  _(Amended 2026-10-23: the send-to-a-vanished-peer clause — see Amendments.)_
 
 ### 4. Memory Management (Loan Pattern)
 
@@ -316,6 +319,15 @@ thread, or the host's lifecycle thread. Two of those carry none of the kernel's 
   `KernelBootstrap` builder (`initializeDeadline(Duration)`), with no configuration key; `Duration.ZERO` disables it.
   A missed deadline interrupts the booting thread and fails the boot with `EX-BOOT-0003` under the same failure policy
   as any other initialization failure. Only `initialize()` is bounded. `start()` and `stop()` are not.
+
+- **2026-10-23 — §3 A send to a vanished peer.** The original §3 text is kept; one clause is added. A send on a
+  Community TCP or TLS stream that fails because the peer ended the stream, by a reset, a broken pipe or a TLS
+  `close_notify`, reports the closed-stream signal for the peer (`EX-NET-4008`) with the transport failure
+  (`EX-NET-4002`) as its cause, instead of the send failure itself. The Community TLS engine does not support
+  half-close: a write after the peer's `close_notify` is refused, and a write stalled across it is dropped and
+  ends the stream; a TCP FIN stays a half-close and leaves writes working. The NIO fallback has no errno, so
+  there a send that fails on the channel for any reason but a local close is read as the peer's end. Enterprise transports meet the same
+  observable obligation through `AbstractTransportStreamTck`.
 
 ## Engineering Protocol
 

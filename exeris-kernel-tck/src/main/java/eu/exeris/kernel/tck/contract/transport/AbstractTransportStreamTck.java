@@ -49,8 +49,11 @@ import static org.assertj.core.api.Assertions.fail;
  *       {@link TransportStreamClosedException}</li>
  *   <li>a read or write after this endpoint's own {@code close()} or {@code reset()} throws
  *       {@link TransportStreamClosedException} with {@code EX-NET-4009}; the peer-closed code
- *       {@code EX-NET-4008} is not pinned here, because whether a peer's end of stream closes the
- *       local side is transport semantics</li>
+ *       {@code EX-NET-4008} is pinned for a send after the peer's {@code reset()} only, because
+ *       whether a peer's graceful end of stream closes the local side is transport semantics</li>
+ *   <li>a send that fails because the peer reset the stream throws
+ *       {@link TransportStreamClosedException} with {@code EX-NET-4008} as its first failure, never
+ *       a {@link TransportException}</li>
  *   <li>a thread blocked in {@code read()} is woken when its own stream ends: by this endpoint's
  *       {@code close()}, even while queued writes are still draining, and by the peer's
  *       {@code reset()}; it then returns end of stream or throws the closed-stream signal, and a
@@ -884,6 +887,82 @@ public abstract class AbstractTransportStreamTck {
                 }
             }
             return false;
+        }
+    }
+
+    // =========================================================================
+    // A send to a peer that ended the stream
+    // =========================================================================
+
+    @Nested
+    @DisplayName("A send after the peer's reset")
+    class PeerEndRefusesWrites {
+
+        private static final int MAX_SEND_ATTEMPTS = 100_000;
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise a send to a peer that reset the stream.
+         */
+        PeerEndRefusesWrites() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @DisplayName("write() after the peer's reset fails first with the closed-stream signal EX-NET-4008")
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        void writesAfterThePeersResetAreRefusedWithThePeerCode() {
+            TransportStream writer = streams.writer();
+            streams.reader().reset(0L);
+
+            Throwable first = null;
+            try (LoanedBuffer probe = allocator.allocate(AllocationHint.MICRO)) {
+                for (int attempt = 0; attempt < MAX_SEND_ATTEMPTS && first == null; attempt++) {
+                    try {
+                        writer.write(probe.segment(), 1);
+                    } catch (RuntimeException failure) {
+                        first = failure;
+                    }
+                }
+            }
+
+            assertThat(first)
+                    .as("a send to a peer that reset the stream is refused within the attempt bound")
+                    .isNotNull();
+            assertThat(first)
+                    .as("the first failure says the peer ended the stream, not that the send failed")
+                    .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                            e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4008));
+        }
+
+        @Test
+        @DisplayName("queueWrite() after the peer's reset fails first with the closed-stream signal EX-NET-4008")
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        void queuedWritesAfterThePeersResetAreRefusedWithThePeerCode() {
+            TransportStream writer = streams.writer();
+            streams.reader().reset(0L);
+
+            Throwable first = null;
+            for (int attempt = 0; attempt < MAX_SEND_ATTEMPTS && first == null; attempt++) {
+                LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+                try {
+                    writer.queueWrite(buf, 1);
+                } catch (RuntimeException failure) {
+                    first = failure;
+                    // The caller closes on a throw; the close is idempotent, so it holds whether or not
+                    // the transport released the loan while it unwound.
+                    assertThatCode(buf::close).doesNotThrowAnyException();
+                }
+            }
+
+            assertThat(first)
+                    .as("a queued send to a peer that reset the stream is refused within the attempt bound")
+                    .isNotNull();
+            assertThat(first)
+                    .as("the first failure says the peer ended the stream, not that the send failed")
+                    .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                            e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4008));
         }
     }
 

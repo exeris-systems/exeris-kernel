@@ -198,7 +198,13 @@ final class NativeTcpStreamTlsHandshake {
                     return TlsStatus.FINISHED;
                 }
                 TlsStatus status = tlsEngine.beginHandshake(outbound);
-                if (status == TlsStatus.FINISHED || markReadyIfHandshakeComplete()) {
+                if (status == TlsStatus.FINISHED) {
+                    // Latched under the lock that ended the handshake, so a session the peer ends
+                    // right after it is never mistaken for a handshake still in progress.
+                    ready.set(true);
+                    return TlsStatus.FINISHED;
+                }
+                if (markReadyIfHandshakeComplete()) {
                     return TlsStatus.FINISHED;
                 }
                 if (status == TlsStatus.CLOSED) {

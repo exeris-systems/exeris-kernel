@@ -27,6 +27,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.net.ssl.SSLContext;
@@ -48,6 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * resolved by the request loop the kernel ships, not by a harness. Fails rather than skips when OpenSSL
  * cannot be loaded, because a skipped case reports success.
  */
+@ExtendWith(HandlerFailureLogGuard.class)
 @DisplayName("Community: stream routes over HTTP/2 on a real server")
 class CommunityHttp2StreamRouteIntegrationTest {
 

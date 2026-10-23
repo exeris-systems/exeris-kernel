@@ -266,7 +266,8 @@ final class NativeTcpStream implements TransportStream {
         this.tlsHandshake = new NativeTcpStreamTlsHandshake(engineName, tlsEngine, channel, allocator,
                 tlsLock, handshakeBackoff, closed, closeRequested, this::close, writeInterestCallback);
         this.tlsDrain = tlsEngine == null ? null : new NativeTcpStreamTlsDrain(
-                engineName, remoteClosed, closed, pendingWriteTlsContext.waitingForPeer(), this::requestAbort);
+                engineName, remoteClosed, closed, pendingWriteTlsContext.waitingForPeer(), this::requestAbort,
+                this::abortOnPeerGone);
     }
 
     /**
@@ -496,6 +497,10 @@ final class NativeTcpStream implements TransportStream {
             if (needsWriteInterest()) {
                 writeInterestCallback.run();
             }
+        } catch (TransportStreamClosedException ended) {
+            // The abort finishes the close after the slot is released; close() would end the survival
+            // of the peer's bytes, which only the application's own close or reset may do.
+            throw ended;
         } catch (RuntimeException error) {
             close();
             throw error;
@@ -906,7 +911,13 @@ final class NativeTcpStream implements TransportStream {
     /** Flushes a write that waited for the peer, after an ingress batch that may have satisfied it. */
     /* default */ void flushPendingAfterIngress() {
         if (tlsDrain != null && tlsDrain.markRetryAfterIngress() && hasPendingData()) {
-            flushPendingWrites();
+            try {
+                flushPendingWrites();
+            } catch (TransportStreamClosedException _) {
+                // The abort already released the queue and finishes the close; the writer sees the
+                // signal on its next call.
+                return;
+            }
             if (needsWriteInterest()) {
                 writeInterestCallback.run();
             }
@@ -1011,9 +1022,36 @@ final class NativeTcpStream implements TransportStream {
             if (closed.get()) {
                 return true;
             }
-            requestAbort(remoteClosed.get());
+            if (isPeerGone(e)) {
+                throw abortOnPeerGone(pending.bytesWritten(), e);
+            }
+            requestAbort(false);
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
         }
+    }
+
+    /**
+     * Whether a failed send found the peer gone: its end was observed, the send's errno says reset, or,
+     * on the NIO fallback, which reports no errno and whose messages are locale text, the channel failed
+     * on a send for any reason but a local close. A local close is a {@link ClosedChannelException}, so
+     * the class alone separates it from a broken connection.
+     */
+    private boolean isPeerGone(IOException failure) {
+        return remoteClosed.get()
+                || failure instanceof NativeTcpPeerResetException
+                || (!plainSocketBackend.usesCoreSocketSeam()
+                        && NativeTcpStreamPlainSocketIo.isBrokenConnection(failure));
+    }
+
+    /**
+     * Ends the stream after a send found the peer gone and returns the signal to throw. The remote end
+     * is recorded first, so the peer ended first unless the application closed earlier. The caller
+     * holds the outbound slot.
+     */
+    private TransportStreamClosedException abortOnPeerGone(long bytesSent, Throwable lowLevel) {
+        markRemoteClosed();
+        requestAbort(true);
+        return closedSignal(TransportException.sendFailure(engineName, bytesSent, lowLevel));
     }
 
     /**
@@ -1053,7 +1091,7 @@ final class NativeTcpStream implements TransportStream {
             }
         } catch (IOException e) {
             if (!closeRequested.get() && !closed.get()) {
-                throw TransportException.sendFailure(engineName, writtenTotal, e);
+                throw directSendFailure(e, writtenTotal);
             }
             return;
         }
@@ -1167,6 +1205,25 @@ final class NativeTcpStream implements TransportStream {
         return peerEndedFirst.get()
                 ? TransportStreamClosedException.peerClosed()
                 : TransportStreamClosedException.locallyClosed();
+    }
+
+    /**
+     * What a failed direct write throws. No slot is held and nothing is queued, so a peer that is gone
+     * leaves nothing to abort: the application's close ends the stream.
+     */
+    private RuntimeException directSendFailure(IOException failure, int bytesSent) {
+        if (isPeerGone(failure)) {
+            markRemoteClosed();
+            return closedSignal(TransportException.sendFailure(engineName, bytesSent, failure));
+        }
+        return TransportException.sendFailure(engineName, bytesSent, failure);
+    }
+
+    /** The closed-stream signal for a failed send, carrying the transport failure as its cause. */
+    private TransportStreamClosedException closedSignal(Throwable cause) {
+        TransportStreamClosedException signal = closedSignal();
+        signal.initCause(cause);
+        return signal;
     }
 
     private void ensureOpen() {
@@ -1291,7 +1348,7 @@ final class NativeTcpStream implements TransportStream {
         }
         wakeAllWaiters();
 
-        releaseTlsResources();
+        NativeTcpStreamTeardown.releaseTlsResources(tlsEngine, allocator, tlsCiphertextPlaceholder);
 
         if (!inboundOutlivesAbort.get()) {
             try {
@@ -1307,64 +1364,10 @@ final class NativeTcpStream implements TransportStream {
             logBestEffortCleanupFailure("cleanupOutbound", error);
         }
 
-        closeChannelQuietly();
+        NativeTcpStreamTeardown.closeChannelQuietly(channel, resetRequested.get());
 
         connection.markClosedByCarrier();
         closeCallback.run();
-    }
-
-    /**
-     * Terminal, best-effort release of TLS-owned resources: graceful shutdown record, the engine
-     * itself, and the per-stream ciphertext placeholder (see {@link #tlsCiphertextPlaceholder}).
-     * Invoked exactly once from {@link #finishCloseIfDrained()} under its {@code closed} CAS guard.
-     */
-    private void releaseTlsResources() {
-        if (tlsEngine == null) {
-            return;
-        }
-        try {
-            try (LoanedBuffer outbound = allocator.allocateNetwork(1024)) {
-                tlsEngine.initiateShutdown(outbound);
-            }
-        } catch (RuntimeException _) {
-            // best effort
-        }
-        try {
-            tlsEngine.close();
-        } catch (RuntimeException _) {
-            // best effort
-        }
-        if (tlsCiphertextPlaceholder != null) {
-            try {
-                // Safe outside tlsLock: fd-owner unwrap never dereferences the ciphertext segment
-                // (OffHeapTlsEngine#unwrap reads the socket BIO directly). Do NOT move this under
-                // tlsLock — that lock is held on the ingress hot path, and finishCloseIfDrained()
-                // must never block on it.
-                tlsCiphertextPlaceholder.close();
-            } catch (RuntimeException _) {
-                // best effort
-            }
-        }
-    }
-
-    /**
-     * Best-effort terminal close of the underlying channel. A graceful close half-closes the output
-     * first (FIN); an abortive {@link #reset(long)} skips the half-close so the SO_LINGER-0 close
-     * emits a RST instead.
-     */
-    private void closeChannelQuietly() {
-        if (!resetRequested.get()) {
-            try {
-                channel.shutdownOutput();
-            } catch (IOException | RuntimeException _) {
-                // best effort half-close before full close
-            }
-        }
-        try {
-            channel.close();
-        } catch (IOException _) {
-            // best effort close
-        }
     }
 
     private void closeCurrentInbound() {

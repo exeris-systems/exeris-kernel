@@ -30,4 +30,26 @@ class SyscallErrnoTest {
         assertThat(SyscallErrno.isRetryable(10_035)).isTrue();
         assertThat(SyscallErrno.isRetryable(10_036)).isTrue();
     }
+
+    @Test
+    @DisplayName("a broken pipe and the platform's connection reset say the peer ended the connection")
+    void brokenPipeAndConnectionResetArePeerResets() {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        if (os.startsWith("windows")) {
+            assertThat(SyscallErrno.isPeerReset(10_054)).as("WSAECONNRESET").isTrue();
+            assertThat(SyscallErrno.isPeerReset(10_053)).as("WSAECONNABORTED").isTrue();
+            return;
+        }
+        int connectionReset = os.startsWith("mac") ? 54 : 104;
+        assertThat(SyscallErrno.isPeerReset(32)).as("EPIPE").isTrue();
+        assertThat(SyscallErrno.isPeerReset(connectionReset)).as("ECONNRESET").isTrue();
+    }
+
+    @Test
+    @DisplayName("a retryable, timed-out, unknown or unavailable errno does not say the peer ended the connection")
+    void otherErrnosAreNotPeerResets() {
+        for (int errno : new int[] {11, 4, 35, 0, -1, 110, 10_035}) {
+            assertThat(SyscallErrno.isPeerReset(errno)).as("errno " + errno).isFalse();
+        }
+    }
 }

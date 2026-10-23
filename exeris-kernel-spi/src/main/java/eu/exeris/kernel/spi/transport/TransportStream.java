@@ -111,11 +111,13 @@ public interface TransportStream extends AutoCloseable {
      * @param source off-heap segment containing data to send
      * @param length number of bytes to write (must be ≤ {@code source.byteSize()})
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure —
-     *         {@code EX-NET-4002} when the send itself fails, {@code EX-NET-4003} when a TLS
-     *         handshake this write has to wait for does not complete within the driver's
-     *         deadline
+     *         {@code EX-NET-4002} when the send itself fails and the peer has not ended the stream,
+     *         {@code EX-NET-4003} when a TLS handshake this write has to wait for does not complete
+     *         within the driver's deadline
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
-     *         with the code the interface {@code @implSpec} defines
+     *         with the code the interface {@code @implSpec} defines, including a send that fails
+     *         because the peer ended the stream, which reports {@code EX-NET-4008} with the transport
+     *         failure ({@code EX-NET-4002}) as its cause
      * @implSpec Implementations must not hold a reference to {@code source} after this call
      *           returns.
      */
@@ -151,12 +153,15 @@ public interface TransportStream extends AutoCloseable {
      * @param length number of valid bytes in the buffer (from offset 0); must be in
      *               {@code [0, buffer.capacity()]}
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure —
-     *         {@code EX-NET-4002} when the send fails, {@code EX-NET-4003} when a TLS handshake
-     *         this write has to wait for does not complete within the driver's deadline; in
-     *         either case the caller owns and must close {@code buffer}
+     *         {@code EX-NET-4002} when the send itself fails and the peer has not ended the stream,
+     *         {@code EX-NET-4003} when a TLS handshake this write has to wait for does not complete
+     *         within the driver's deadline; in either case the caller owns and must close
+     *         {@code buffer}
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
-     *         with the code the interface {@code @implSpec} defines; the caller owns and must
-     *         close {@code buffer}
+     *         with the code the interface {@code @implSpec} defines, including a send that fails
+     *         because the peer ended the stream, which reports {@code EX-NET-4008} with the transport
+     *         failure ({@code EX-NET-4002}) as its cause; the caller owns and must close
+     *         {@code buffer}
      * @throws IllegalArgumentException if {@code length} is negative or exceeds
      *         {@code buffer.capacity()} — the caller owns and must close {@code buffer}
      * @apiNote Callers must not rely on non-blocking semantics: a stream whose transport writes
