@@ -1,29 +1,5 @@
 [ {
-  "t" : 1792652494933,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 137512,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494933,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494934,
+  "t" : 1792738428624,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -35,7 +11,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494934,
+  "t" : 1792738428624,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -47,7 +23,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494936,
+  "t" : 1792738428625,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -59,7 +35,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494936,
+  "t" : 1792738428625,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -71,7 +47,199 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494938,
+  "t" : 1792738428626,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428626,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428627,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428627,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 138120,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428627,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 137536,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428627,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428628,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428628,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428629,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428629,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428630,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428630,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428631,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428631,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428632,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428632,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428632,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -83,7 +251,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494938,
+  "t" : 1792738428632,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -95,7 +263,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494939,
+  "t" : 1792738428633,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -107,7 +275,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494939,
+  "t" : 1792738428633,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -119,7 +287,31 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494941,
+  "t" : 1792738428635,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428635,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792738428635,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -131,7 +323,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494941,
+  "t" : 1792738428635,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -143,7 +335,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494942,
+  "t" : 1792738428636,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -155,7 +347,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494942,
+  "t" : 1792738428636,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -167,7 +359,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494944,
+  "t" : 1792738428637,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -179,7 +371,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494944,
+  "t" : 1792738428637,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -191,7 +383,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494946,
+  "t" : 1792738428638,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -203,7 +395,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494946,
+  "t" : 1792738428638,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -215,7 +407,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494947,
+  "t" : 1792738428639,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -227,7 +419,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494947,
+  "t" : 1792738428639,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -239,7 +431,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494949,
+  "t" : 1792738428639,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -251,7 +443,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494949,
+  "t" : 1792738428639,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -263,7 +455,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494950,
+  "t" : 1792738428640,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -275,7 +467,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494950,
+  "t" : 1792738428640,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -287,7 +479,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494952,
+  "t" : 1792738428641,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -299,7 +491,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494952,
+  "t" : 1792738428642,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -311,7 +503,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494953,
+  "t" : 1792738428642,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -323,7 +515,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494953,
+  "t" : 1792738428642,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -335,7 +527,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494955,
+  "t" : 1792738428643,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -347,7 +539,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494955,
+  "t" : 1792738428643,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -359,7 +551,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494956,
+  "t" : 1792738428644,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -371,7 +563,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494956,
+  "t" : 1792738428644,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -383,7 +575,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494958,
+  "t" : 1792738428645,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
@@ -395,199 +587,7 @@
   "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792652494958,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494960,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261568,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494960,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494961,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261568,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494961,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494962,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261568,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494962,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494963,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261568,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494963,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494965,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261568,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494965,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494966,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261568,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494966,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494967,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261568,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494967,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494969,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261568,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.core.telemetry.JfrTelemetrySink.emitLifecycle(JfrTelemetrySink.java:171)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792652494969,
+  "t" : 1792738428645,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
