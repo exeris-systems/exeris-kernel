@@ -64,9 +64,12 @@ import java.util.concurrent.locks.ReentrantLock;
  *       slots from registration to {@link #release}, not to END_STREAM or a reset, so a peer that
  *       opens and resets streams in a loop cannot pile up live sender threads past the concurrent
  *       stream cap.</li>
- *   <li><b>The lock is never held across a wait on the peer.</b> Every frame written under it goes
- *       through {@code TransportStream#queueWrite}, which does not wait for the peer, so a slow peer
- *       cannot hold the lock and starve the other senders or the frame loop's own writes.</li>
+ *   <li><b>The lock is never held across a wait on the peer on the Community transport.</b> Every
+ *       frame written under it goes through {@code TransportStream#queueWrite}, which the Community
+ *       transport answers by handing the socket what it takes without blocking and queueing the rest
+ *       for its event loop, so a slow peer cannot hold the lock and starve the other senders or the
+ *       frame loop's own writes. The SPI leaves blocking in {@code queueWrite} implementation-defined,
+ *       so a transport that sends synchronously there holds the lock for as long as its send takes.</li>
  *   <li><b>A transport per-stream cap bounds queued bytes beyond the window.</b> A stream whose
  *       bytes handed to the transport and not yet released reach the cap does not admit another
  *       event, because a peer can grant a very large window and never read.</li>
