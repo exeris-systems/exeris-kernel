@@ -182,6 +182,20 @@ policies unless the table is forced. An application connecting as the role that 
 default in every quick-start) otherwise gets a policy that is enabled, listed in `pg_policies`, and
 never applied: no error, and other tenants' rows in every read.
 
+**A role that bypasses RLS is refused (ADR-012 §4c.4, since 0.13).** A role with `SUPERUSER` or
+`BYPASSRLS` skips every policy, `FORCE`d ones included, so isolation would rest on application code
+alone. When `RlsConnectionInterceptor` is registered, the Community engine reads its role's `pg_roles`
+row once per pool and refuses a bypassing role with `EX-PERS-5009` (`providerName`, `roleName`,
+`attribute`). The remedies are `ALTER ROLE … NOSUPERUSER NOBYPASSRLS` or the explicit consent
+`persistence.rlsAllowBypassRole=true`, which turns the refusal into an ERROR log line and a
+`eu.exeris.kernel.persistence.RlsBypassRole` JFR event on every boot. The check covers PostgreSQL only
+(detected through the driver's product name). It runs at registration, after migrations and pool
+warm-up, which therefore run as the connecting role; the kernel's own tables carry no policy. Tenant
+pools share the shared pool's credentials and are covered by its probe. A dedicated pool may carry other
+credentials, so it is probed before it is first used and refused at its first request, and the refusal is
+remembered. A probe that cannot run is refused with `EX-PERS-5001`, even with the consent. Not detected:
+a later `SET ROLE`, and the table-owner exemption of a table that is not `FORCE`'d.
+
 Placement decides which connection a request lands on; it does not decide what the previous borrower
 left in the session. `set_config(..., false)` is session-scoped, so with `persistence.perTenantPooling`
 at its default of `false` a Dedicated-Schema request is served from the pool a Shared-Schema request

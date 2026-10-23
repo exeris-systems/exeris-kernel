@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * EX_PERS_5005 (transportFailure):      [String transportName, long fileDescriptor, int errno]
  * EX_PERS_5006 (interceptorInitFailed): [String interceptorClass, String isolationKey]
  * EX_PERS_5007 (noProviderAvailable):   [String message]
+ * EX_PERS_5009 (rlsBypassRole):         [String providerName, String roleName, String attribute]
  * </pre>
  *
  * <h2>Security: URL Sanitization</h2>
@@ -305,6 +306,30 @@ class PersistenceProviderExceptionLayoutTest {
     }
 
     // -----------------------------------------------------------------------
+    // EX_PERS_5009 — rlsBypassRole
+    // -----------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("rlsBypassRole (EX_PERS_5009) — rawArgs[0]=providerName, [1]=roleName, [2]=attribute")
+    class RlsBypassRole {
+
+        @Test
+        @DisplayName("rawArgs carry provider, role and attribute in that order, with no cause")
+        void rawArgsLayout() {
+            PersistenceProviderException ex = PersistenceProviderException.rlsBypassRole(
+                    "ExerisCommunity/JDBC", "app_owner", "SUPERUSER,BYPASSRLS");
+
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5009);
+            Object[] raw = ex.rawArgs();
+            assertThat(raw).hasSize(3);
+            assertThat(raw[0]).isEqualTo("ExerisCommunity/JDBC");
+            assertThat(raw[1]).isEqualTo("app_owner");
+            assertThat(raw[2]).isEqualTo("SUPERUSER,BYPASSRLS");
+            assertThat(ex.getCause()).isNull();
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Cross-cutting: always unchecked
     // -----------------------------------------------------------------------
 
@@ -324,6 +349,8 @@ class PersistenceProviderExceptionLayoutTest {
         assertThat(PersistenceProviderException.interceptorInitFailed("I", "[none]", null))
                 .isInstanceOf(RuntimeException.class);
         assertThat(PersistenceProviderException.noProviderAvailable("no provider"))
+                .isInstanceOf(RuntimeException.class);
+        assertThat(PersistenceProviderException.rlsBypassRole("P", "r", "SUPERUSER"))
                 .isInstanceOf(RuntimeException.class);
     }
 }

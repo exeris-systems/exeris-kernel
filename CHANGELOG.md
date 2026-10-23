@@ -31,6 +31,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 - **A send on a Community TCP or TLS stream that fails because the peer ended the stream throws `TransportStreamClosedException` (`EX-NET-4008`), an `IllegalStateException`, instead of `TransportException` (`EX-NET-4002`); the `EX-NET-4002` failure is its cause.** A caller that catches `TransportException` around a send no longer sees a peer that reset or closed; see `MIGRATION.md`. The peer's end is recognised by the carrier having observed it, by the send's errno on the core-socket seam and after a fatal TLS wrap status, by a TLS session the peer ended, and, on the NIO fallback, which has no errno, by a send that fails on the channel for any reason but a local close. `AbstractTransportStreamTck` gains the case that pins it after a peer `reset`, so an Enterprise transport that binds the suite adopts it.
 
+- **A deployment with row-level security stops booting when its database role is a superuser or has `BYPASSRLS` (ADR-012 §4c.4).** Registering `RlsConnectionInterceptor` on a PostgreSQL engine now probes the role and throws `EX-PERS-5009`; `persistence.rlsAllowBypassRole=true` boots it instead. See `MIGRATION.md` and Added.
+
 ### Security
 
 - **The Community crypto provider enforces `CryptoProviderConfig#minimumTlsVersion`.** Every context,
@@ -173,6 +175,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   visible through both and each accessor delegates; migrate by naming the holder instead.
 
 ### Added
+
+- **`EX-PERS-5009`, `PersistenceProviderException.rlsBypassRole`, `persistence.rlsAllowBypassRole` and the `eu.exeris.kernel.persistence.RlsBypassRole` JFR event (ADR-012 §4c.4).** The code and its factory are SPI (stable `spi.persistence` exceptions, additive); the event lives in Core so any binding can emit it. `AbstractRlsBypassRoleCheckTck` is the suite a binding that installs a row-level-security interceptor binds. A dedicated pool whose role bypasses is refused at its first request. `PersistenceEngine#registerInterceptor` documents the refusal.
 
 - **Stream routes are resolved and served over HTTP/2.** A request for a stream route that arrives over TLS
   with ALPN `h2` or a prior-knowledge preface now reaches its stream handler instead of the respond-once

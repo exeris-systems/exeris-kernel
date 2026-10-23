@@ -278,6 +278,12 @@ class KernelErrorCodesTest {
         void exPers5007() {
             assertThat(KernelErrorCodes.EX_PERS_5007).isEqualTo("EX-PERS-5007");
         }
+
+        @Test
+        @DisplayName("EX_PERS_5009 == 'EX-PERS-5009' (role bypasses row-level security)")
+        void exPers5009() {
+            assertThat(KernelErrorCodes.EX_PERS_5009).isEqualTo("EX-PERS-5009");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -596,6 +602,7 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_PERS_5001, KernelErrorCodes.EX_PERS_5002,
                     KernelErrorCodes.EX_PERS_5003, KernelErrorCodes.EX_PERS_5004,
                     KernelErrorCodes.EX_PERS_5005, KernelErrorCodes.EX_PERS_5006, KernelErrorCodes.EX_PERS_5007,
+                    KernelErrorCodes.EX_PERS_5009,
                     KernelErrorCodes.EX_SEC_2001, KernelErrorCodes.EX_SEC_2002,
                     KernelErrorCodes.EX_SEC_2003, KernelErrorCodes.EX_SEC_2004,
                     KernelErrorCodes.EX_GRPH_5001, KernelErrorCodes.EX_GRPH_5002,

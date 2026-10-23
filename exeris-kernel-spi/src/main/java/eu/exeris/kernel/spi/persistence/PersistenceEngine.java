@@ -137,10 +137,17 @@ public interface PersistenceEngine extends AutoCloseable {
      * @param interceptor the interceptor to add; must not be {@code null}
      * @throws NullPointerException  if {@code interceptor} is {@code null}
      * @throws IllegalStateException if called after the first connection has been opened
+     * @throws eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException
+     *         {@code EX-PERS-5009} if the implementation refuses to install a row-level-security
+     *         interceptor because the connected database role bypasses row-level security
      * @implSpec Interceptors are invoked in registration order. An implementation MAY reject
      *           registration with {@link IllegalStateException} once the first connection has
      *           been opened, since a registry that changes under a live pool would apply a
-     *           different isolation setup to connections drawn from the same pool.
+     *           different isolation setup to connections drawn from the same pool. An
+     *           implementation MAY refuse to install its row-level-security interceptor when the
+     *           connected role bypasses row-level security, because the policies the interceptor
+     *           feeds would then isolate nothing; the refusal is {@code EX-PERS-5009}, and an
+     *           explicit operator consent may downgrade it.
      * @apiNote Call this during bootstrap, before the engine is bound into
      *          {@link eu.exeris.kernel.spi.context.KernelProviders#PERSISTENCE_ENGINE};
      *          registering against a live engine is an error.

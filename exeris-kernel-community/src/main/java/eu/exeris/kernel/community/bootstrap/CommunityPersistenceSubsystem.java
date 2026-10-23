@@ -42,7 +42,9 @@ import java.util.function.UnaryOperator;
  * {@link ConfigProvider#watch} is a no-op that never invokes it, so only Enterprise's
  * live-file-watching override (ADR-035) ever calls back into it — and, when
  * {@code persistence.rlsEnabled} is set, installs {@link RlsConnectionInterceptor} on every
- * connection the engine hands out.
+ * connection the engine hands out. Installing that interceptor refuses a database role that
+ * bypasses row-level security ({@code EX-PERS-5009}) unless {@code persistence.rlsAllowBypassRole}
+ * is set.
  *
  * <p>{@code start()} installs an off-request-thread {@link JfrEventCommitter} so admission and
  * connection-acquire JFR events commit on a platform thread rather than the virtual thread serving

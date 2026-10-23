@@ -226,5 +226,17 @@
     "since": "0.13",
     "adr": "ADR-007",
     "justification": "TCK contract: AbstractTransportStreamTck gains PeerEndRefusesWrites, two cases asserting that after the peer's reset(long) the first failure of a write, and of a queueWrite, is TransportStreamClosedException with EX-NET-4008, with no read before it. A binding whose send reports another failure first, such as TransportException, fails them until it throws the closed signal for a peer that ended the stream; Enterprise transports that bind the suite adopt it. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.persistence.PersistenceEngine#registerInterceptor(eu.exeris.kernel.spi.persistence.ConnectionInterceptor)",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "Behaviour on the Community binding, and SPI javadoc on stable spi.persistence: the descriptor is unchanged, the refusal is stated. An implementation MAY refuse to install its row-level-security interceptor when the connected database role bypasses row-level security (SUPERUSER or BYPASSRLS), by throwing PersistenceProviderException EX-PERS-5009; the Community engine does so on PostgreSQL unless persistence.rlsAllowBypassRole is set, and refuses with EX-PERS-5001 when the role probe cannot run. A deployment that registers the interceptor as a bypassing role stops booting, as MIGRATION.md says. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.AbstractRlsBypassRoleCheckTck",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: a new suite, AbstractRlsBypassRoleCheckTck, asserting that a binding which installs its row-level-security interceptor refuses a SUPERUSER or BYPASSRLS role with EX-PERS-5009 and boots an ordinary role, or a bypassing role with the operator's consent. A binding implements roleName, bootWithRlsAs and tenantContext; an Enterprise persistence binding that installs such an interceptor adopts it. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
   }
 ]
