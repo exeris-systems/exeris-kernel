@@ -34,6 +34,7 @@ public final class SchedulerScenarioMain {
             case "smoke" -> smoke(group);
             case "resolve" -> resolve(group);
             case "poller" -> poller(group);
+            case "stress" -> stress(group);
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.flush();
@@ -155,6 +156,67 @@ public final class SchedulerScenarioMain {
         starter.join();
         boolean pinned = task.get().attachment() instanceof CarrierSchedulingContext ctx && ctx.pinned();
         System.out.println("RESULT target=" + target.id() + " ranOn=" + ranOn[0] + " pinned=" + pinned);
+    }
+
+    /**
+     * Wakeups from mounted virtual threads (a token passed around a ring) and from a foreign
+     * platform thread (a ticket handed to every waiter in turn). A lost wakeup leaves a waiter
+     * parked and the scenario fails by timeout.
+     */
+    private static void stress(ExerisCarrierGroup group) throws Exception {
+        final int ring = 8;
+        final int rounds = 3000;
+        final int total = ring * rounds;
+        AtomicInteger token = new AtomicInteger();
+        Thread[] ringThreads = new Thread[ring];
+        for (int i = 0; i < ring; i++) {
+            final int self = i;
+            ringThreads[i] = group.carrier(i).virtualThreadFactory().newThread(() -> {
+                for (int r = 0; r < rounds; r++) {
+                    while (token.get() % ring != self) {
+                        LockSupport.park();
+                    }
+                    int next = token.incrementAndGet();
+                    LockSupport.unpark(ringThreads[next % ring]);
+                }
+            });
+        }
+        for (Thread t : ringThreads) {
+            t.start();
+        }
+        for (Thread t : ringThreads) {
+            require(t.join(java.time.Duration.ofSeconds(TIMEOUT_SECONDS)), "ring did not complete, token=" + token.get());
+        }
+        require(token.get() == total, "ring token " + token.get());
+
+        final int waiters = 16;
+        final int tickets = 2000;
+        AtomicInteger go = new AtomicInteger();
+        AtomicInteger acks = new AtomicInteger();
+        Thread[] parked = new Thread[waiters];
+        for (int i = 0; i < waiters; i++) {
+            parked[i] = group.carrier(i).virtualThreadFactory().newThread(() -> {
+                for (int k = 1; k <= tickets; k++) {
+                    while (go.get() < k) {
+                        LockSupport.park();
+                    }
+                    acks.incrementAndGet();
+                }
+            });
+            parked[i].start();
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        for (int k = 1; k <= tickets; k++) {
+            go.set(k);
+            for (Thread t : parked) {
+                LockSupport.unpark(t);
+            }
+            while (acks.get() < k * waiters) {
+                require(System.nanoTime() < deadline, "waiters stalled at ticket " + k + " acks=" + acks.get());
+                Thread.onSpinWait();
+            }
+        }
+        System.out.println("RESULT ring=" + token.get() + " acks=" + acks.get());
     }
 
     private static void require(boolean condition, String message) {

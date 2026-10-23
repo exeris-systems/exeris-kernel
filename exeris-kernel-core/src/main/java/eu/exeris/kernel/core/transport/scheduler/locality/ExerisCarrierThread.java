@@ -59,6 +59,8 @@ public final class ExerisCarrierThread {
     private final ThreadFactory vThreadFactory;
     private final long yieldBudgetNs;
     private final boolean factoryPreferredCarrier;
+    private final long idleSpinNs;
+    private final boolean readFirstWakeup;
 
     @SuppressWarnings("unused")
     private volatile int carrierState = RUNNING;
@@ -78,6 +80,8 @@ public final class ExerisCarrierThread {
         this.cpuCore = cpuCore;
         this.yieldBudgetNs = flags.yieldBudgetNs();
         this.factoryPreferredCarrier = flags.factoryPreferredCarrier();
+        this.idleSpinNs = flags.idleSpinNs();
+        this.readFirstWakeup = flags.wakeup() == LocalityFlags.Wakeup.READFIRST;
         this.vThreadFactory = createVirtualThreadFactory(scheduler);
         this.carrierThread = new CarrierWorkerThread(this::runLoop, "exeris-carrier-" + id, this);
         this.carrierThread.setDaemon(true);
@@ -112,7 +116,22 @@ public final class ExerisCarrierThread {
         wakeup();
     }
 
+    /**
+     * Unparks the carrier if it is parked. Callers must have published the work to the run queue
+     * with a volatile write or read-modify-write before calling.
+     *
+     * <p>With {@code wakeup=readFirst} the state is read before it is swapped, and only a parked
+     * carrier is swapped. That is correct for the same reason the swap is: the consumer moves the
+     * state to PARKED with a volatile compare-and-set and only then re-reads the queue, while the
+     * producer's queue publication precedes its state read, and all of these are volatile accesses
+     * in one synchronization order. Either the producer reads PARKED and unparks, or the consumer's
+     * compare-and-set follows that read in the order and its queue re-read follows the producer's
+     * publication, so the consumer finds the work and does not park.
+     */
     public void wakeup() {
+        if (readFirstWakeup && (int) CARRIER_STATE.getVolatile(this) != PARKED) {
+            return;
+        }
         if ((int) CARRIER_STATE.getAndSet(this, RUNNING) == PARKED) {
             LockSupport.unpark(carrierThread);
             Runnable wakeup = pinnedPollerWakeup;
@@ -168,9 +187,14 @@ public final class ExerisCarrierThread {
             while (!shutdown) {
                 drainTasks();
                 if (runQueue.isEmpty()) {
+                    if (idleSpinNs > 0 && spinForWork()) {
+                        continue;
+                    }
                     if (CARRIER_STATE.compareAndSet(this, RUNNING, PARKED)) {
                         try {
-                            if (runQueue.isEmpty()) {
+                            // shutdown is re-read with the queue: a request that raced the state
+                            // change must not be slept through
+                            if (runQueue.isEmpty() && !shutdown) {
                                 LockSupport.park();
                             }
                         } finally {
@@ -180,6 +204,22 @@ public final class ExerisCarrierThread {
                 }
             }
         });
+    }
+
+    /**
+     * Keeps the carrier RUNNING and re-polls the queue for up to the idle spin budget. A producer
+     * that enqueues meanwhile sees RUNNING and spends no unpark. Returns whether work (or shutdown)
+     * arrived; on false the caller proceeds to the unchanged park handshake.
+     */
+    private boolean spinForWork() {
+        long deadline = System.nanoTime() + idleSpinNs;
+        do {
+            if (!runQueue.isEmpty() || shutdown) {
+                return true;
+            }
+            Thread.onSpinWait();
+        } while (System.nanoTime() < deadline);
+        return false;
     }
 
     private void drainTasks() {

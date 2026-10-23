@@ -26,6 +26,9 @@ final class LocalityFlags {
     /** How the caller of {@code onStart}/{@code onContinue} is resolved to a carrier. */
     enum CarrierResolve { SCOPE, MOUNTED }
 
+    /** How a producer decides whether the consumer carrier needs an unpark. */
+    enum Wakeup { GETANDSET, READFIRST }
+
     /** How a read-poller virtual thread is routed to its carrier. */
     enum PollerRoute { NAME, PREFERRED }
 
@@ -36,6 +39,8 @@ final class LocalityFlags {
     private final PollerRoute pollerRoute;
     private final boolean factoryPreferredCarrier;
     private final boolean timerCount;
+    private final long idleSpinNs;
+    private final Wakeup wakeup;
 
     private LocalityFlags(Function<String, String> source) {
         this.allVthreads = bool(source, "allVthreads");
@@ -46,6 +51,11 @@ final class LocalityFlags {
         this.pollerRoute = choice(source, "poller.route", PollerRoute.NAME);
         this.factoryPreferredCarrier = bool(source, "factory.preferredCarrier");
         this.timerCount = bool(source, "timer.count");
+        this.idleSpinNs = longValue(source, PREFIX + "idle.spinNs", 0);
+        if (idleSpinNs < 0) {
+            throw new IllegalArgumentException(PREFIX + "idle.spinNs must not be negative, was " + idleSpinNs);
+        }
+        this.wakeup = choice(source, "wakeup", Wakeup.GETANDSET);
     }
 
     /** Flags as set on the JVM's system properties. */
@@ -89,6 +99,14 @@ final class LocalityFlags {
 
     boolean timerCount() {
         return timerCount;
+    }
+
+    long idleSpinNs() {
+        return idleSpinNs;
+    }
+
+    Wakeup wakeup() {
+        return wakeup;
     }
 
     static boolean bool(Function<String, String> source, String name) {
