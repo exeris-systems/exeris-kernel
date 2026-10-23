@@ -39,6 +39,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
     private final boolean pollerRoutePreferred;
     private final boolean timerCount;
     private final boolean selfWakeup;
+    private final boolean placeP2c;
 
     /**
      * Counts of timed tasks the JDK handed to {@link #schedule} and of those cancelled before they
@@ -60,6 +61,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         this.pollerRoutePreferred = flags.pollerRoute() == PollerRoute.PREFERRED;
         this.timerCount = flags.timerCount();
         this.selfWakeup = flags.selfWakeup();
+        this.placeP2c = flags.place() == LocalityFlags.Place.P2C;
         this.group = new ExerisCarrierGroup(this, flags, carrierCount);
         instance = this;
     }
@@ -185,9 +187,12 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
                 return;
             }
             if (assignAllVThreads && group != null && group.size() > 0) {
-                ExerisCarrierThread carrier = currentCarrier != null
-                        ? currentCarrier
-                        : group.selectCarrier();
+                ExerisCarrierThread carrier;
+                if (placeP2c) {
+                    carrier = group.selectShorterOfTwo();
+                } else {
+                    carrier = currentCarrier != null ? currentCarrier : group.selectCarrier();
+                }
                 CarrierSchedulingContext context =
                         new CarrierSchedulingContext(carrier.id(), carrier);
                 context.setVThreadId(task.thread().threadId());

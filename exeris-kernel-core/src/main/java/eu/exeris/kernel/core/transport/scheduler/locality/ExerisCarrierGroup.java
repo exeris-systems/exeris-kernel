@@ -30,7 +30,11 @@ public final class ExerisCarrierGroup {
         this.carriers = new ExerisCarrierThread[count];
         for (int i = 0; i < count; i++) {
             int core = (cores != null && i < cores.length) ? cores[i] : -1;
-            carriers[i] = new ExerisCarrierThread(i, scheduler, core, flags);
+            carriers[i] = new ExerisCarrierThread(i, scheduler, core, flags, carriers);
+        }
+        // started only once every peer exists: a carrier that steals reads the whole array
+        for (ExerisCarrierThread carrier : carriers) {
+            carrier.start();
         }
         activeGroup = this;
     }
@@ -70,6 +74,17 @@ public final class ExerisCarrierGroup {
 
     public ExerisCarrierThread selectCarrier() {
         return carriers[ThreadLocalRandom.current().nextInt(carriers.length)];
+    }
+
+    /**
+     * Power of two choices: the shorter run queue of two randomly chosen carriers, by an O(1)
+     * length estimate. Spreads new work without a global view and without hot-spotting one carrier.
+     */
+    ExerisCarrierThread selectShorterOfTwo() {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        ExerisCarrierThread first = carriers[random.nextInt(carriers.length)];
+        ExerisCarrierThread second = carriers[random.nextInt(carriers.length)];
+        return second.queueLengthEstimate() < first.queueLengthEstimate() ? second : first;
     }
 
     public void shutdown() {

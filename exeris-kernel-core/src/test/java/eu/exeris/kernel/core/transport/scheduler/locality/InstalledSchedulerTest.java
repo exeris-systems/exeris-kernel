@@ -118,4 +118,50 @@ class InstalledSchedulerTest {
         assertEquals(streams, intOf(r, "stable"));
         assertEquals(streams, intOf(r, "childOnCustom"));
     }
+
+    /** Every flag on at once: the v2 scheduler as a whole. */
+    private static final Map<String, String> ALL_ON = Map.ofEntries(
+            Map.entry("exeris.locality.allVthreads", "true"),
+            Map.entry("exeris.locality.carrierResolve", "mounted"),
+            Map.entry("exeris.locality.poller.route", "preferred"),
+            Map.entry("exeris.locality.factory.preferredCarrier", "true"),
+            Map.entry("exeris.locality.timer.count", "true"),
+            Map.entry("exeris.locality.idle.spinNs", "20000"),
+            Map.entry("exeris.locality.wakeup", "readFirst"),
+            Map.entry("exeris.locality.queue", "deque"),
+            Map.entry("exeris.locality.selfWakeup", "true"),
+            Map.entry("exeris.locality.yield.checkEvery", "8"),
+            Map.entry("exeris.locality.steal", "true"),
+            Map.entry("exeris.locality.steal.batch", "half"),
+            Map.entry("exeris.locality.place", "p2c"));
+
+    @Test
+    @DisplayName("all flags on: streams and children run on locality carriers and complete")
+    void allOnSmoke() throws Exception {
+        Map<String, String> r = ForkedSchedulerRunner.run("smoke", ALL_ON);
+        int streams = intOf(r, "streams");
+        assertEquals(streams, intOf(r, "onCustom"), "every stream must have run on a locality carrier");
+        assertEquals(streams, intOf(r, "childOnCustom"), "p2c places the children on locality carriers");
+        assertTrue(intOf(r, "timersScheduled") > 0);
+    }
+
+    @Test
+    @DisplayName("all flags on: token ring and foreign wakeups complete")
+    void allOnStress() throws Exception {
+        Map<String, String> r = ForkedSchedulerRunner.run("stress", ALL_ON);
+        assertEquals(8 * 3000, intOf(r, "ring"));
+        assertEquals(16 * 2000, intOf(r, "acks"));
+    }
+
+    @Test
+    @DisplayName("all flags on: resolution and poller routing are unchanged by stealing")
+    void allOnResolveAndPoller() throws Exception {
+        Map<String, String> resolve = ForkedSchedulerRunner.run("resolve", ALL_ON);
+        assertTrue(intOf(resolve, "factoryMounted") >= 0);
+        assertEquals(-1, intOf(resolve, "foreignPlatform"));
+        assertEquals(1, intOf(resolve, "carrierPlatform"));
+        Map<String, String> poller = ForkedSchedulerRunner.run("poller", ALL_ON);
+        assertEquals(intOf(poller, "target"), intOf(poller, "ranOn"));
+        assertEquals("true", poller.get("pinned"));
+    }
 }

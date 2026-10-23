@@ -29,6 +29,9 @@ final class LocalityFlags {
     /** How a producer decides whether the consumer carrier needs an unpark. */
     enum Wakeup { GETANDSET, READFIRST }
 
+    /** Where a virtual thread that has no carrier yet is first placed. */
+    enum Place { CURRENT, P2C }
+
     /** The data structure behind a carrier's run queue. */
     enum QueueKind { CLQ, DEQUE }
 
@@ -47,6 +50,9 @@ final class LocalityFlags {
     private final QueueKind queue;
     private final boolean selfWakeup;
     private final int yieldCheckEvery;
+    private final boolean steal;
+    private final int stealBatch;
+    private final Place place;
 
     private LocalityFlags(Function<String, String> source) {
         this.allVthreads = bool(source, "allVthreads");
@@ -69,6 +75,9 @@ final class LocalityFlags {
             throw new IllegalArgumentException(
                     PREFIX + "yield.checkEvery must be at least 1, was " + yieldCheckEvery);
         }
+        this.steal = bool(source, "steal");
+        this.stealBatch = stealBatch(source.apply(PREFIX + "steal.batch"));
+        this.place = choice(source, "place", Place.CURRENT);
         validate();
     }
 
@@ -115,7 +124,27 @@ final class LocalityFlags {
         return timerCount;
     }
 
+    private static int stealBatch(String value) {
+        if (value == null || value.isBlank() || value.trim().equalsIgnoreCase("half")) {
+            return 0;
+        }
+        try {
+            int n = Integer.parseInt(value.trim());
+            if (n >= 1) {
+                return n;
+            }
+        } catch (NumberFormatException ignored) {
+            // reported below with the other invalid values
+        }
+        throw new IllegalArgumentException(PREFIX + "steal.batch must be half or an integer of at least 1, was '"
+                + value + "'");
+    }
+
     private void validate() {
+        if (steal && queue != QueueKind.DEQUE) {
+            throw new IllegalArgumentException(
+                    PREFIX + "steal=true requires " + PREFIX + "queue=deque: only the deque can be stolen from");
+        }
         if (selfWakeup && queue != QueueKind.DEQUE) {
             throw new IllegalArgumentException(
                     PREFIX + "selfWakeup=true requires " + PREFIX + "queue=deque: only the deque has an owner side");
@@ -125,6 +154,19 @@ final class LocalityFlags {
                     + "carrierResolve=mounted: a stale scope binding would push to a deque "
                     + "from a thread that does not own it");
         }
+    }
+
+    boolean steal() {
+        return steal;
+    }
+
+    /** Tasks taken per steal; 0 means half of the victim's queue. */
+    int stealBatch() {
+        return stealBatch;
+    }
+
+    Place place() {
+        return place;
     }
 
     QueueKind queue() {

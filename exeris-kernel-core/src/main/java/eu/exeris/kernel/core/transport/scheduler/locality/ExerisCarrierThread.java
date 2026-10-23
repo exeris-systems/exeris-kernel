@@ -12,7 +12,9 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.lang.Thread.VirtualThreadTask;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -61,6 +63,9 @@ public final class ExerisCarrierThread {
     private final long idleSpinNs;
     private final boolean readFirstWakeup;
     private final int yieldCheckEvery;
+    private final boolean steal;
+    private final int stealBatch;
+    private final ExerisCarrierThread[] peers;
 
     @SuppressWarnings("unused")
     private volatile int carrierState = RUNNING;
@@ -76,20 +81,38 @@ public final class ExerisCarrierThread {
     }
 
     ExerisCarrierThread(int id, ExerisCarrierScheduler scheduler, int cpuCore, LocalityFlags flags) {
+        this(id, scheduler, cpuCore, flags, new ExerisCarrierThread[0]);
+        this.carrierThread.start();
+    }
+
+    /** Creates the carrier without starting its thread; the creator calls {@link #start()}. */
+    ExerisCarrierThread(int id, ExerisCarrierScheduler scheduler, int cpuCore, LocalityFlags flags,
+                        ExerisCarrierThread[] peers) {
         this.id = id;
+        this.peers = peers;
+        this.steal = flags.steal();
+        this.stealBatch = flags.stealBatch();
         this.cpuCore = cpuCore;
         this.yieldBudgetNs = flags.yieldBudgetNs();
         this.factoryPreferredCarrier = flags.factoryPreferredCarrier();
         this.idleSpinNs = flags.idleSpinNs();
         this.runQueue = flags.queue() == LocalityFlags.QueueKind.DEQUE
                 ? new DequeCarrierQueue()
-                : new ClqCarrierQueue(false);
+                : new ClqCarrierQueue(flags.place() == LocalityFlags.Place.P2C);
         this.yieldCheckEvery = flags.yieldCheckEvery();
         this.readFirstWakeup = flags.wakeup() == LocalityFlags.Wakeup.READFIRST;
         this.vThreadFactory = createVirtualThreadFactory(scheduler);
         this.carrierThread = new CarrierWorkerThread(this::runLoop, "exeris-carrier-" + id, this);
         this.carrierThread.setDaemon(true);
-        this.carrierThread.start();
+    }
+
+    void start() {
+        carrierThread.start();
+    }
+
+    /** An O(1) estimate of the queued tasks; readable from any thread. */
+    int queueLengthEstimate() {
+        return runQueue.sizeEstimate();
     }
 
     public static ExerisCarrierThread currentCarrier() {
@@ -143,8 +166,12 @@ public final class ExerisCarrierThread {
      * publication, so the consumer finds the work and does not park.
      */
     public void wakeup() {
+        tryWake();
+    }
+
+    private boolean tryWake() {
         if (readFirstWakeup && (int) CARRIER_STATE.getVolatile(this) != PARKED) {
-            return;
+            return false;
         }
         if ((int) CARRIER_STATE.getAndSet(this, RUNNING) == PARKED) {
             LockSupport.unpark(carrierThread);
@@ -152,7 +179,9 @@ public final class ExerisCarrierThread {
             if (wakeup != null) {
                 wakeup.run();
             }
+            return true;
         }
+        return false;
     }
 
     public boolean tryParkPoller() {
@@ -204,6 +233,9 @@ public final class ExerisCarrierThread {
                     if (idleSpinNs > 0 && spinForWork()) {
                         continue;
                     }
+                    if (steal && trySteal()) {
+                        continue;
+                    }
                     if (CARRIER_STATE.compareAndSet(this, RUNNING, PARKED)) {
                         try {
                             // shutdown is re-read with the queue: a request that raced the state
@@ -236,11 +268,70 @@ public final class ExerisCarrierThread {
         return false;
     }
 
+    /**
+     * Takes a batch from the first peer that has stealable work, re-homes each task to this
+     * carrier before it can run, and keeps the batch on this carrier's own deque. A task of a
+     * pinned context is never in a peer's deque; if one were handed over regardless it is returned
+     * to its carrier rather than run here.
+     */
+    private boolean trySteal() {
+        int n = peers.length;
+        if (n < 2) {
+            return false;
+        }
+        int first = ThreadLocalRandom.current().nextInt(n);
+        for (int i = 0; i < n; i++) {
+            ExerisCarrierThread victim = peers[(first + i) % n];
+            if (victim == null || victim == this || victim.shutdown) {
+                continue;
+            }
+            int want = stealBatch > 0 ? stealBatch : Math.max(1, victim.runQueue.sizeEstimate() / 2);
+            int taken = 0;
+            while (taken < want) {
+                Runnable task = victim.runQueue.steal();
+                if (task == null) {
+                    break;
+                }
+                if (task instanceof VirtualThreadTask vt && vt.attachment() instanceof CarrierSchedulingContext ctx) {
+                    if (ctx.pinned()) {
+                        victim.enqueue(task);
+                        continue;
+                    }
+                    ctx.moveTo(this);
+                }
+                runQueue.offerLocal(task);
+                taken++;
+            }
+            if (taken > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Surplus work here: wake one parked peer so that it can take some. */
+    private void wakeIdlePeer() {
+        int n = peers.length;
+        if (n < 2) {
+            return;
+        }
+        int first = ThreadLocalRandom.current().nextInt(n);
+        for (int i = 0; i < n; i++) {
+            ExerisCarrierThread peer = peers[(first + i) % n];
+            if (peer != null && peer != this && (int) CARRIER_STATE.getVolatile(peer) == PARKED && peer.tryWake()) {
+                return;
+            }
+        }
+    }
+
     private void drainTasks() {
         long start = System.nanoTime();
         int untilCheck = yieldCheckEvery;
         Runnable task;
         while ((task = runQueue.poll()) != null) {
+            if (steal && runQueue.sizeEstimate() > 1) {
+                wakeIdlePeer();
+            }
             try {
                 task.run();
             } catch (Throwable t) {
