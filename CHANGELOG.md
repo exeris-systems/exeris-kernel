@@ -316,6 +316,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `AbstractTransportStreamTck` gains the cases that pin the reader's wake on the stream's own `close()` and on the
   peer's `reset(long)`.
 - **The Central bundle is clean on Maven 3.10, and the release dry run builds it.** `central-publishing-maven-plugin` moves to 0.12.0, which deletes the `maven-metadata-local.xml`, `_remote.repositories` and `.locks` files Maven 3.10 writes into the staging repository and 0.11.0 left in the bundle, where Central refuses it. `release.yml`'s dry run now runs `deploy -DskipUpload=true`, and `tools/central-bundle-gate/central-bundle-gate.sh` (with `--self-test`) fails a bundle holding any entry outside `<group>/<artifact>/<version>/`, any file in a version directory not named `<artifact>-<version>…` (which catches `maven-metadata-*`, `_remote.repositories` and `.locks`), or a version directory without its `.pom`.
+- **A TLS write that meets a full send buffer on a Community TCP stream stalls instead of resetting the
+  connection.** The engine reported `SSL_ERROR_WANT_WRITE` as `NEED_WRAP`, and the drain treated every status
+  but `OK` as fatal, so a response larger than the kernel send buffer to a slow reader ended in an abort. The
+  head write now stays queued with write interest armed and is retried with the same buffer address and
+  length, which OpenSSL requires without partial-write mode; a write that waits for the peer (`NEED_UNWRAP`)
+  stalls without write interest and is flushed after the next ingress batch, whichever thread holds the
+  outbound slot when the batch arrives. A fatal wrap status aborts the stream under the outbound slot and
+  wakes its waiters: the failure is thrown to the writer when its own thread runs the drain, and otherwise
+  the stream ends and the writer's next call reports the closed signal. It used to re-enter `close()` under
+  the slot and lose the queued write silently.
 - **HTTP/2 respond-once responses honour the peer's connection and stream flow-control windows.** The
   session applies `WINDOW_UPDATE` and `SETTINGS_INITIAL_WINDOW_SIZE`; a body the windows cannot carry
   yet finishes on a task that waits for credit while the frame loop keeps reading, and every write to

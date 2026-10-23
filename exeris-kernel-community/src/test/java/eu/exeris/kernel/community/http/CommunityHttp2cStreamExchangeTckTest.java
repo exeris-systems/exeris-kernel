@@ -100,10 +100,10 @@ class CommunityHttp2cStreamExchangeTckTest extends AbstractHttpStreamExchangeTck
     }
 
     /** Adapts the loopback to the TCK's scenario interface, which only a subclass can name. */
-    private static final class LoopbackScenario implements StreamScenario {
+    /* default */ static class LoopbackScenario implements StreamScenario {
         private final Http2StreamLoopback loopback;
 
-        private LoopbackScenario(Http2StreamLoopback loopback) {
+        /* default */ LoopbackScenario(Http2StreamLoopback loopback) {
             this.loopback = loopback;
         }
 

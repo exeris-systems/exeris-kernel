@@ -10,6 +10,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Package-private pending-write record held in {@link NativeTcpStream}'s
@@ -23,6 +24,11 @@ import java.lang.foreign.MemorySegment;
  * encapsulated in {@link NativeTcpStreamPlainSocketIo}; this class never
  * touches the underlying file descriptor directly.
  *
+ * <p><b>Stalled TLS write:</b> when {@code SSL_write} reports that it needs the socket or the peer,
+ * the entry stays prepared-false and the next {@link #prepareCipher()} offers OpenSSL the same plaintext
+ * address and the same length. The engine context has no partial-write and no moving-write-buffer mode,
+ * so any other retry is a fatal bad-write-retry. A stalled head entry is therefore never re-cut, merged,
+ * resized or reallocated; see {@link NativeTcpStreamTlsDrain}.
  * <p><b>Allocation:</b> allocates no buffer itself — {@code plainBuffer} is supplied by the caller
  * at construction. {@code cipherBuffer} is the seam for a buffer-owner TLS engine but is never
  * populated by the only engine {@link NativeTcpStream} constructs today ({@code CommunityTlsEngine},
@@ -48,7 +54,8 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
     private LoanedBuffer cipherBuffer;
     private int cipherLength;
     private int cipherOffset;
-    // True once wrap() has run for this write. On the fd-owner path cipherBuffer stays null
+    // True once wrap() has accepted every byte of this write. A stalled wrap leaves it false so the
+    // retry reaches the engine again. On the fd-owner path cipherBuffer stays null
     // (wrap writes straight to the socket), so idempotency cannot key off cipherBuffer — a second
     // prepareCipher() would otherwise re-invoke wrap() and re-send the same plaintext.
     private boolean cipherPrepared;
@@ -63,9 +70,13 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
      * {@link TlsEngine#wrap} writes ciphertext straight to the kernel socket and never
      * touches its ciphertext argument, so the same placeholder used by ingress unwrap is
      * passed to {@code wrap} on egress instead of allocating a per-write cipher buffer.
+     *
+     * <p>{@code waitingForPeer} is raised under {@code tlsLock}, in the same critical section as a wrap
+     * that needs the peer's next record, so an ingress read that takes the lock afterwards always sees
+     * it: the record that satisfies the write cannot be consumed before the stall is visible.
      */
     /* default */ record TlsContext(TlsEngine tlsEngine, Object tlsLock,
-                                    LoanedBuffer ciphertextPlaceholder) {
+                                    LoanedBuffer ciphertextPlaceholder, AtomicBoolean waitingForPeer) {
     }
 
     /**
@@ -114,6 +125,9 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
         TlsStatus status;
         synchronized (tlsContext.tlsLock()) {
             status = tlsContext.tlsEngine().wrap(plainBuffer, cipher);
+            if (status == TlsStatus.NEED_UNWRAP) {
+                tlsContext.waitingForPeer().set(true);
+            }
         }
         if (status != TlsStatus.OK) {
             return status;
