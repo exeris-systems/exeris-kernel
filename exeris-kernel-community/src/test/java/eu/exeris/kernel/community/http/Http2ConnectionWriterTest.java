@@ -36,7 +36,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * The writer's flow-control and ordering contract, driven directly: a "sender" is a test virtual
@@ -53,6 +55,8 @@ class Http2ConnectionWriterTest {
     private static final int DATA = Http2FrameType.DATA.code();
     private static final int RST_STREAM = Http2FrameType.RST_STREAM.code();
     private static final int PING = Http2FrameType.PING.code();
+    private static final int HEADERS = Http2FrameType.HEADERS.code();
+    private static final int PING_FRAME_BYTES = 17;
 
     private Http2ScriptedTransport transport;
     private LeakTrackingAllocator allocator;
@@ -280,7 +284,7 @@ class Http2ConnectionWriterTest {
             assertThat(sender.join()).isEqualTo(SendOutcome.CLOSED);
         }
         int before = transport.seen().size();
-        writer.writeFrame(MemorySegment.ofArray(Http2Frames.frame(PING, 0, 0, new byte[8])), 17);
+        writePing();
         assertThat(transport.seen()).hasSize(before);
     }
 
@@ -588,6 +592,153 @@ class Http2ConnectionWriterTest {
         assertThat(allocator.outstanding()).as("the body is closed by respondOnStream").isZero();
     }
 
+    // ------------------------------------------------------------------ every frame goes through queueWrite
+
+    @Test
+    @DisplayName("every frame the writer sends under its lock reaches the transport through queueWrite, in order")
+    void everyFrameIsQueuedInOrder() {
+        Http2OutboundStream head = writer.register(1, 0);
+        Http2OutboundStream reset = writer.register(3, 0);
+        Http2OutboundStream released = writer.register(5, 0);
+        Http2OutboundStream respond = writer.register(7, 0);
+
+        writePing();
+        assertThat(writer.writeStreamHead(head)).isTrue();
+        writer.endStream(head);
+        writer.resetLocal(reset, Http2ErrorCode.CANCEL);
+        writer.release(released);
+        writer.respondOnStream(respond,
+                new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_2, List.of(), body(20)));
+        flush();
+
+        List<Frame> frames = transport.seen();
+        assertThat(frames).extracting(Frame::type, Frame::streamId, Frame::flags).containsExactly(
+                tuple(PING, 0, 0),
+                tuple(HEADERS, 1, 0x04),
+                tuple(DATA, 1, 0x01),
+                tuple(RST_STREAM, 3, 0),
+                tuple(RST_STREAM, 5, 0),
+                tuple(HEADERS, 7, 0x04),
+                tuple(DATA, 7, 0x01),
+                tuple(PING, 0, 0));
+        assertThat(frames.get(2).payload()).isEmpty();
+        assertThat(Http2Frames.readInt32(frames.get(3).payload(), 0)).isEqualTo(Http2ErrorCode.CANCEL.code());
+        assertThat(frames.get(6).payload()).hasSize(20);
+        assertThat(transport.queuedWrites()).as("one queueWrite per response, one per frame elsewhere").isEqualTo(7);
+        assertThat(allocator.outstanding()).as("every buffer the writer allocated is released").isZero();
+    }
+
+    @Test
+    @DisplayName("a buffer handed to queueWrite stays alive until the transport releases it, and is freed once")
+    void handedOverBufferStaysAliveUntilTheTransportReleasesIt() {
+        Http2ScriptedTransport holding = new Http2ScriptedTransport(true);
+        Http2ConnectionWriter held = Http2ConnectionWriter.create(holding, allocator, 100, 64 * 1024);
+        Http2OutboundStream head = held.register(1, 0);
+        Http2OutboundStream reset = held.register(3, 0);
+        Http2OutboundStream respond = held.register(5, 0);
+
+        try (LoanedBuffer ping = pingBuffer()) {
+            held.writeFrame(ping, PING_FRAME_BYTES);
+        }
+        assertThat(held.writeStreamHead(head)).isTrue();
+        held.endStream(head);
+        held.resetLocal(reset, Http2ErrorCode.CANCEL);
+        held.respondOnStream(respond, new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_2, List.of(), body(20)));
+
+        assertThat(holding.heldCount()).isEqualTo(5);
+        assertThat(allocator.outstanding()).as("only the transport's reference keeps each buffer alive").isEqualTo(5);
+
+        holding.releaseHeld();
+
+        assertThat(allocator.outstanding()).isZero();
+    }
+
+    @Test
+    @DisplayName("a response larger than the window goes out coalesced with the credit available, then continues")
+    void partialResponseIsCoalescedThenContinued() throws Exception {
+        writer.applyInitialWindowSize(100);
+        Http2OutboundStream stream = writer.register(1, 0);
+        Thread thread = Thread.ofVirtual().unstarted(() -> writer.respondOnStream(stream,
+                new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_2, List.of(), body(250))));
+        thread.start();
+        awaitParks(1);
+
+        assertThat(transport.seen()).extracting(Frame::type, Frame::flags)
+                .containsExactly(tuple(HEADERS, 0x04), tuple(DATA, 0));
+        assertThat(transport.queuedWrites()).as("headers and the first DATA share one buffer").isEqualTo(1);
+
+        writer.applyStreamWindowUpdate(1, 150);
+        thread.join(BOUND);
+
+        assertThat(thread.isAlive()).isFalse();
+        assertThat(transport.seen()).extracting(Frame::type, Frame::flags)
+                .containsExactly(tuple(HEADERS, 0x04), tuple(DATA, 0), tuple(DATA, 0x01));
+        assertThat(allocator.outstanding()).isZero();
+    }
+
+    @Test
+    @DisplayName("a failed queueWrite of a stream head rethrows, ends the connection and leaks no buffer")
+    void failedStreamHeadRethrows() {
+        Http2OutboundStream stream = writer.register(1, 0);
+        transport.failQueueWrites(new IllegalStateException("transport down"));
+
+        assertThatThrownBy(() -> writer.writeStreamHead(stream)).isInstanceOf(IllegalStateException.class);
+
+        assertConnectionEnded();
+    }
+
+    @Test
+    @DisplayName("a failed queueWrite of an end-of-stream frame rethrows, ends the connection and leaks no buffer")
+    void failedEndStreamRethrows() {
+        Http2OutboundStream stream = writer.register(1, 0);
+        transport.failQueueWrites(new IllegalStateException("transport down"));
+
+        assertThatThrownBy(() -> writer.endStream(stream)).isInstanceOf(IllegalStateException.class);
+
+        assertConnectionEnded();
+    }
+
+    @Test
+    @DisplayName("a failed queueWrite of a control frame rethrows, ends the connection and leaks no buffer")
+    void failedControlFrameRethrows() {
+        transport.failQueueWrites(new IllegalStateException("transport down"));
+
+        assertThatThrownBy(this::writePing).isInstanceOf(IllegalStateException.class);
+
+        assertConnectionEnded();
+    }
+
+    @Test
+    @DisplayName("a failed queueWrite of a response rethrows, ends the connection and leaks no buffer")
+    void failedResponseRethrows() {
+        Http2OutboundStream stream = writer.register(1, 0);
+        LoanedBuffer body = body(20);
+        transport.failQueueWrites(new IllegalStateException("transport down"));
+
+        assertThatThrownBy(() -> writer.respondOnStream(stream,
+                new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_2, List.of(), body)))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertConnectionEnded();
+    }
+
+    @Test
+    @DisplayName("a failed queueWrite of a local reset ends the connection without rethrowing")
+    void failedLocalResetIsSwallowed() {
+        Http2OutboundStream stream = writer.register(1, 0);
+        transport.failQueueWrites(new IllegalStateException("transport down"));
+
+        assertThatCode(() -> writer.resetLocal(stream, Http2ErrorCode.CANCEL)).doesNotThrowAnyException();
+
+        assertConnectionEnded();
+    }
+
+    private void assertConnectionEnded() {
+        assertThat(transport.isClosed()).as("the transport is closed, which wakes the frame loop's read").isTrue();
+        assertThat(transport.seen()).isEmpty();
+        assertThat(allocator.outstanding()).as("every buffer the writer allocated is released").isZero();
+    }
+
     // ------------------------------------------------------------------ slots
 
     @Test
@@ -646,8 +797,22 @@ class Http2ConnectionWriterTest {
 
     /** Writes a PING and waits for it: every write queued before it has reached the transport. */
     private void flush() {
-        writer.writeFrame(MemorySegment.ofArray(Http2Frames.frame(PING, 0, 0, new byte[8])), 17);
+        writePing();
         transport.awaitFrame(f -> f.type() == PING, BOUND);
+    }
+
+    private void writePing() {
+        try (LoanedBuffer ping = pingBuffer()) {
+            writer.writeFrame(ping, PING_FRAME_BYTES);
+        }
+    }
+
+    private LoanedBuffer pingBuffer() {
+        byte[] bytes = Http2Frames.frame(PING, 0, 0, new byte[8]);
+        LoanedBuffer buffer = allocator.allocateNetwork(bytes.length);
+        MemorySegment.copy(MemorySegment.ofArray(bytes), 0, buffer.segment(), 0, bytes.length);
+        buffer.setSize(bytes.length);
+        return buffer;
     }
 
     private int dataBytes(int streamId) {

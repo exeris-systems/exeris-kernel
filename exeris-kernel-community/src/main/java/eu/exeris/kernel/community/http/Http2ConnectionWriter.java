@@ -64,6 +64,12 @@ import java.util.concurrent.locks.ReentrantLock;
  *       slots from registration to {@link #release}, not to END_STREAM or a reset, so a peer that
  *       opens and resets streams in a loop cannot pile up live sender threads past the concurrent
  *       stream cap.</li>
+ *   <li><b>The lock is never held across a wait on the peer on the Community transport.</b> Every
+ *       frame written under it goes through {@code TransportStream#queueWrite}, which the Community
+ *       transport answers by handing the socket what it takes without blocking and queueing the rest
+ *       for its event loop, so a slow peer cannot hold the lock and starve the other senders or the
+ *       frame loop's own writes. The SPI leaves blocking in {@code queueWrite} implementation-defined,
+ *       so a transport that sends synchronously there holds the lock for as long as its send takes.</li>
  *   <li><b>A transport per-stream cap bounds queued bytes beyond the window.</b> A stream whose
  *       bytes handed to the transport and not yet released reach the cap does not admit another
  *       event, because a peer can grant a very large window and never read.</li>
@@ -78,8 +84,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * slice handle; no event is ever queued on the heap, a sender without credit parks.
  * <p><b>Thread confinement:</b> none — every method may be called from any thread; the lock orders
  * the writers.
- * <p><b>Ownership:</b> buffers handed to {@code queueWrite} belong to the transport; the writer closes
- * every buffer it allocates and does not hand over.
+ * <p><b>Ownership:</b> every byte goes to the transport through {@code queueWrite}; the writer closes
+ * every buffer it allocates and its own reference to every buffer it hands over, and the transport
+ * releases the reference it was given.
  */
 // Retained suppressions:
 // - TooManyMethods / GodClass: one cohesive lock-guarded state machine; splitting it would spread the
@@ -208,21 +215,17 @@ final class Http2ConnectionWriter {
      * Writes one complete frame, or several, as a single hold of the lock. Does nothing once the
      * connection has ended.
      *
-     * @param frame  the bytes to write
+     * @param frame  the buffer holding the bytes; the caller keeps its own reference and closes it
      * @param length how many bytes of {@code frame} to write
      */
-    /* default */ void writeFrame(MemorySegment frame, int length) {
+    /* default */ void writeFrame(LoanedBuffer frame, int length) {
         lock.lock();
         try {
             if (connectionClosed) {
                 return;
             }
-            try {
-                transport.write(frame, length);
-            } catch (RuntimeException failure) {
-                failTransportLocked();
-                throw failure;
-            }
+            frame.retain();
+            queueWriteOwnedOrRethrow(frame, length);
         } finally {
             lock.unlock();
         }
@@ -610,12 +613,8 @@ final class Http2ConnectionWriter {
                 Http2FrameEncoder.writeHeader(target, 0L, (int) (position - FRAME_HEADER),
                         Http2FrameType.HEADERS.code(), FLAG_END_HEADERS, stream.streamId);
                 scratch.setSize(position);
-                try {
-                    transport.write(target, (int) position);
-                } catch (RuntimeException failure) {
-                    failTransportLocked();
-                    throw failure;
-                }
+                scratch.retain();
+                queueWriteOwnedOrRethrow(scratch, (int) position);
             }
             stream.headWritten = true;
             return true;
@@ -742,12 +741,8 @@ final class Http2ConnectionWriter {
                 Http2FrameEncoder.writeHeader(frame.segment(), 0L, 0,
                         Http2FrameType.DATA.code(), FLAG_END_STREAM, stream.streamId);
                 frame.setSize(FRAME_HEADER);
-                try {
-                    transport.write(frame.segment(), FRAME_HEADER);
-                } catch (RuntimeException failure) {
-                    failTransportLocked();
-                    throw failure;
-                }
+                frame.retain();
+                queueWriteOwnedOrRethrow(frame, FRAME_HEADER);
             }
             stream.state = Http2OutboundStream.State.END_STREAM_SENT;
         } finally {
@@ -991,7 +986,8 @@ final class Http2ConnectionWriter {
         try (LoanedBuffer rst = allocator.allocateNetwork(CONTROL_FRAME_BYTES)) {
             long written = Http2FrameEncoder.writeRstStream(rst.segment(), 0, streamId, code.code());
             rst.setSize(written);
-            transport.write(rst.segment(), (int) written);
+            rst.retain();
+            queueWriteOwned(rst, (int) written);
         } catch (RuntimeException _) {
             failTransportLocked();
         }
@@ -1041,6 +1037,21 @@ final class Http2ConnectionWriter {
         return null;
     }
 
+    /**
+     * Hands {@code buf} to the transport like {@link #queueWriteOwned}, but a failure is rethrown
+     * after the connection has ended, for the senders whose caller must learn the write was lost.
+     */
+    private void queueWriteOwnedOrRethrow(LoanedBuffer buf, int len) {
+        try {
+            transport.queueWrite(buf, len);
+        } catch (RuntimeException failure) {
+            // The transport hands the loan back to the caller on any throw (TransportStream#queueWrite).
+            buf.close();
+            failTransportLocked();
+            throw failure;
+        }
+    }
+
     private boolean queueWriteOwned(LoanedBuffer buf, int len) {
         try {
             transport.queueWrite(buf, len);
@@ -1075,12 +1086,8 @@ final class Http2ConnectionWriter {
                     position = serializeDataFrames(
                             outbound.segment(), position, streamId, body.segment(), now, complete);
                 }
-                try {
-                    transport.write(outbound.segment(), (int) position);
-                } catch (RuntimeException failure) {
-                    failTransportLocked();
-                    throw failure;
-                }
+                outbound.retain();
+                queueWriteOwnedOrRethrow(outbound, (int) position);
             }
         }
     }

@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
@@ -65,6 +66,7 @@ final class Http2ScriptedTransport implements TransportStream {
     private volatile CountDownLatch blockLatch = new CountDownLatch(0);
     private volatile CountDownLatch blockedEntered = new CountDownLatch(1);
 
+    private final AtomicInteger queuedWrites = new AtomicInteger();
     private volatile RuntimeException queueWriteFailure;
     private volatile boolean closed;
 
@@ -138,8 +140,18 @@ final class Http2ScriptedTransport implements TransportStream {
         }
     }
 
+    /**
+     * The only plain write an HTTP/2 connection makes is the {@code h2c} upgrade response, ahead of
+     * the writer; every frame goes through {@code queueWrite}, so a plain write at any other time
+     * means the writer waited on the peer while holding its lock.
+     */
     @Override
     public void write(MemorySegment source, int length) {
+        synchronized (reassemblyLock) {
+            if (!expectUpgradeHead) {
+                throw new AssertionError("write() reached from the HTTP/2 writer");
+            }
+        }
         accept(source, length);
     }
 
@@ -149,6 +161,7 @@ final class Http2ScriptedTransport implements TransportStream {
         if (failure != null) {
             throw failure;
         }
+        queuedWrites.incrementAndGet();
         try {
             accept(buffer.segment(), length);
         } finally {
@@ -268,6 +281,18 @@ final class Http2ScriptedTransport implements TransportStream {
     /** Every later {@code queueWrite} throws {@code failure} without taking the buffer. */
     void failQueueWrites(RuntimeException failure) {
         queueWriteFailure = failure;
+    }
+
+    /** How many {@code queueWrite} calls the transport accepted. */
+    int queuedWrites() {
+        return queuedWrites.get();
+    }
+
+    /** How many buffers a holding transport keeps open. */
+    int heldCount() {
+        synchronized (held) {
+            return held.size();
+        }
     }
 
     /** Closes every buffer a holding transport kept. */

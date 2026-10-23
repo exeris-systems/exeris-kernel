@@ -53,7 +53,7 @@ final class CommunityHttp2ControlFrames {
                     H2_PING_PAYLOAD_BYTES);
             long written = Http2FrameParser.FRAME_HEADER_SIZE + (long) H2_PING_PAYLOAD_BYTES;
             outbound.setSize(written);
-            writer.writeFrame(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 
@@ -76,7 +76,7 @@ final class CommunityHttp2ControlFrames {
             long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, false,
                     Http2Settings.ID_MAX_HEADER_LIST_SIZE, maxHeaderListSize);
             outbound.setSize(written);
-            writer.writeFrame(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 
@@ -84,7 +84,7 @@ final class CommunityHttp2ControlFrames {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
             long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, true);
             outbound.setSize(written);
-            writer.writeFrame(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 
@@ -112,7 +112,7 @@ final class CommunityHttp2ControlFrames {
             long written = Http2FrameEncoder.writeGoAway(
                     outbound.segment(), 0, lastStreamId, errorCode.code());
             outbound.setSize(written);
-            writer.writeFrame(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 
@@ -124,7 +124,7 @@ final class CommunityHttp2ControlFrames {
             long written = Http2FrameEncoder.writeRstStream(
                     outbound.segment(), 0, streamId, errorCode.code());
             outbound.setSize(written);
-            writer.writeFrame(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 }
