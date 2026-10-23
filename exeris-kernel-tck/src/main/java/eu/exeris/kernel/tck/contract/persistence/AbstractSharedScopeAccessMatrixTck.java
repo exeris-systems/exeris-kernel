@@ -211,9 +211,8 @@ public abstract class AbstractSharedScopeAccessMatrixTck {
      * update, to {@code newSharedScope}, through the binding. A {@code null} tag means "none"
      * (tenant-private).
      *
-     * <p>Not abstract, so a binding written before the tag cells existed stays source-compatible; the
-     * default throws, because an inherited no-op would let the re-tag cells report green for a binding
-     * that never implemented them.
+     * <p>Not abstract; the default throws, because an inherited no-op would let the re-tag cells report
+     * green for a binding that never implemented them.
      *
      * @param ctx            the acting storage context
      * @param value          the payload identifying the target row
