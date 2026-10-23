@@ -24,11 +24,11 @@ import java.util.UUID;
  * <h2>What this proves for Community tier</h2>
  * <p>The Community traversal hot path
  * {@code openSession() → traverseBreadthFirst(1-hop, 500 ids) → close()} stays within the
- * regression bound the TCK enforces on allocated bytes per useful data byte, driver
- * included. It does <em>not</em> prove graph.md's published {@code < 20x} contract: this
- * path runs in one of two per-JVM allocation regimes and the slower one breaches that
- * figure — see the TCK Javadoc for the measurement and for why the numerator is not
- * filtered to {@code eu.exeris.*}. The Cypher backend is used deliberately: it builds
+ * published Community contract of {@code < 23x} allocated bytes per useful data byte,
+ * driver included, in either of the two per-JVM allocation regimes the path settles
+ * into — see the TCK Javadoc for the measurement and for why the numerator is not
+ * filtered to {@code eu.exeris.*}. It proves nothing about the SQL/PGQ path, which has
+ * no churn binding. The Cypher backend is used deliberately: it builds
  * its helper from an explicit {@link CommunityNeo4jClient} passed via
  * {@link GraphConfig}, so no {@code ScopedValue}-bound persistence engine is
  * required to drive the traversal (unlike the SQL/PGQ path).
