@@ -35,14 +35,19 @@ import java.util.Map;
  * behaviour, which the H2-backed {@code CommunityPersistenceEngineTckTest} cannot express.
  *
  * <h2>The conforming policy</h2>
- * <p>The reference shape {@code RlsConnectionInterceptor} publishes: the tenant-private policy for every
- * command, and an additive {@code FOR SELECT} policy that widens reads on the published shared scope.
- * Writes see only the owner policy, so a tenant can read a partition-mate's row and cannot update,
- * re-own or delete it. The {@code NULLIF} guard stops a cleared scope from matching rows whose own tag
- * is empty.
+ * <p>The reference shape {@code RlsConnectionInterceptor} publishes: the owner policy for every command,
+ * and an additive {@code FOR SELECT} policy that widens reads on the published shared scope. Writes see
+ * only the owner policy, so a tenant can read a partition-mate's row and cannot update, re-own or delete
+ * it. The owner policy's {@code WITH CHECK} pins the tag as well as the owner: a written row is
+ * tenant-private ({@code ''} or {@code NULL}) or carries the scope the request published, so a row's own
+ * column never grants visibility that no token carried. The {@code NULLIF} guard on the read arm stops a
+ * cleared scope from matching rows whose own tag is empty.
+ *
+ * <p>The tag column is nullable on purpose: it is what exercises the {@code COALESCE} arm of the check,
+ * which a {@code NOT NULL DEFAULT ''} column would leave unreachable.
  *
  * <h2>Execution</h2>
- * <pre>mvn -pl exeris-kernel-community test -Dtest=CommunityPersistenceSharedScopeIT -DincludedGroups=integration -DexcludedGroups=</pre>
+ * <pre>mvn -pl exeris-kernel-community -am test -DincludedGroups=integration -DexcludedGroups=</pre>
  *
  * @since 0.11.0
  */
@@ -94,10 +99,9 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
         try (PersistenceConnection conn = engine.openConnection(ctx);
              PersistenceStatement stmt = conn.prepare(
                      "INSERT INTO scoped_docs(tenant_id, shared_scope, value) VALUES (?, ?, ?)")) {
-            stmt.bindString(0, owner)
-                    .bindString(1, sharedScope == null ? "" : sharedScope)
-                    .bindString(2, value)
-                    .executeUpdate();
+            stmt.bindString(0, owner);
+            bindTag(stmt, 1, sharedScope);
+            stmt.bindString(2, value).executeUpdate();
         }
     }
 
@@ -118,6 +122,24 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
         try (PersistenceConnection conn = engine.openConnection(ctx);
              PersistenceStatement stmt = conn.prepare("UPDATE scoped_docs SET value = ? WHERE value = ?")) {
             return Math.toIntExact(stmt.bindString(0, newValue).bindString(1, value).executeUpdate());
+        }
+    }
+
+    @Override
+    protected int retagScope(StorageContext ctx, String value, String newSharedScope) {
+        try (PersistenceConnection conn = engine.openConnection(ctx);
+             PersistenceStatement stmt = conn.prepare("UPDATE scoped_docs SET shared_scope = ? WHERE value = ?")) {
+            bindTag(stmt, 0, newSharedScope);
+            return Math.toIntExact(stmt.bindString(1, value).executeUpdate());
+        }
+    }
+
+    /** Binds a tag, with {@code null} as SQL {@code NULL} so the nullable column's {@code COALESCE} arm runs. */
+    private static void bindTag(PersistenceStatement stmt, int index, String tag) {
+        if (tag == null) {
+            stmt.bindNull(index);
+        } else {
+            stmt.bindString(index, tag);
         }
     }
 
@@ -156,12 +178,13 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
                     + "END $$");
             st.execute("DROP TABLE IF EXISTS scoped_docs CASCADE");
             st.execute("CREATE TABLE scoped_docs (tenant_id TEXT NOT NULL, "
-                    + "shared_scope TEXT NOT NULL DEFAULT '', value TEXT NOT NULL)");
+                    + "shared_scope TEXT, value TEXT NOT NULL)");
             st.execute("ALTER TABLE scoped_docs ENABLE ROW LEVEL SECURITY");
             st.execute("ALTER TABLE scoped_docs FORCE ROW LEVEL SECURITY");
             st.execute("CREATE POLICY tenant_isolation ON scoped_docs "
                     + "USING (tenant_id = current_setting('exeris.tenant_id', true)) "
-                    + "WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true))");
+                    + "WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true) "
+                    + "AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)))");
             st.execute("CREATE POLICY shared_scope_read ON scoped_docs FOR SELECT "
                     + "USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''))");
             st.execute("GRANT USAGE ON SCHEMA public TO exeris_app");

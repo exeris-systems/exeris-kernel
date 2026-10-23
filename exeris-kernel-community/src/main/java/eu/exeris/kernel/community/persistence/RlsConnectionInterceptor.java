@@ -53,7 +53,8 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * CREATE POLICY tenant_isolation ON table_name
  *   USING (tenant_id = current_setting('exeris.tenant_id', true))
- *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true));
+ *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)
+ *               AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
  *
  * CREATE POLICY shared_scope_read ON table_name FOR SELECT
  *   USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''));
@@ -88,9 +89,17 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * empty-string guard on the tenant arm too, the way the shared-scope arm already carries it:
  * {@code tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid}.
  *
- * <p>The owner policy is the tenant-private policy, unchanged: owner-scoped write is what it already
- * expresses, so widening reads adds a policy rather than relaxing one. A tenant can read its
- * partition-mates' rows and still only ever insert, update or delete its own.
+ * <p>The owner policy pins the tag as well as the owner. A tenant can read its partition-mates' rows and
+ * still only ever insert, update or delete its own, and what it writes is either tenant-private
+ * ({@code ''}, or {@code NULL} where the column allows it) or tagged with the scope its request
+ * published. The widening comes only from the verified token: a row's own column never grants
+ * visibility that no token carried. {@code WITH CHECK} sees only the new row, so:
+ * <ul>
+ *   <li>an owner whose request lacks scope {@code S} cannot keep {@code S} on a row across an update;
+ *       it re-tags the row to {@code ''} or to the scope it holds;</li>
+ *   <li>un-sharing a row to {@code ''} is admitted from such a request, because narrowing one's own
+ *       row widens nothing.</li>
+ * </ul>
  *
  * <h2>The Agnostic Data Principle</h2>
  * <p>This interceptor is <b>identity-blind</b> — it never imports
