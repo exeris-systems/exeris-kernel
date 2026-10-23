@@ -87,7 +87,7 @@ class CommunityProviderInventoryTest {
     @DisplayName("snapshot provider descriptors have valid fields")
     void descriptorsAreWellFormed() {
         ProvidersSnapshot snapshot = CommunityProviderInventory.snapshot();
-        assertThat(snapshot.providers()).allSatisfy(descriptor -> {
+        assertThat(snapshot.providers()).isNotEmpty().allSatisfy(descriptor -> {
             assertThat(descriptor.providerName()).isNotBlank();
             assertThat(descriptor.spiType()).isNotBlank();
             assertThat(descriptor.priority()).isGreaterThanOrEqualTo(0);
