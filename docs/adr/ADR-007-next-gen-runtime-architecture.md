@@ -323,7 +323,8 @@ thread, or the host's lifecycle thread. Two of those carry none of the kernel's 
 - **2026-10-23 — §3 A send to a vanished peer.** The original §3 text is kept; one clause is added. A send on a
   Community TCP or TLS stream that fails because the peer ended the stream, by a reset, a broken pipe or a TLS
   `close_notify`, reports the closed-stream signal for the peer (`EX-NET-4008`) with the transport failure
-  (`EX-NET-4002`) as its cause, instead of the send failure itself. The Community TLS engine does not support
+  (`EX-NET-4002`) as its cause, instead of the send failure itself; a TLS stream recognises a reset by the
+  errno its fatal wrap status left (not on Windows, where only an observed end counts). The Community TLS engine does not support
   half-close: a write after the peer's `close_notify` is refused, and a write stalled across it is dropped and
   ends the stream; a TCP FIN stays a half-close and leaves writes working. The NIO fallback has no errno, so
   there a send that fails on the channel for any reason but a local close is read as the peer's end. Enterprise transports meet the same

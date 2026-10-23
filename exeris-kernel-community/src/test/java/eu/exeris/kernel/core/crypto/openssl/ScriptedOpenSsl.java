@@ -39,6 +39,7 @@ public final class ScriptedOpenSsl {
     private final AtomicInteger ctxFrees = new AtomicInteger();
     private int pendingWriteError = NO_PENDING_WRITE_ERROR;
     private volatile int errorResult = CoreOpenSslLoader.SSL_ERROR_WANT_READ;
+    private final java.util.concurrent.atomic.AtomicInteger scriptedErrno = new java.util.concurrent.atomic.AtomicInteger();
     private volatile long verifyResult = CoreOpenSslLoader.X509_V_OK;
     private volatile int set1HostResult = 1;
     private volatile int setFdResult = 1;
@@ -114,10 +115,31 @@ public final class ScriptedOpenSsl {
     }
 
     /**
-     * Sets what {@code SSL_get_error} reports.
+     * Sets the errno the engine reads after a write failed with {@code SSL_ERROR_SYSCALL}.
      *
-     * @param code an {@code SSL_ERROR_*} code
+     * @param errno the errno the failing {@code send} would have left
      * @return this
+     */
+    public ScriptedOpenSsl errnoAfterFailure(int errno) {
+        this.scriptedErrno.set(errno);
+        return this;
+    }
+
+    /**
+     * The errno a failed call leaves, as scripted by {@link #errnoAfterFailure(int)}; {@code 0} when none
+     * was scripted.
+     *
+     * @return the scripted errno
+     */
+    public int errnoAfterFailure() {
+        return scriptedErrno.get();
+    }
+
+    /**
+     * Makes {@code SSL_get_error} report {@code code} for a call that returned {@code -1}.
+     *
+     * @param code an {@code SSL_ERROR_*} constant
+     * @return this script
      */
     public ScriptedOpenSsl errorResult(int code) {
         this.errorResult = code;

@@ -219,6 +219,47 @@ class CommunityTransportPeerEndWriteIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("TLS: a write after the client's reset, with no read before it, reports EX-NET-4008")
+    void tlsWriteAfterTheClientsResetWithoutAReadReportsThePeerCode() throws Exception {
+        Outcome<Throwable> firstRefusal = new Outcome<>();
+        CountDownLatch clientGone = new CountDownLatch(1);
+        CountDownLatch handlerRunning = new CountDownLatch(1);
+        try (ServerUnderTest server = ServerUnderTest.tls(stream -> {
+            // One byte in, so the handler is running before the client resets; nothing is read after it.
+            try (LoanedBuffer sink = ALLOCATOR.allocateNetwork(64)) {
+                stream.read(sink.segment(), 64);
+            }
+            handlerRunning.countDown();
+            awaitUninterruptibly(clientGone);
+            firstRefusal.complete(firstRefusalOf(stream));
+        })) {
+            Socket raw = new Socket();
+            raw.connect(new InetSocketAddress(HOST, port(server)), CONNECT_TIMEOUT_MILLIS);
+            SSLSocket tls = (SSLSocket) clientTrust.getSocketFactory().createSocket(raw, HOST, port(server), false);
+            tls.startHandshake();
+            tls.getOutputStream().write('x');
+            tls.getOutputStream().flush();
+            assertThat(handlerRunning.await(AWAIT_SECONDS, TimeUnit.SECONDS)).as("the handler is running").isTrue();
+            // The TCP socket is reset under the TLS layer, so no close_notify precedes the reset.
+            raw.setSoLinger(true, 0);
+            raw.close();
+            clientGone.countDown();
+
+            Throwable refusal = firstRefusal.await();
+
+            assertThat(refusal).as(chainOf(refusal)).isInstanceOfSatisfying(TransportStreamClosedException.class,
+                    e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4008));
+            for (Throwable link = refusal; link != null; link = link.getCause()) {
+                assertThat(link).as("no handshake failure in the chain").isNotInstanceOf(TlsHandshakeException.class);
+            }
+        }
+    }
+
+    private static int port(ServerUnderTest server) {
+        return server.port;
+    }
+
     /** Sends one byte at a time until a send throws; returns what it threw, or fails past the attempt bound. */
     private static Throwable firstRefusalOf(TransportStream stream) {
         try (LoanedBuffer probe = ALLOCATOR.allocateNetwork(1)) {

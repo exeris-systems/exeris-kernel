@@ -208,5 +208,23 @@
     "since": "0.13",
     "adr": "ADR-013",
     "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the implementor obligation is stated. save must accept a snapshot in any FlowState, COMPLETED and FAILED_ROLLEDBACK included, and load must return it as written, because under a bounded terminal catalog the engine replaces an instance's row with a COMPLETED snapshot on completion and relies on it as the proof of completion after an eviction or a restart. A store that kept only PARKED rows, or filtered load by state, loses that proof; AbstractDistributedFlowSnapshotStoreTck now checks both. The stability matrix records it as a 0.13 behavioural note on spi.flow. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream#write(java.lang.foreign.MemorySegment, int)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "SPI javadoc, stable spi.transport: the descriptor is unchanged, the failure contract is stated. A send that fails because the peer ended the stream (a reset, a broken pipe, or a TLS close_notify) throws TransportStreamClosedException (EX-NET-4008, an IllegalStateException) with the EX-NET-4002 transport failure as its cause, where the Community driver threw TransportException (EX-NET-4002) or, after a TLS close_notify, TlsHandshakeException. TransportException stays the failure of a send the peer did not end. A caller that catches IllegalStateException around a send keeps working; one that catches TransportException to detect a disconnect catches TransportStreamClosedException instead and reads the cause through getCause(), as MIGRATION.md says. AbstractTransportStreamTck.PeerEndRefusesWrites pins it after a peer reset, so a binding adopts it. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream#queueWrite(eu.exeris.kernel.spi.memory.LoanedBuffer, int)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "SPI javadoc, stable spi.transport: the descriptor is unchanged, the failure contract is stated, and the buffer stays with the caller on the throw as before. A send that fails because the peer ended the stream (a reset, a broken pipe, or a TLS close_notify) throws TransportStreamClosedException (EX-NET-4008, an IllegalStateException) with the EX-NET-4002 transport failure as its cause, where the Community driver threw TransportException (EX-NET-4002) or, after a TLS close_notify, TlsHandshakeException. TransportException stays the failure of a send the peer did not end. A caller that catches IllegalStateException around a send keeps working; one that catches TransportException to detect a disconnect catches TransportStreamClosedException instead and reads the cause through getCause(), as MIGRATION.md says. AbstractTransportStreamTck.PeerEndRefusesWrites pins it after a peer reset, so a binding adopts it. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.transport.AbstractTransportStreamTck$PeerEndRefusesWrites#writesAfterThePeersResetAreRefusedWithThePeerCode()",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "TCK contract: AbstractTransportStreamTck gains PeerEndRefusesWrites, two cases asserting that after the peer's reset(long) the first failure of a write, and of a queueWrite, is TransportStreamClosedException with EX-NET-4008, with no read before it. A binding whose send reports another failure first, such as TransportException, fails them until it throws the closed signal for a peer that ended the stream; Enterprise transports that bind the suite adopt it. Source-compatible; no SPI class changes."
   }
 ]

@@ -267,7 +267,7 @@ final class NativeTcpStream implements TransportStream {
                 tlsLock, handshakeBackoff, closed, closeRequested, this::close, writeInterestCallback);
         this.tlsDrain = tlsEngine == null ? null : new NativeTcpStreamTlsDrain(
                 engineName, remoteClosed, closed, pendingWriteTlsContext.waitingForPeer(), this::requestAbort,
-                this::abortOnPeerGone);
+                this::abortOnPeerGone, ((CommunityTlsEngine) tlsEngine)::lastWriteErrno, this::isPeerGone);
     }
 
     /**

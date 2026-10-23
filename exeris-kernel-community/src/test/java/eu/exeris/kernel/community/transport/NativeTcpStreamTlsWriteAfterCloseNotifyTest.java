@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.lang.foreign.ValueLayout;
@@ -38,6 +39,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -243,6 +245,90 @@ class NativeTcpStreamTlsWriteAfterCloseNotifyTest {
                     .isInstanceOfSatisfying(TransportException.class,
                             e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4002));
         }
+    }
+
+    @ParameterizedTest(name = "errno {0}")
+    @MethodSource("peerResetErrnos")
+    @DisplayName("a fatal wrap status whose errno says the peer reset reports the peer code with no end observed")
+    void fatalWrapWithAResetErrnoReportsThePeerCode(int errno) {
+        openSsl.failWrite(CoreOpenSslLoader.SSL_ERROR_SYSCALL).errnoAfterFailure(errno);
+        stream = stream();
+        assertThat(stream.isRemoteClosed()).as("no end observed").isFalse();
+
+        try (LoanedBuffer payload = payload()) {
+            assertPeerCodeOverASendFailure(failureOf(() -> stream.queueWrite(payload, PAYLOAD_BYTES)));
+        }
+
+        assertThat(stream.isRemoteClosed()).as("the refusal recorded the peer's end").isTrue();
+        assertThat(stream.hasPendingData()).isFalse();
+        assertThat(closeCalls).hasValue(1);
+    }
+
+    @ParameterizedTest(name = "errno {0}")
+    @ValueSource(ints = {0, 4, 11, 110, -1})
+    @DisplayName("a fatal wrap status whose errno is not a reset stays a send failure with no end observed")
+    void fatalWrapWithAnotherErrnoStaysASendFailure(int errno) {
+        openSsl.failWrite(CoreOpenSslLoader.SSL_ERROR_SYSCALL).errnoAfterFailure(errno);
+        stream = stream();
+
+        try (LoanedBuffer payload = payload()) {
+            assertThatThrownBy(() -> stream.queueWrite(payload, PAYLOAD_BYTES))
+                    .isInstanceOfSatisfying(TransportException.class,
+                            e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4002));
+        }
+
+        assertThat(stream.isRemoteClosed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("an errno that says reset is ignored when the fatal status has another cause")
+    void resetErrnoWithAnotherFatalCauseStaysASendFailure() {
+        openSsl.failWrite(CoreOpenSslLoader.SSL_ERROR_SSL).errnoAfterFailure(connectionReset());
+        stream = stream();
+
+        try (LoanedBuffer payload = payload()) {
+            assertThatThrownBy(() -> stream.queueWrite(payload, PAYLOAD_BYTES))
+                    .isInstanceOfSatisfying(TransportException.class,
+                            e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4002));
+        }
+    }
+
+    @Test
+    @DisplayName("a retried write that the reactor's flush finds broken by a reset is not a dispatch fault")
+    void reactorFlushThatFindsAResetErrnoIsSwallowed() throws Exception {
+        openSsl.failWrite(CoreOpenSslLoader.SSL_ERROR_WANT_WRITE)
+                .failWrite(CoreOpenSslLoader.SSL_ERROR_SYSCALL)
+                .errnoAfterFailure(connectionReset());
+        stream = stream();
+        LoanedBuffer payload = payload();
+        stream.queueWrite(payload, PAYLOAD_BYTES);
+        assertThat(stream.hasPendingData()).as("the write stalled").isTrue();
+        NativeTcpCarrier carrier = carrier();
+        try (Selector selector = Selector.open()) {
+            SelectionKey key = clientChannel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+
+            assertThatCode(() -> carrier.flushStream(stream, key))
+                    .as("a send the peer's reset broke is not a dispatch fault")
+                    .doesNotThrowAnyException();
+        } finally {
+            carrier.close();
+        }
+
+        assertThat(openSsl.writeCalls()).as("the head was retried once").hasSize(2);
+        assertThat(stream.hasPendingData()).isFalse();
+        assertThat(payload.isAlive()).as("the dropped write released its loan").isFalse();
+        assertThat(closeCalls).hasValue(1);
+        assertNextWriteReportsThePeerCode();
+    }
+
+    static IntStream peerResetErrnos() {
+        return IntStream.of(32, connectionReset());
+    }
+
+    /** The platform's {@code ECONNRESET}. */
+    private static int connectionReset() {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        return os.startsWith("mac") ? 54 : 104;
     }
 
     private void assertNextWriteReportsThePeerCode() {

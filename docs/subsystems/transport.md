@@ -478,7 +478,7 @@ paths gain one extra flag read.
 |:--|:--|:--|:--|
 | `close()` (any call) | `closeRequested` | all | now, if the slot is free and the queue is drained; otherwise whoever releases the slot, or the reactor's drain |
 | `reset(long)` (any call) | `resetRequested`, `closeRequested` | all | now, if the slot is free; otherwise the reactor is woken to do it |
-| Send failure on a queue drain: a write `IOException`, or a fatal TLS wrap status (`CLOSED`, which never re-enters `close()` under the slot) | `resetRequested`, `closeRequested`; `peerEndedFirst` when the remote end was already observed, the send's errno says the peer reset (`EPIPE`/`ECONNRESET`, core-socket seam) or, on the NIO fallback, the channel failed on a send for any reason but a local close, or a TLS wrap found the session ended by the peer, and no local close came first; the remote end is then recorded (`markRemoteClosed`), and the writer receives the closed signal with the `EX-NET-4002` failure as its cause | all | after the failing thread releases the slot |
+| Send failure on a queue drain: a write `IOException`, or a fatal TLS wrap status (`CLOSED`, which never re-enters `close()` under the slot) | `resetRequested`, `closeRequested`; `peerEndedFirst` when the remote end was already observed, the send's errno says the peer reset (`EPIPE`/`ECONNRESET`, core-socket seam, or the errno of a fatal TLS wrap status) or, on the NIO fallback, the channel failed on a send for any reason but a local close, or a TLS wrap found the session ended by the peer, and no local close came first; the remote end is then recorded (`markRemoteClosed`), and the writer receives the closed signal with the `EX-NET-4002` failure as its cause | all | after the failing thread releases the slot |
 | Send failure on a direct write (plain, nothing queued) after the peer ended | `remoteClosed`, `peerEndedFirst` if no local close came first | all | none: the application's close ends the stream |
 | Peer FIN or TLS `close_notify` (`markRemoteClosed`) | `remoteClosed`; `peerEndedFirst` when no local close was requested | all | none |
 | Carrier teardown (`closeKeyStream`: dispatch fault, idle reap) | `markRemoteClosed`, then `reset(long)` | all | through `reset(long)` |
@@ -582,7 +582,10 @@ down after a connection fault, because it marks those streams remote-closed.
 
 A send that fails because the peer ended the stream raises the signal as well, with the `EX-NET-4002`
 transport failure as its cause. The core-socket seam recognises the peer's end by the send's errno
-(`EPIPE`, `ECONNRESET`) or by an end the carrier already observed. The NIO fallback has no errno and its
+(`EPIPE`, `ECONNRESET`) or by an end the carrier already observed. A TLS stream does the same through the
+errno that its fatal wrap status left: in fd-owner mode OpenSSL writes to the socket itself, and the engine
+reads errno once, right after `SSL_get_error` reports `SSL_ERROR_SYSCALL`. Windows does not read it, so
+there only an end the carrier already observed is recognised. The NIO fallback has no errno and its
 exception messages are locale text, so there a send that fails on the channel for any reason but a local
 close (a `ClosedChannelException`) is read as the peer's end: the connection is gone, and the stream is
 aborted either way.

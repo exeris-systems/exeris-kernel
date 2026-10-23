@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.transport;
 
+import eu.exeris.kernel.core.transport.syscall.SyscallErrno;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
@@ -12,6 +13,8 @@ import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntSupplier;
+import java.util.function.Predicate;
 
 /**
  * Package-private TLS egress drain for {@link NativeTcpStream}: turns the outcome of one
@@ -68,6 +71,8 @@ final class NativeTcpStreamTlsDrain {
     private final AtomicBoolean closed;
     private final AbortSink abortSink;
     private final PeerGoneSink peerGoneSink;
+    private final IntSupplier writeErrno;
+    private final Predicate<IOException> sendFailureEndsPeer;
     private final AtomicBoolean stalledOnRead;
     private final AtomicBoolean retryAfterIngress = new AtomicBoolean();
 
@@ -83,13 +88,16 @@ final class NativeTcpStreamTlsDrain {
 
     /* default */ NativeTcpStreamTlsDrain(String engineName, AtomicBoolean remoteClosed, AtomicBoolean closed,
                                           AtomicBoolean stalledOnRead, AbortSink abortSink,
-                                          PeerGoneSink peerGoneSink) {
+                                          PeerGoneSink peerGoneSink, IntSupplier writeErrno,
+                                          Predicate<IOException> sendFailureEndsPeer) {
         this.stalledOnRead = stalledOnRead;
         this.engineName = engineName;
         this.remoteClosed = remoteClosed;
         this.closed = closed;
         this.abortSink = abortSink;
         this.peerGoneSink = peerGoneSink;
+        this.writeErrno = writeErrno;
+        this.sendFailureEndsPeer = sendFailureEndsPeer;
     }
 
     /**
@@ -182,7 +190,10 @@ final class NativeTcpStreamTlsDrain {
      * true and hang teardown, and a nested close() would release the slot this frame still holds.
      */
     private RuntimeException abortOnFatalStatus(NativeTcpStreamPendingWrite pending) {
-        if (remoteClosed.get()) {
+        // In fd-owner mode OpenSSL writes to the socket itself, so a send the peer's reset broke
+        // arrives as a fatal status whose errno is the send's. The errno is read right after the wrap
+        // that failed, on this thread, which holds the outbound slot.
+        if (remoteClosed.get() || SyscallErrno.isPeerReset(writeErrno.getAsInt())) {
             return peerGoneSink.peerGone(pending.bytesWritten(), null);
         }
         abortSink.abort(false);
@@ -196,7 +207,7 @@ final class NativeTcpStreamTlsDrain {
             if (closed.get()) {
                 return true;
             }
-            if (remoteClosed.get()) {
+            if (sendFailureEndsPeer.test(e)) {
                 throw peerGoneSink.peerGone(pending.bytesWritten(), e);
             }
             abortSink.abort(false);
