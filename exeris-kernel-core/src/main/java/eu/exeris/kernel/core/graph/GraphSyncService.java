@@ -145,19 +145,14 @@ public final class GraphSyncService {
      * @throws GraphSyncException (EX-GRPH-5003) if {@code action} or the commit throws
      */
     private void executeSync(String operationType, String label, String failureMessage, SessionAction action) {
-        final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
-        if (event != null) {
-            event.operationType = operationType;
-            event.edgeOrLabel   = label;
-        }
+        final long startNs = System.nanoTime();
+        boolean success = false;
         try (GraphSession session = engine.openSession()) {
             session.beginTransaction();
             try {
                 action.execute(session);
                 session.commit();
-                if (event != null) {
-                    event.success = true;
-                }
+                success = true;
             } catch (RuntimeException cause) {
                 try {
                     session.rollback();
@@ -168,9 +163,7 @@ public final class GraphSyncService {
                 throw new GraphSyncException(label, failureMessage, cause);
             }
         } finally {
-            if (event != null) {
-                event.commit();
-            }
+            GraphSyncOperationEvent.emit(operationType, label, success, startNs);
         }
     }
 
