@@ -86,8 +86,9 @@ class GraphJfrEventsTest {
                     .isInstanceOf(GraphSyncException.class);
 
             assertThat(allSeen.await(20, TimeUnit.SECONDS))
-                    .as("every algorithm call and sync outcome must emit exactly one event").isTrue();
+                    .as("every algorithm call and sync outcome must emit an event").isTrue();
         }
+        assertThat(events).as("each call and each sync outcome emits exactly one event").hasSize(EXPECTED_EVENTS);
 
         List<RecordedEvent> algo = events.stream().filter(e -> ALGO.equals(e.getEventType().getName())).toList();
         assertThat(algo).extracting(e -> e.getString("operationType"))

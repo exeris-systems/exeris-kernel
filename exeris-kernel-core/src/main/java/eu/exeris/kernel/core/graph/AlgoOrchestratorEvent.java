@@ -19,7 +19,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * JFR event emitted by {@link AlgoOrchestrator} for every algorithm invocation.
+ * JFR event emitted by {@link AlgoOrchestrator} for every algorithm invocation that returns; an
+ * invocation whose path finder throws emits none.
  *
  * <h2>JFR-First Contract</h2>
  * <p>Emitted for both found and not-found results. {@code elapsedNanos} is the wall-clock time of
@@ -34,7 +35,7 @@ import java.util.UUID;
 @Name("eu.exeris.kernel.graph.AlgoOrchestrator")
 @Label("Graph Algorithm Invocation")
 @Category({"Exeris Kernel", "Graph"})
-@Description("Emitted for each AlgoOrchestrator algorithm invocation (Dijkstra, BFS, K-paths).")
+@Description("Emitted for each AlgoOrchestrator algorithm invocation that returns (Dijkstra, BFS, K-paths).")
 @StackTrace(false)
 final class AlgoOrchestratorEvent extends Event {
 
