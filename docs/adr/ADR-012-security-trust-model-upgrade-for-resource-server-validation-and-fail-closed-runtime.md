@@ -399,8 +399,8 @@ Shape, implemented in 0.13 (the four points the implementation resolves are reco
 
 - **When:** on the first connection of each pool the engine creates while the RLS interceptor is
   installed _(Amended 2026-10-23: when the interceptor is registered, for the shared pool; for a
-  dedicated pool, before it is first used — see Amendments.)_. Each pool may log in as a different role, and the check costs one query per pool, never per
-  request.
+  dedicated pool, before it is first used — see Amendments.)_ Each pool may log in as a different
+  role, and the check costs one query per pool, never per request.
 - **What:** `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`. Either value
   `true` is a bypass. An engine whose database is not PostgreSQL skips the check.
 - **Key:** `persistence.rlsAllowBypassRole`, `boolean`, default `false`, immutable. The name follows the
@@ -660,3 +660,8 @@ implementation. The implementation resolves four points:
   incomplete without an abstract suite and both binding layers, so the TCK / IT line of §4c.4 is met by the
   abstract suite plus the Community binding. The downgrade's log line and event are asserted in the
   binding, because the TCK depends on the SPI only.
+
+Two status lines were brought to repository state with this entry: the §4c.4 lead-in, which read
+"Shape, planned for 0.13; the code and the event are to be registered with the implementation", now
+reads "Shape, implemented in 0.13", and §10 lists §4c.4 under "Implemented now" instead of "Planned for
+0.13". The shape itself is unchanged.
