@@ -14,7 +14,6 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -59,6 +58,7 @@ public final class ExerisCarrierThread {
     private final ConcurrentLinkedQueue<Runnable> runQueue = new ConcurrentLinkedQueue<>();
     private final ThreadFactory vThreadFactory;
     private final long yieldBudgetNs;
+    private final boolean factoryPreferredCarrier;
 
     @SuppressWarnings("unused")
     private volatile int carrierState = RUNNING;
@@ -70,10 +70,14 @@ public final class ExerisCarrierThread {
     }
 
     public ExerisCarrierThread(int id, ExerisCarrierScheduler scheduler, int cpuCore) {
+        this(id, scheduler, cpuCore, LocalityFlags.fromSystem());
+    }
+
+    ExerisCarrierThread(int id, ExerisCarrierScheduler scheduler, int cpuCore, LocalityFlags flags) {
         this.id = id;
         this.cpuCore = cpuCore;
-        this.yieldBudgetNs = TimeUnit.MICROSECONDS.toNanos(
-                Long.getLong("exeris.locality.yield.us", 50));
+        this.yieldBudgetNs = flags.yieldBudgetNs();
+        this.factoryPreferredCarrier = flags.factoryPreferredCarrier();
         this.vThreadFactory = createVirtualThreadFactory(scheduler);
         this.carrierThread = new CarrierWorkerThread(this::runLoop, "exeris-carrier-" + id, this);
         this.carrierThread.setDaemon(true);
@@ -138,7 +142,7 @@ public final class ExerisCarrierThread {
         var unstartedBuilder = Thread.ofVirtual();
         return runnable -> {
             var context = new CarrierSchedulingContext(id, this);
-            var vTask = scheduler.newThread(unstartedBuilder, null, () -> {
+            var vTask = scheduler.newThread(unstartedBuilder, factoryPreferredCarrier ? carrierThread : null, () -> {
                 ScopedValue.where(CURRENT_CARRIER, this).run(runnable);
             });
             if (vTask != null) {

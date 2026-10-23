@@ -6,6 +6,15 @@ package eu.exeris.kernel.core.transport.scheduler.locality;
 
 import java.lang.Thread.VirtualThreadScheduler;
 import java.lang.Thread.VirtualThreadTask;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.LongAdder;
+
+import eu.exeris.kernel.core.transport.scheduler.locality.ExerisCarrierThread.CarrierWorkerThread;
+import eu.exeris.kernel.core.transport.scheduler.locality.LocalityFlags.CarrierResolve;
+import eu.exeris.kernel.core.transport.scheduler.locality.LocalityFlags.PollerRoute;
 
 /**
  * Custom VirtualThreadScheduler loaded by the JDK via {@code -Djdk.virtualThreadScheduler.implClass=}
@@ -19,18 +28,103 @@ import java.lang.Thread.VirtualThreadTask;
 public class ExerisCarrierScheduler implements VirtualThreadScheduler {
 
     private static volatile ExerisCarrierScheduler instance;
+    private static final LongAdder TIMERS_SCHEDULED = new LongAdder();
+    private static final LongAdder TIMERS_CANCELLED = new LongAdder();
 
     private final VirtualThreadScheduler builtinScheduler;
     private final ExerisCarrierGroup group;
     private final boolean perCarrierPollers;
     private final boolean assignAllVThreads;
+    private final boolean resolveMounted;
+    private final boolean pollerRoutePreferred;
+    private final boolean timerCount;
+
+    /**
+     * Counts of timed tasks the JDK handed to {@link #schedule} and of those cancelled before they
+     * fired; every timed park schedules one and most are cancelled by the wakeup that beats them.
+     * Only counted while {@code exeris.locality.timer.count=true}.
+     */
+    public record TimerStats(long scheduled, long cancelled) {
+    }
 
     public ExerisCarrierScheduler(VirtualThreadScheduler builtinScheduler) {
+        this(builtinScheduler, LocalityFlags.fromSystem(), 0);
+    }
+
+    ExerisCarrierScheduler(VirtualThreadScheduler builtinScheduler, LocalityFlags flags, int carrierCount) {
         this.builtinScheduler = builtinScheduler;
-        this.perCarrierPollers = Integer.getInteger("jdk.pollerMode", -1) == 3;
-        this.assignAllVThreads = Boolean.getBoolean("exeris.locality.allVthreads");
-        this.group = new ExerisCarrierGroup(this);
+        this.perCarrierPollers = flags.perCarrierPollers();
+        this.assignAllVThreads = flags.allVthreads();
+        this.resolveMounted = flags.carrierResolve() == CarrierResolve.MOUNTED;
+        this.pollerRoutePreferred = flags.pollerRoute() == PollerRoute.PREFERRED;
+        this.timerCount = flags.timerCount();
+        this.group = new ExerisCarrierGroup(this, flags, carrierCount);
         instance = this;
+    }
+
+    public static TimerStats timerStats() {
+        return new TimerStats(TIMERS_SCHEDULED.sum(), TIMERS_CANCELLED.sum());
+    }
+
+    public static void resetTimerStats() {
+        TIMERS_SCHEDULED.reset();
+        TIMERS_CANCELLED.reset();
+    }
+
+    @Override
+    public Future<?> schedule(Runnable task, long delay, TimeUnit unit) {
+        if (!timerCount) {
+            return VirtualThreadScheduler.super.schedule(task, delay, unit);
+        }
+        Future<?> scheduled = VirtualThreadScheduler.super.schedule(task, delay, unit);
+        if (scheduled == null) {
+            return null;
+        }
+        TIMERS_SCHEDULED.increment();
+        return new CountingFuture<>(scheduled);
+    }
+
+    private static final class CountingFuture<V> implements Future<V> {
+        private final Future<V> delegate;
+
+        @SuppressWarnings("unchecked")
+        CountingFuture(Future<?> delegate) {
+            this.delegate = (Future<V>) delegate;
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            boolean cancelled = delegate.cancel(mayInterruptIfRunning);
+            if (cancelled) {
+                TIMERS_CANCELLED.increment();
+            }
+            return cancelled;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return delegate.isCancelled();
+        }
+
+        @Override
+        public boolean isDone() {
+            return delegate.isDone();
+        }
+
+        @Override
+        public V get() throws InterruptedException, ExecutionException {
+            return delegate.get();
+        }
+
+        @Override
+        public V get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+            return delegate.get(timeout, unit);
+        }
+    }
+
+    /** The carrier the calling thread executes on; {@code null} when it is not on one. */
+    private ExerisCarrierThread resolveCurrent() {
+        return resolveMounted ? CarrierResolver.mounted() : ExerisCarrierThread.currentCarrier();
     }
 
     public static ExerisCarrierScheduler instance() {
@@ -56,7 +150,16 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
             }
             task.attach(null);
         } else {
-            ExerisCarrierThread currentCarrier = ExerisCarrierThread.currentCarrier();
+            if (pollerRoutePreferred && task.preferredCarrier() instanceof CarrierWorkerThread preferred) {
+                ExerisCarrierThread carrier = preferred.carrier();
+                CarrierSchedulingContext context = new CarrierSchedulingContext(carrier.id(), carrier, true);
+                context.setVThreadId(task.thread().threadId());
+                task.attach(context);
+                carrier.enqueue(task);
+                return;
+            }
+            ExerisCarrierThread currentCarrier =
+                    (perCarrierPollers || assignAllVThreads) ? resolveCurrent() : null;
             if (perCarrierPollers && currentCarrier != null && task.thread().getName() != null
                     && task.thread().getName().endsWith("-Read-Poller")) {
                 CarrierSchedulingContext context =

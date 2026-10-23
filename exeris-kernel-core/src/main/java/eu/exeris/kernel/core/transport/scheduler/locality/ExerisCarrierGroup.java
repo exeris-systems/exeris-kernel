@@ -16,16 +16,21 @@ public final class ExerisCarrierGroup {
     private final ExerisCarrierThread[] carriers;
 
     ExerisCarrierGroup(ExerisCarrierScheduler scheduler) {
+        this(scheduler, LocalityFlags.fromSystem(), 0);
+    }
+
+    /** A {@code carrierCount} of zero or less takes the count from the system properties. */
+    ExerisCarrierGroup(ExerisCarrierScheduler scheduler, LocalityFlags flags, int carrierCount) {
         String affinityProp = System.getProperty("exeris.carrier.affinity");
         int[] cores = parseAffinityCores(affinityProp);
         int defaultCount = (cores != null && cores.length > 0)
                 ? cores.length
                 : Runtime.getRuntime().availableProcessors();
-        int count = Integer.getInteger("exeris.carrier.count", defaultCount);
+        int count = carrierCount > 0 ? carrierCount : Integer.getInteger("exeris.carrier.count", defaultCount);
         this.carriers = new ExerisCarrierThread[count];
         for (int i = 0; i < count; i++) {
             int core = (cores != null && i < cores.length) ? cores[i] : -1;
-            carriers[i] = new ExerisCarrierThread(i, scheduler, core);
+            carriers[i] = new ExerisCarrierThread(i, scheduler, core, flags);
         }
         activeGroup = this;
     }
