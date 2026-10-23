@@ -484,7 +484,9 @@ public final class NativeTcpCarrier implements TransportEngine {
                     tlsEngine,
                     () -> requestWriteInterest(connectedChannel),
                     () -> onStreamClosed(connectedChannel),
-                    backend.socketHandles());
+                    backend.socketHandles(),
+                    NativeTcpHandshakeBackoff.PARK,
+                    config.maxQueuedWriteBytes());
             if (tlsEngine instanceof CommunityTlsEngine) {
                 stream.markTlsBoundFromCarrier();
             }
@@ -1145,7 +1147,9 @@ public final class NativeTcpCarrier implements TransportEngine {
                     tlsEngine,
                     () -> requestWriteInterest(channel),
                     () -> onStreamClosed(channel),
-                    backend.socketHandles());
+                    backend.socketHandles(),
+                    NativeTcpHandshakeBackoff.PARK,
+                    config.maxQueuedWriteBytes());
             if (tlsEngine instanceof CommunityTlsEngine) {
                 stream.markTlsBoundFromCarrier();
             }
@@ -1318,7 +1322,6 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /* default */ void flushStream(NativeTcpStream stream, SelectionKey key) {
-        stream.signalWriteReady();
         boolean drained;
         try {
             drained = stream.flushPendingWrites();

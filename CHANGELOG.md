@@ -18,6 +18,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Breaking
 
+- **`TransportStream#write` blocks at the stream's outbound bound, `queueWrite` must never wait for the peer, and `TransportConfig` gains a component (SPI, stable `spi.transport`, ADR-007).** A Community `write` parks its caller while the stream holds `maxQueuedWriteBytes` (default 256 KiB) the peer has not taken, and never parks a reactor thread; a caller that holds a lock across `write` orders every other sender behind a slow peer, so a sender that must not block uses `queueWrite` and bounds the loans it has outstanding by their release. An implementor's `queueWrite` returns without waiting for the peer, apart from a connection that is still being established, and releases a loan once its bytes have left the stream's queue or the stream ends, not before; a transport whose `queueWrite` sends synchronously no longer conforms, and `AbstractTransportStreamTck.QueueWriteDoesNotWait` fails it. `TransportConfig` gains the component `maxQueuedWriteBytes` after `maxActiveStreams`; the 0.12 nine-argument and eight-argument constructors stay and apply the default, so source and binary compatibility hold, but a record pattern over `TransportConfig` or reflection over its components sees a different shape. See `MIGRATION.md`.
+
 - **A declared `EntitlementRequirement` with no manifest stops the boot in every environment, development included (ADR-088, ADR-089).** `EX-LIC-0005` is raised whatever the `environment` key says; a commercial artifact now needs a manifest wherever it runs, and a developer runs it under a developer licence. The verified manifest's environment and capability checks run in every environment too. See `MIGRATION.md`.
 - **`EntitlementRequirement` gains an abstract `entitlementClass()` (SPI, preview, ADR-089).** An implementer returns `EntitlementClass.COMMERCIAL` or `EntitlementClass.ENTERPRISE_PRIVATE`; there is no default, so no artifact is silently given the weaker class. One identifier declared under two classes, and a `null` class, stop the boot with `EX-LIC-0008`.
 - **`ExecutionEnvironment.requiresEntitlement()` is renamed `isProductionClass()` (SPI, preview, ADR-089).** The accessor says whether the environment serves live traffic; it no longer decides whether a manifest is needed.
@@ -174,6 +176,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **`transport.maxQueuedWriteBytes` bounds a stream's outbound queue (ADR-071, ADR-007).** The key fills `TransportConfig#maxQueuedWriteBytes()` at the transport subsystem and at the HTTP and WebSocket listeners. `-1` removes the bound; `0` and other negatives are refused at startup. `AbstractTransportStreamTck` gains `QueueWriteDoesNotWait`, which binds every transport, and `WriteBackpressure`, behind the hook `supportsWriteBackpressure()` (default `false`). A `write` that parks emits `TransportWriteParkEvent` (`eu.exeris.kernel.core.transport.WriteBackpressurePark`) once, before its first park.
 - **Stream routes are resolved and served over HTTP/2.** A request for a stream route that arrives over TLS
   with ALPN `h2` or a prior-knowledge preface now reaches its stream handler instead of the respond-once
   handler. The `h2c` upgrade path does not yet consume the client connection preface that follows `101`, so a
@@ -319,6 +322,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A Community stream's `write` no longer grows its outbound queue without limit against a peer that stops reading (#556).** The backpressure `TransportStream#write` documented was never honoured: the remainder the socket refused was copied into the queue however slow the peer. The queue now holds at most the bound, and the writer parks until the peer has taken half of it or the stream ends.
 - **A completed flow is not run again, and does not come back as parked, after a bounded terminal catalog
   evicts it or the engine restarts.** With `terminalCatalogMaxSize > 0` and a snapshot store bound,
   completion now replaces the instance's row with a `COMPLETED` snapshot. A resubmit or a choreography

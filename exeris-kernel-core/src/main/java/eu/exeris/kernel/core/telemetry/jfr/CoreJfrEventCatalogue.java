@@ -60,7 +60,8 @@ public final class CoreJfrEventCatalogue {
                     "eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent",
                     "eu.exeris.kernel.core.transport.jfr.StreamShedEvent",
                     "eu.exeris.kernel.core.transport.jfr.TransportIngressQueueDepthEvent",
-                    "eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent")),
+                    "eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent",
+                    "eu.exeris.kernel.core.transport.jfr.TransportWriteParkEvent")),
             // http — per HTTP stream and per aggregate buffer, on the request virtual thread.
             Map.entry("http", List.of(
                     "eu.exeris.kernel.core.http.jfr.StreamOpenedEvent",

@@ -31,12 +31,10 @@ package eu.exeris.kernel.spi.transport;
  * @param keyPath           path to TLS private key (PEM); {@code null} if TLS not configured
  * @param maxConnections    hard cap on concurrent connections across all reactors;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
- * @param idleTimeoutMillis connection idle timeout in milliseconds (0 = no timeout). Validated and
- *                          carried to the driver, but <b>not enforced by the Community NIO carrier</b>,
- *                          which has no idle reaper: setting it there changes nothing. Stated rather
- *                          than implied, because a timeout an operator believes is active and is not
- *                          is worse than one that is documented as absent. A driver is free to honour
- *                          it;
+ * @param idleTimeoutMillis connection idle timeout in milliseconds (0 = no timeout). Enforced by the
+ *                          Community carrier's per-reactor idle sweep, which closes a connection whose
+ *                          stream has moved no bytes for this long; {@code 0} disables the sweep. A
+ *                          driver is free to honour it in its own way;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @param maxActiveStreams  hard cap on streams admitted concurrently by the scheduler, across all
  *                          connections on this engine. One connection carries one stream on HTTP/1
@@ -45,6 +43,13 @@ package eu.exeris.kernel.spi.transport;
  *                          {@link #UNBOUNDED_ACTIVE_STREAMS} removes the ceiling — see that
  *                          constant for what remains protecting the engine when it is set;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
+ * @param maxQueuedWriteBytes bytes a stream may hold that its peer has not yet taken before
+ *                          {@link TransportStream#write} blocks: a positive bound, or
+ *                          {@link #UNBOUNDED_QUEUED_WRITE_BYTES} for none. Bytes handed over through
+ *                          {@link TransportStream#queueWrite} count against it and never wait on it.
+ *                          {@code 0} and other negatives are refused, because a zero bound would block
+ *                          every write; ignored and not validated when mode is
+ *                          {@link TransportMode#DISABLED} (since 0.13)
  * @since 0.5
  * @see TransportProvider
  * @see TransportEngine
@@ -58,7 +63,8 @@ public record TransportConfig(
         String keyPath,
         int maxConnections,
         long idleTimeoutMillis,
-        int maxActiveStreams
+        int maxActiveStreams,
+        int maxQueuedWriteBytes
 ) {
 
     /**
@@ -97,6 +103,19 @@ public record TransportConfig(
     public static final int UNBOUNDED_ACTIVE_STREAMS = -1;
 
     /**
+     * Default bound on the bytes a stream may hold that its peer has not yet taken: 256 KiB.
+     */
+    public static final int DEFAULT_MAX_QUEUED_WRITE_BYTES = 256 * 1024;
+
+    /**
+     * Sentinel for {@link #maxQueuedWriteBytes()}: {@link TransportStream#write} never blocks for
+     * backpressure, so a writer faster than its peer grows the stream's outbound queue without
+     * limit. {@code 0} is refused rather than read as "off", because a zero bound would block every
+     * write.
+     */
+    public static final int UNBOUNDED_QUEUED_WRITE_BYTES = -1;
+
+    /**
      * Compact constructor — validates invariants eagerly (fail-fast bootstrap).
      */
     public TransportConfig {
@@ -111,7 +130,8 @@ public record TransportConfig(
                     reactorCount,
                     maxConnections,
                     idleTimeoutMillis,
-                    maxActiveStreams
+                    maxActiveStreams,
+                    maxQueuedWriteBytes
             );
         }
     }
@@ -142,7 +162,36 @@ public record TransportConfig(
                            int maxConnections,
                            long idleTimeoutMillis) {
         this(mode, bindAddress, port, reactorCount, certPath, keyPath, maxConnections,
-                idleTimeoutMillis, DEFAULT_MAX_ACTIVE_STREAMS);
+                idleTimeoutMillis, DEFAULT_MAX_ACTIVE_STREAMS, DEFAULT_MAX_QUEUED_WRITE_BYTES);
+    }
+
+    /**
+     * Creates a configuration with the default outbound write bound,
+     * {@link #DEFAULT_MAX_QUEUED_WRITE_BYTES}, so a stream built from it is protected against a peer
+     * that stops reading.
+     *
+     * @param mode              operational mode
+     * @param bindAddress       listener bind address
+     * @param port              listener port
+     * @param reactorCount      carrier reactor threads
+     * @param certPath          TLS certificate path, or {@code null}
+     * @param keyPath           TLS private key path, or {@code null}
+     * @param maxConnections    concurrent connection ceiling
+     * @param idleTimeoutMillis idle timeout in milliseconds
+     * @param maxActiveStreams  stream-admission ceiling
+     * @since 0.13
+     */
+    public TransportConfig(TransportMode mode,
+                           String bindAddress,
+                           int port,
+                           int reactorCount,
+                           String certPath,
+                           String keyPath,
+                           int maxConnections,
+                           long idleTimeoutMillis,
+                           int maxActiveStreams) {
+        this(mode, bindAddress, port, reactorCount, certPath, keyPath, maxConnections,
+                idleTimeoutMillis, maxActiveStreams, DEFAULT_MAX_QUEUED_WRITE_BYTES);
     }
 
     /**
@@ -162,7 +211,8 @@ public record TransportConfig(
                 "keyPath=" + (keyPath != null ? "***REDACTED***" : "null") + ", " +
                 "maxConnections=" + maxConnections + ", " +
                 "idleTimeoutMillis=" + idleTimeoutMillis + ", " +
-                "maxActiveStreams=" + maxActiveStreams + ']';
+                "maxActiveStreams=" + maxActiveStreams + ", " +
+                "maxQueuedWriteBytes=" + maxQueuedWriteBytes + ']';
     }
 
     /**
@@ -180,6 +230,8 @@ public record TransportConfig(
      *   <li>{@code idleTimeoutMillis} — {@code -1} (not validated, not used)</li>
      *   <li>{@code maxActiveStreams} — {@link #UNBOUNDED_ACTIVE_STREAMS} (no ceiling;
      *       moot here, since DISABLED admits nothing regardless)</li>
+     *   <li>{@code maxQueuedWriteBytes} — {@link #UNBOUNDED_QUEUED_WRITE_BYTES} (moot here, since
+     *       DISABLED opens no stream)</li>
      * </ul>
      *
      * @return config with {@link TransportMode#DISABLED}
@@ -194,7 +246,8 @@ public record TransportConfig(
                 null,
                 -1,
                 -1,
-                UNBOUNDED_ACTIVE_STREAMS
+                UNBOUNDED_ACTIVE_STREAMS,
+                UNBOUNDED_QUEUED_WRITE_BYTES
         );
     }
 
@@ -214,7 +267,8 @@ public record TransportConfig(
                 null,
                 4096,
                 30_000,
-                DEFAULT_MAX_ACTIVE_STREAMS
+                DEFAULT_MAX_ACTIVE_STREAMS,
+                DEFAULT_MAX_QUEUED_WRITE_BYTES
         );
     }
 }
