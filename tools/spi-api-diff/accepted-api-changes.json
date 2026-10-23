@@ -244,5 +244,35 @@
     "since": "0.13",
     "adr": "ADR-012",
     "justification": "TCK contract: a new suite, AbstractRlsBypassRoleCheckTck, asserting that a binding which installs its row-level-security interceptor refuses a SUPERUSER or BYPASSRLS role with EX-PERS-5009 and boots an ordinary role, or a bypassing role with the operator's consent. A binding implements roleName, bootWithRlsAs and tenantContext; an Enterprise persistence binding that installs such an interceptor adopts it. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportConfig",
+    "since": "0.13",
+    "adr": "ADR-071",
+    "justification": "SPI record, stable spi.transport: TransportConfig gains the component maxQueuedWriteBytes after maxActiveStreams, the per-stream outbound bound (default 256 KiB via DEFAULT_MAX_QUEUED_WRITE_BYTES, -1 via UNBOUNDED_QUEUED_WRITE_BYTES for none, 0 and other negatives refused at construction). The canonical constructor descriptor changes from nine parameters to ten. The 0.12 nine-argument descriptor is kept as an explicit overload that applies the default, and the eight-argument bridge delegates with the default as well, so code compiled or written against either still links and compiles. A record deconstruction pattern or reflection over the component list sees a different shape; no gate reports that. Binary-additive."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream#queueWrite(eu.exeris.kernel.spi.memory.LoanedBuffer, int)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "Behaviour and implementor obligation, stable spi.transport: the descriptor is unchanged. queueWrite never waits for the peer: it returns once the loan is in the stream's outbound order, and the one wait it may make is for the connection to finish being established, bounded by the driver's deadline and reported as EX-NET-4003. The loan is released once its bytes have left the stream's outbound queue, or when the stream ends, and not before, so the release is the caller's backpressure signal. A transport whose queueWrite sends synchronously, or releases the loan before its bytes leave the queue, no longer conforms; AbstractTransportStreamTck.QueueWriteDoesNotWait fails it."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream#write(java.lang.foreign.MemorySegment, int)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "Behaviour, stable spi.transport: the descriptor is unchanged. write blocks the calling thread while the stream holds TransportConfig#maxQueuedWriteBytes() bytes its peer has not taken, until enough drain or the stream ends, and never blocks an event-loop thread or while holding a monitor; with UNBOUNDED_QUEUED_WRITE_BYTES it does not block for backpressure. The Community stream now honours the blocking this method already documented, so a caller that holds a lock across write orders other senders behind a slow peer, and a write that throws after blocking may already have queued a prefix of its source."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "SPI javadoc, stable spi.transport: the class-level implementor obligation of a terminal wake is stated. Every transition that ends the stream (close, reset, the parent connection's close, a send failure that ends it, the peer's reset, a teardown by the transport) wakes every thread blocked in read or write on it; a woken read returns -1 while it can still report end of stream and otherwise throws the closed-stream signal, and a woken write throws it. AbstractTransportStreamTck has pinned this since the terminal-wake cases landed; no earlier entry recorded it."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.transport.AbstractTransportStreamTck",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "TCK contract: AbstractTransportStreamTck gains QueueWriteDoesNotWait, ungated, which fails a binding whose queueWrite waits for a peer that does not read or releases a loan before its bytes leave the stream, and WriteBackpressure, behind the new hook supportsWriteBackpressure() (default false), which asserts that write blocks at a bounded outbound, resumes in order when the peer drains and is released by the stream's own close() with EX-NET-4009 and by the peer's reset() with EX-NET-4008. Source-compatible: the hook has a default. A binding whose queueWrite waits fails the ungated cases until it queues without waiting."
   }
 ]

@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.websocket;
 
 import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
+import eu.exeris.kernel.community.transport.CommunityQueuedWriteBoundResolver;
 import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
@@ -104,7 +105,8 @@ final class CommunityWebSocketTransportFactory {
                 resolveTransportProperty(configProvider, "transport.keyPath", "network.keyPath"),
                 config.maxConnections(),
                 config.idleTimeoutMillis(),
-                CommunityAdmissionCeilingResolver.resolve(configProvider));
+                CommunityAdmissionCeilingResolver.resolve(configProvider),
+                CommunityQueuedWriteBoundResolver.resolve(configProvider));
     }
 
     private static String resolveTransportProperty(ConfigProvider configProvider,

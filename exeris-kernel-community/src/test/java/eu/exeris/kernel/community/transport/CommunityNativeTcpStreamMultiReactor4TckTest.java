@@ -15,6 +15,9 @@ import org.junit.jupiter.api.DisplayName;
 @DisplayName("Community: NativeTcpStream TCK (MultiReactor=4)")
 class CommunityNativeTcpStreamMultiReactor4TckTest extends AbstractTransportStreamTck {
 
+    // Small enough that a stream's writes reach the bound while the peer is held back.
+    private static final int WRITE_BOUND_BYTES = 64 * 1024;
+
     private MemoryAllocator allocator;
     private CommunityTransportTestHarness.Pair pair;
 
@@ -30,13 +33,18 @@ class CommunityNativeTcpStreamMultiReactor4TckTest extends AbstractTransportStre
 
     @Override
     protected StreamPair createStreamPair() {
-        pair = CommunityTransportTestHarness.openLoopbackPair(allocator, false, 4);
+        pair = CommunityTransportTestHarness.openLoopbackPair(allocator, false, 4, "127.0.0.1", 1024, WRITE_BOUND_BYTES);
         return new StreamPair(pair.clientStream(), pair.serverStream());
     }
 
     @Override
     protected boolean expectsTrueReset() {
         return true;   // NativeTcpStream.reset() == SO_LINGER-0 abortive close (RST)
+    }
+
+    @Override
+    protected boolean supportsWriteBackpressure() {
+        return true;
     }
 
     @Override

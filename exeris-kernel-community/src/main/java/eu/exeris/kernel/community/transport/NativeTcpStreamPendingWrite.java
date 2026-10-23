@@ -100,6 +100,11 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
         this.plainBuffer.setSize(plainLength);
     }
 
+    /** Length of the plaintext this write carries, whatever part of it has already been sent. */
+    /* default */ int plainLength() {
+        return plainLength;
+    }
+
     /* default */ boolean writePlain() throws IOException {
         int written = tryWriter.tryWrite(plainBuffer.segment(), plainOffset, plainLength - plainOffset);
         if (written > 0) {

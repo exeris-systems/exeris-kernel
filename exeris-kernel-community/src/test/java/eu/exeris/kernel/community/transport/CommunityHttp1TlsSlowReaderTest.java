@@ -58,7 +58,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A large HTTP/1.1 response over TLS reaches a client that stops reading, and arrives intact once it
  * reads again. With an 8 KiB send buffer on the server and a small receive buffer on the client, the
  * single TLS write of the whole body meets a full socket long before it is sent; the connection must
- * wait for space, not reset.
+ * wait for space, not reset, and the handler's write waits at the outbound bound instead of queueing
+ * the whole body.
  *
  * <p>The client reads nothing until the transport reports that the write stalled, so the case cannot
  * pass without the stall having happened. The server is the production one,
@@ -81,6 +82,7 @@ class CommunityHttp1TlsSlowReaderTest {
     private static final int CLIENT_RECEIVE_BUFFER = 8 * 1024;
     private static final int CONNECT_TIMEOUT_MILLIS = 10_000;
     private static final long AWAIT_SECONDS = 30L;
+    private static final long QUIET_MILLIS = 500L;
     private static final long SEED = 0x5EED_5EEDL;
     private static final byte[] HEADER_END = {'\r', '\n', '\r', '\n'};
     private static final String CONTENT_LENGTH = "content-length:";
@@ -108,7 +110,8 @@ class CommunityHttp1TlsSlowReaderTest {
     }
 
     @Test
-    @DisplayName("a body sent to a client that reads nothing until the write stalls arrives byte for byte, with no reset")
+    @DisplayName("a body sent to a client that reads nothing until the write stalls arrives byte for byte, with no reset, "
+            + "and the handler waits meanwhile")
     void bodyArrivesIntactAfterTheWriteStalled() throws Exception {
         byte[] body = new byte[BODY_BYTES];
         new Random(SEED).nextBytes(body);
@@ -133,10 +136,13 @@ class CommunityHttp1TlsSlowReaderTest {
 
             assertThat(stalled.await(AWAIT_SECONDS, TimeUnit.SECONDS))
                     .as("the server's TLS write stalled on the full send buffer").isTrue();
-            assertThat(handlerReturned.await(AWAIT_SECONDS, TimeUnit.SECONDS))
-                    .as("the handler returned while the client was not reading").isTrue();
+            assertThat(handlerReturned.await(QUIET_MILLIS, TimeUnit.MILLISECONDS))
+                    .as("the handler's write waits at the outbound bound while the client is not reading")
+                    .isFalse();
 
             received = readResponse(socket.getInputStream());
+            assertThat(handlerReturned.await(AWAIT_SECONDS, TimeUnit.SECONDS))
+                    .as("the handler returns once the client has read").isTrue();
         } finally {
             NativeTcpStreamTlsDrain.ON_WRITE_STALL_FOR_TEST.set(null);
         }

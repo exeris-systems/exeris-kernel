@@ -102,6 +102,25 @@ final class CommunityTransportTestHarness {
      */
     static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler, int reactorCount,
                                  String dialHost, int maxConnections) {
+        return openLoopbackPair(allocator, drainingServerHandler, reactorCount, dialHost, maxConnections,
+                TransportConfig.DEFAULT_MAX_QUEUED_WRITE_BYTES);
+    }
+
+    /**
+     * Opens a loopback pair whose engines both bound a stream's outbound queue at
+     * {@code maxQueuedWriteBytes}.
+     *
+     * @param allocator             allocator bound to both engines
+     * @param drainingServerHandler whether each accepted server stream is read until it ends
+     * @param reactorCount          reactors per engine
+     * @param dialHost              the host the client end dials; must resolve to {@code 127.0.0.1}
+     * @param maxConnections        the server's connection ceiling
+     * @param maxQueuedWriteBytes   the outbound bound of both engines, or
+     *                              {@link TransportConfig#UNBOUNDED_QUEUED_WRITE_BYTES}
+     * @return the started pair, with one client and one server stream already open
+     */
+    static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler, int reactorCount,
+                                 String dialHost, int maxConnections, int maxQueuedWriteBytes) {
         int port = nextFreePort();
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
 
@@ -117,7 +136,9 @@ final class CommunityTransportTestHarness {
                     null,
                     null,
                     maxConnections,
-                    30_000
+                    30_000,
+                    TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS,
+                    maxQueuedWriteBytes
             ));
 
             clientHolder[0] = provider.createEngine(new TransportConfig(
@@ -128,7 +149,9 @@ final class CommunityTransportTestHarness {
                     null,
                     null,
                     1024,
-                    30_000
+                    30_000,
+                    TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS,
+                    maxQueuedWriteBytes
             ));
         });
 
@@ -201,7 +224,11 @@ final class CommunityTransportTestHarness {
             }
             acquired.countDown();
             awaitUninterruptibly(release);
-            stream.completeRequestedCloseAndUnpinOutboundConsumerForTest(self);
+            if (stream.isClosed()) {
+                stream.completeRequestedCloseAndUnpinOutboundConsumerForTest(self);
+            } else {
+                stream.unpinOutboundConsumerForTest(self);
+            }
         });
         awaitUninterruptibly(acquired);
         return () -> {
