@@ -281,7 +281,7 @@ The pilot is archived as non-evidence and is not a result of this track.
   and 1.25 against 1.32 (30 ms backend). The pilot's CPU premium does not reproduce.
 - **HYP-CAPACITY — not falsified with the 1 ms backend, falsified with the 30 ms backend.**
   Capacity at p99 ≤ 5 ms: `D` and `B_pin` 95 % of `A_iso`'s saturation, `A_iso` and `C_iso` 50 %
-  (70 % without connection tracking on loopback; the campaign ran with the Docker daemon's
+  (at least 70 % without connection tracking on loopback; the campaign ran with the Docker daemon's
   conntrack and NAT rules loaded, which add about 7 % netfilter samples to every arm's carriers);
   `B_pin` lands at `D`'s, so pinning carries the gain. Capacity at p99 ≤ 80 ms: `C_iso` 80 %,
   `A_iso` 70 %, `D` and `B_pin` 50 %, both pinned arms failing the 70 % rung on the backend stall;
