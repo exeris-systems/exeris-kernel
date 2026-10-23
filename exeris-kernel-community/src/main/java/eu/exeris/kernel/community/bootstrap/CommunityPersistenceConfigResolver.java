@@ -101,6 +101,8 @@ public final class CommunityPersistenceConfigResolver {
         properties.put("pool.warmup.enabled", Boolean.toString(poolWarmupEnabled));
         properties.put("pool.warmup.connections", Integer.toString(poolWarmupConnections));
         properties.put("run.migrations", Boolean.toString(runMigrations));
+        properties.put("rls.allowBypassRole", Boolean.toString(
+            configProvider.getBoolean("persistence.rlsAllowBypassRole").orElse(false)));
 
         return new PersistenceConfig(
                 configProvider.getString("persistence.jdbcUrl").orElse(defaults.jdbcUrl()),

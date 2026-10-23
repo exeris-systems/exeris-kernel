@@ -232,5 +232,17 @@
     "since": "0.13",
     "adr": "ADR-012",
     "justification": "TCK contract: AbstractSharedScopeAccessMatrixTck gains nine cells that pin the shared-scope tag a written row carries: an insert tagged with a scope the request does not hold is refused, an insert tagged with the published scope or untagged is accepted, an unscoped request cannot write a scoped row, a re-tag to a scope the request does not hold is refused, a re-tag to the published scope is accepted, and an owner may un-share its own row from a request that lacks the scope. The re-tag cells go through the new template method retagScope(StorageContext, String, String), which throws UnsupportedOperationException by default, so an existing binding fails them until it implements it and installs a WITH CHECK that pins the tag; a skip would report green. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.persistence.PersistenceEngine#registerInterceptor(eu.exeris.kernel.spi.persistence.ConnectionInterceptor)",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "Behaviour on the Community binding, and SPI javadoc on stable spi.persistence: the descriptor is unchanged, the refusal is stated. An implementation MAY refuse to install its row-level-security interceptor when the connected database role bypasses row-level security (SUPERUSER or BYPASSRLS), by throwing PersistenceProviderException EX-PERS-5009; the Community engine does so on PostgreSQL unless persistence.rlsAllowBypassRole is set, and refuses with EX-PERS-5001 when the role probe cannot run. A deployment that registers the interceptor as a bypassing role stops booting, as MIGRATION.md says. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.AbstractRlsBypassRoleCheckTck",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: a new suite, AbstractRlsBypassRoleCheckTck, asserting that a binding which installs its row-level-security interceptor refuses a SUPERUSER or BYPASSRLS role with EX-PERS-5009 and boots an ordinary role, or a bypassing role with the operator's consent. A binding implements roleName, bootWithRlsAs and tenantContext; an Enterprise persistence binding that installs such an interceptor adopts it. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
   }
 ]

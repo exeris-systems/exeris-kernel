@@ -705,6 +705,28 @@ public final class KernelErrorCodes {
      */
     public static final String EX_PERS_5008 = "EX-PERS-5008";
 
+    /**
+     * The connected database role bypasses row-level security while the RLS interceptor is
+     * installed (ADR-012 §4c.4).
+     *
+     * <p>A role that is {@code SUPERUSER} or has {@code BYPASSRLS} skips every policy, including
+     * {@code FORCE}d ones, so tenant isolation would rest on application code alone. The remedy is a
+     * role change ({@code ALTER ROLE … NOSUPERUSER NOBYPASSRLS}) or the explicit consent
+     * {@code persistence.rlsAllowBypassRole=true}, which downgrades the refusal to an error log line
+     * and a JFR event on every boot.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} roleName (the role the pool connects as)</li>
+     *   <li>index 2 – {@code String} attribute ({@code "SUPERUSER"}, {@code "BYPASSRLS"} or
+     *                                {@code "SUPERUSER,BYPASSRLS"})</li>
+     * </ul>
+     *
+     * @since 0.13
+     */
+    public static final String EX_PERS_5009 = "EX-PERS-5009";
+
     // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
     // -----------------------------------------------------------------------

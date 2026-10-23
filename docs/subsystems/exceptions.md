@@ -187,6 +187,7 @@ to `HARD`), then the validity window (`EX-LIC-0006`, `EX-LIC-0003`).
 | `EX-PERS-5006` | Interceptor Init Failure       | `[0] String interceptorClass, [1] String isolationKey` — **or**, from `PersistenceProviderException.dedicatedDatasourceNotFound()`, `[0] String providerName, [1] String dataSourceKey`. Two shapes share this code (both `String, String`); only the message text tells them apart. |
 | `EX-PERS-5007` | No Provider on Classpath       | `[0] String message`                                                 |
 | `EX-PERS-5008` | Unsupported Column Type (ADR-080 §2) | `[0] String declaredTypeName, [1] Integer columnIndex, [2] String accessor` |
+| `EX-PERS-5009` | Role Bypasses Row-Level Security (ADR-012 §4c.4) | `[0] String providerName, [1] String roleName, [2] String attribute` (`SUPERUSER`, `BYPASSRLS` or `SUPERUSER,BYPASSRLS`) |
 
 ### Graph (`EX-GRPH-`)
 

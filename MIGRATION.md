@@ -53,6 +53,24 @@ The kernel ships no DDL, so nothing changes until you change the policy.
 
 ---
 
+## 0.12.x → 0.13 — RLS deployments must not connect as a role that bypasses RLS (ADR-012 §4c.4)
+
+A deployment with `persistence.rlsEnabled=true` on PostgreSQL stops booting with `EX-PERS-5009` when its
+database role is a superuser or has `BYPASSRLS`: such a role skips every policy, `FORCE`d ones included.
+Local quick-starts that connect as `postgres` are affected.
+
+1. **Preferred: connect as an ordinary role.** `ALTER ROLE app_user NOSUPERUSER NOBYPASSRLS;`, or create a
+   dedicated login role for the application and keep the owner role for migrations.
+2. **Or consent explicitly.** Set `persistence.rlsAllowBypassRole=true`. The engine boots, logs an ERROR line
+   and emits the JFR event `eu.exeris.kernel.persistence.RlsBypassRole` on every boot.
+3. **A dedicated datasource is checked at its first request**, not at boot, with the same code; the consent
+   key of the main engine applies to it.
+4. **A role probe that cannot run** (`pg_roles` unreadable) is refused with `EX-PERS-5001`, whatever the key says.
+5. **An Enterprise persistence binding that installs a row-level-security interceptor adopts the contract.**
+   `AbstractRlsBypassRoleCheckTck` is the suite.
+
+---
+
 ## 0.12.x → 0.13 — a send to a peer that ended the stream throws the closed-stream signal
 
 A `write` or `queueWrite` on a Community TCP or TLS stream whose peer reset or closed it, or ended the TLS
