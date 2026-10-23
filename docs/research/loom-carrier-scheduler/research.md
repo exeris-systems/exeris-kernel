@@ -107,9 +107,10 @@ saturation.
 
 Beside the ladder, each arm runs closed-loop at the regime's connection count and at four times
 it, 7 fresh JVMs per cell, for requests per second and requests per CPU; a pair differs when its
-exact two-sided Mann–Whitney p is below the Holm-adjusted threshold over all pairs and the medians
-differ by at least 2 %. The mechanism is predicted with it: `D2`'s context switches and cycles per
-request lie inside `B_pin`'s trial range. A rate gain without that fall is not the idle policy's.
+exact two-sided Mann–Whitney p is below the Holm-adjusted threshold and the medians differ by at
+least 2 %. Holm's family is the six arm pairs of one regime, one connection level and one metric.
+The mechanism is predicted with it: in the closed-loop cells at the regime's connection count,
+`D2`'s context switches and cycles per request lie inside `B_pin`'s trial range. A rate gain without that fall is not the idle policy's.
 The reading follows `B_pin`'s rule: `D2` above `B_pin` is throughput the scheduler adds beyond
 pinning; above `D` but not above `B_pin`, v2 removes v1's cost and pinning carries the rest; not
 above `D`, v2 changes nothing measurable.
@@ -120,6 +121,15 @@ above `D`, v2 changes nothing measurable.
 > *v2 is rejected* if, in either regime, `D2`'s capacity is below `D`'s. `D2`'s p99 at every rung,
 > against `D` and `B_pin`, is the follow-up to HYP-TAIL and HYP-CAPACITY: v2 changes the scheduling
 > that held `D`'s tail near capacity, so those results are re-measured for it, not carried over.
+
+The rig bounds the rate before the scheduler does. At the 2026-10-16 saturation the 1 ms backend's
+mock used 178–187 % of its two CPUs and 100 connections at a 1.28 ms median allow about 78,000
+req/s; with the 30 ms backend 2,048 pool slots held about 31.5 ms allow about 65,000. Both are
+about 105 % of `A_iso`'s saturation, so rungs above it would measure the rig. The pilot therefore
+measures the rig's headroom — rungs to 130 % and a sweep of connection count and pool size for
+`B_pin` and the full `D2` set — and the configuration under which the carriers, not the mock or the
+pool, reach their limit is registered here before the campaign. The hypothesis and its rule do
+not change with it.
 
 The campaign starts from a boot in which the Docker daemon has not run. Before it, `D` from the v2
 build runs against `D` from `bc26f9a0e8fc` at 85 % in both regimes, 5 fresh JVMs each, accepted by
@@ -300,7 +310,10 @@ so `D`'s code paths stay those of v1.
 - **Optional, off unless the pilot needs them:** sub-pollers ahead of the queue
   (`poller.priority`); a single next-to-run slot for a self-wakeup (`lifoSlot`).
 
-The pilot checks, before the property set is frozen: context switches and futex calls per request
+The changes stack in the order of their dependencies: resolution and routing (P0), then the idle
+policy (P1), then the queues (P3), then balancing (P2), which needs P3's deque. The pilot runs `D`,
+`B_pin` and the cumulative sets P0, P0+P1, P0+P1+P3 and P0+P1+P3+P2, with the two optional
+properties as cells of their own. It checks, before the property set is frozen: context switches and futex calls per request
 with carrier switches recorded per thread, the spin's cost in CPU at 50 % and in requests per CPU,
 how many threads each placement path placed under `D`, timed parks per request, whether stealing
 removes `D`'s tail advantage at 85 %, and whether the I/O-bound 70 % rung stays bimodal.
