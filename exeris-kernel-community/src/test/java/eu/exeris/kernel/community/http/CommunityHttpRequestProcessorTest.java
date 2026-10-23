@@ -12,6 +12,7 @@ import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMode;
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -237,6 +239,35 @@ class CommunityHttpRequestProcessorTest {
                 () -> processor.process(new ThrowingTransportStream(TransportStreamClosedException.peerClosed()), handler));
 
         assertThat(records).isEmpty();
+    }
+
+    @Test
+    void peerClosedSignalCarryingASendFailureDoesNotEmitWarning() {
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
+        HttpHandler handler = exchange -> {
+        };
+        TransportStreamClosedException signal = TransportStreamClosedException.peerClosed();
+        signal.initCause(TransportException.sendFailure("test-engine", 0L, new IOException("Broken pipe")));
+
+        List<LogRecord> records = captureProcessorWarnings(
+                () -> processor.process(new ThrowingTransportStream(signal), handler));
+
+        assertThat(records).isEmpty();
+    }
+
+    @Test
+    void sendFailureWithoutAnEndedStreamStillEmitsWarning() {
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
+        HttpHandler handler = exchange -> {
+        };
+        TransportException failure = TransportException.sendFailure("test-engine", 0L, new IOException("disk full"));
+
+        List<LogRecord> records = captureProcessorWarnings(
+                () -> processor.process(new ThrowingTransportStream(failure), handler));
+
+        assertThat(records).hasSize(1);
+        assertThat(records.getFirst().getMessage()).isEqualTo("Community HTTP stream handling failed");
+        assertThat(records.getFirst().getThrown()).isSameAs(failure);
     }
 
     @Test

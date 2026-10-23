@@ -29,6 +29,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **Graph SPI (preview): `GraphSession` gains abstract `traversePath`/`streamPathJson`, `GraphDialect` gains abstract `buildPathQuery`, and `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract (ADR-102).** An out-of-tree implementer must implement the three methods and the three-argument overload; it can no longer inherit the two-argument behaviour.
 - **`AbstractSagaRecoveryTck` gains `createBoundedEngine(int)`, and `FlowSnapshotStore` must keep terminal snapshots (TCK and SPI javadoc, stable `spi.flow`, ADR-013).** A binding of `AbstractSagaRecoveryTck` overrides `createBoundedEngine(int)` to return an engine with a bounded terminal catalog; the default throws, so a binding that does not fails its bounded-catalog cases instead of skipping them. A `FlowSnapshotStore` accepts a snapshot in any state, `COMPLETED` and `FAILED_ROLLEDBACK` included, and `load` returns it as written; `AbstractDistributedFlowSnapshotStoreTck` checks both. No signature changes.
 
+- **A send on a Community TCP or TLS stream that fails because the peer ended the stream throws `TransportStreamClosedException` (`EX-NET-4008`), an `IllegalStateException`, instead of `TransportException` (`EX-NET-4002`); the `EX-NET-4002` failure is its cause.** A caller that catches `TransportException` around a send no longer sees a peer that reset or closed; see `MIGRATION.md`. The peer's end is recognised by the carrier having observed it, by the send's errno on the core-socket seam and after a fatal TLS wrap status, by a TLS session the peer ended, and, on the NIO fallback, which has no errno, by a send that fails on the channel for any reason but a local close. `AbstractTransportStreamTck` gains the case that pins it after a peer `reset`, so an Enterprise transport that binds the suite adopts it.
+
 ### Security
 
 - **The Community crypto provider enforces `CryptoProviderConfig#minimumTlsVersion`.** Every context,
@@ -80,8 +82,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   and engine, and emits no `PaqsHandlerFailure` event. Only the thrown exception's own type counts: a failure
   that wraps the signal, or follows a disconnect, keeps the `WARNING` and the event. A raw `StreamHandler` that
   ends on the Community stream's peer-closed signal leaves the `ERROR` count; Community HTTP swallows the signal
-  itself, a write after a peer FIN still fails as `EX-NET-4002` and stays `ERROR` (#686), and an Enterprise
-  stream takes the quiet path once it adopts the type. Community also reports `EX-NET-4008` for a stream its
+  itself, a send that fails because the peer ended the stream reports `EX-NET-4008` too and ends as
+  `PEER_CLOSED`, and an Enterprise stream takes the quiet path once it adopts the type. Community also reports `EX-NET-4008` for a stream its
   carrier reclaims idle or tears down after a dispatch fault, so those end as `PEER_CLOSED` too.
 - **A handler failure that `PaqsScheduler` isolates is logged with the stream id, the engine name and the
   exception class name.** The record named none of them, so it could not be matched to the
@@ -317,6 +319,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   which `AbstractDistributedFlowSnapshotStoreTck` now checks, and `AbstractSagaRecoveryTck` gains the
   `createBoundedEngine(int)` obligation, whose default throws so that no binding skips it.
 
+- **A write after a TLS peer's `close_notify` no longer fails as `TlsHandshakeException` (`EX-NET-2001`) and is no longer logged as `Community HTTP stream handling failed`; a write stalled across `close_notify` ends the stream through the closed signal instead of an abortive dispatch-fault teardown (#686, #714).** The Community engine does not wrap after the peer's `close_notify`, so the stalled bytes are dropped with their loans released and the writer's next call reports `EX-NET-4008`. A session the peer ended right after the handshake is no longer mistaken for a handshake still in progress. TLS 1.3 half-close is not supported. The first failed socket call of a JVM reads its own errno: the first errno read of a JVM returned `ENOENT`, because initialising the reader overwrote the errno of the call, so the first `EAGAIN` on a send or a receive was not retryable and aborted, with `EX-NET-4002`, a connection that was only under backpressure. The readers are now initialised when `SyscallHandles` is constructed. Errno is still read in a second downcall, so activity of the JVM between the two can overwrite it.
 - **A thread blocked in `read` on a Community TCP stream is woken by every transition that ends the stream.**
   The wake was tied to winning the first `close()` or `reset(long)`, a close whose teardown was deferred
   behind queued writes removed the reader's registration, and the read loop ignored a requested close, so a

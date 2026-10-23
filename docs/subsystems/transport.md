@@ -455,7 +455,9 @@ paths gain one extra flag read.
    otherwise throws `EX-NET-4009`, the same answer a write gets from the same state. One exception:
    after a send-failure abort that follows the peer's end, bytes the peer sent first stay readable
    and end of stream comes only after them, because the abort is this side's consequence of the
-   peer's end. A later `close()` or `reset(long)` by the application ends that and discards them.
+   peer's end. A later `close()` or `reset(long)` by the application ends that and discards them; an
+   abort raised as the closed signal on the writer's thread does not end the survival: only the
+   application's `close()`/`reset(long)` does.
 4. **No early return without a wake and a finish attempt.** A repeated `close()` or `reset(long)`
    wakes the waiters and tries to finish the teardown again; a repeated `reset(long)` that cannot
    finish also asks the reactor to do it.
@@ -476,14 +478,19 @@ paths gain one extra flag read.
 |:--|:--|:--|:--|
 | `close()` (any call) | `closeRequested` | all | now, if the slot is free and the queue is drained; otherwise whoever releases the slot, or the reactor's drain |
 | `reset(long)` (any call) | `resetRequested`, `closeRequested` | all | now, if the slot is free; otherwise the reactor is woken to do it |
-| Send failure on a queue drain: a write `IOException`, or a fatal TLS wrap status (`CLOSED`, which never re-enters `close()` under the slot) | `resetRequested`, `closeRequested`; `peerEndedFirst` when the remote end was already observed and no local close came first | all | after the failing thread releases the slot |
+| Send failure on a queue drain: a write `IOException`, or a fatal TLS wrap status (`CLOSED`, which never re-enters `close()` under the slot) | `resetRequested`, `closeRequested`; `peerEndedFirst` when the remote end was already observed, the send's errno says the peer reset (`EPIPE`/`ECONNRESET`, core-socket seam, or the errno of a fatal TLS wrap status) or, on the NIO fallback, the channel failed on a send for any reason but a local close, or a TLS wrap found the session ended by the peer, and no local close came first; the remote end is then recorded (`markRemoteClosed`), and the writer receives the closed signal with the `EX-NET-4002` failure as its cause | all | after the failing thread releases the slot |
+| Send failure on a direct write (plain, nothing queued) after the peer ended | `remoteClosed`, `peerEndedFirst` if no local close came first | all | none: the application's close ends the stream |
 | Peer FIN or TLS `close_notify` (`markRemoteClosed`) | `remoteClosed`; `peerEndedFirst` when no local close was requested | all | none |
 | Carrier teardown (`closeKeyStream`: dispatch fault, idle reap) | `markRemoteClosed`, then `reset(long)` | all | through `reset(long)` |
 | The finish succeeds | `closed` | all | none |
 | TLS wrap `NEED_WRAP` or `NEED_UNWRAP` (a stall) | none | none | none |
 
 A peer FIN is a half-close: it ends the reader's input but does not end writes, so a writer woken by
-it re-checks its condition and keeps waiting.
+it re-checks its condition and keeps waiting, and a write after it is still sent. A TLS `close_notify`
+is not: the Community engine refuses a wrap after the peer's `close_notify`, so the next drain ends the
+stream and reports `EX-NET-4008`; TLS 1.3 half-close is not supported. A reactor-side flush that meets
+the peer's end does not reach the reactor's dispatch-fault path; the stream finishes its own abort and
+the writer's next call reports the signal.
 
 A thread that wants to wait on the stream's terminal state registers itself the way `read` does and
 checks every flag in the table after registering and before parking.
@@ -517,10 +524,16 @@ drain reports a stall. The stream stays open, no waiter is woken and nothing is 
   next record arrives, or when the idle reclamation resets the stream.
 - **A fatal status aborts.** `CLOSED` from a wrap (a broken connection, a reset, a protocol error)
   abandons the queue under the outbound slot, wakes every waiter and ends the stream, so a queued
-  write is never lost silently and no waiter hangs. The failure (`EX-NET-4002`) is thrown to the
-  writer when its own thread runs the drain. A retry that the reactor runs instead ends the stream
-  through the reactor's teardown, and the writer's next call reports the closed signal. The abort's
+  write is never lost silently and no waiter hangs. The failure (`EX-NET-4002`; `EX-NET-4008` with
+  `EX-NET-4002` as cause when the peer had ended the stream) is thrown to the writer when its own
+  thread runs the drain. A retry that the reactor runs instead ends the stream
+  through the reactor's teardown when the peer had not ended the stream; when it had, the reactor's flush
+  swallows the signal and the stream finishes its own close. Either way the writer's next call reports
+  the closed signal. The abort's
   terminal close runs after the slot is released; it never re-enters `close()` from under the slot.
+- **A stall across the peer's `close_notify`.** The retry finds the session ended, abandons the queue,
+  releases its loans and ends the stream. The bytes are not delivered, and the writer's next call
+  reports `EX-NET-4008`. There is no abortive dispatch-fault teardown.
 - **Allocation.** A stall allocates nothing. `write()` makes one private copy of the caller's bytes,
   at enqueue; `queueWrite` makes none.
 
@@ -566,6 +579,16 @@ failure, so walking causes would let a genuine failure that follows a disconnect
 layers own their closed signals, which Core, being protocol-blind, cannot classify. `EX-NET-4009` stays a
 handler failure. The Community carrier also reports `EX-NET-4008` for a stream it reclaims idle or tears
 down after a connection fault, because it marks those streams remote-closed.
+
+A send that fails because the peer ended the stream raises the signal as well, with the `EX-NET-4002`
+transport failure as its cause. The core-socket seam recognises the peer's end by the send's errno
+(`EPIPE`, `ECONNRESET`) or by an end the carrier already observed. A TLS stream does the same through the
+errno that its fatal wrap status left: in fd-owner mode OpenSSL writes to the socket itself, and the engine
+reads errno once, right after `SSL_get_error` reports `SSL_ERROR_SYSCALL`. Windows does not read it, so
+there only an end the carrier already observed is recognised. The NIO fallback has no errno and its
+exception messages are locale text, so there a send that fails on the channel for any reason but a local
+close (a `ClosedChannelException`) is read as the peer's end: the connection is gone, and the stream is
+aborted either way.
 
 ---
 

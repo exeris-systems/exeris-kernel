@@ -23,6 +23,10 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * </ul>
  * The first side to end the stream decides the code.
  *
+ * <h2>Cause</h2>
+ * <p>A signal raised by a failed send carries the transport failure as its cause; a signal raised from
+ * the stream's state carries none.
+ *
  * <h2>Why an {@code IllegalStateException}</h2>
  * <p>The stream contract names {@link IllegalStateException} for a closed stream, and callers catch
  * it; refining that type keeps every such caller working while the code adds the distinction. For the

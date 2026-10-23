@@ -12,6 +12,7 @@ import eu.exeris.kernel.tck.contract.http.AbstractHttpStreamExchangeTck;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Fails rather than skips when OpenSSL cannot be loaded, because a skipped case reports success.
  * Probes the cleartext binding inherits, the shed probe among them, run again over TLS.
  */
+@ExtendWith(HandlerFailureLogGuard.class)
 @Tag("stream-loopback")
 @DisplayName("Community: HttpStreamExchange TCK over HTTP/2 with TLS and ALPN")
 class CommunityHttp2TlsStreamExchangeTckTest extends CommunityHttp2cStreamExchangeTckTest {

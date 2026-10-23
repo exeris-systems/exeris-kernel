@@ -4,12 +4,17 @@
  */
 package eu.exeris.kernel.community.transport;
 
+import eu.exeris.kernel.core.transport.syscall.SyscallErrno;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
+import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntSupplier;
+import java.util.function.Predicate;
 
 /**
  * Package-private TLS egress drain for {@link NativeTcpStream}: turns the outcome of one
@@ -35,6 +40,10 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li><b>Every other status aborts.</b> The caller holds the outbound slot, so the abort drains
  *       the queue under it and never re-enters {@code close()}; finishing the close is left to the
  *       code that releases the slot.</li>
+ *   <li><b>A session the peer ended is not a stall.</b> The engine refuses a wrap after the peer's
+ *       {@code close_notify}, and the TLS half-close is not supported: the queue, a stalled head
+ *       included, is abandoned with its loans released, and the stream ends through the closed
+ *       signal rather than as a handshake failure.</li>
  * </ul>
  *
  * <p><b>Allocation:</b> none on the stall or the success path.
@@ -61,6 +70,9 @@ final class NativeTcpStreamTlsDrain {
     private final AtomicBoolean remoteClosed;
     private final AtomicBoolean closed;
     private final AbortSink abortSink;
+    private final PeerGoneSink peerGoneSink;
+    private final IntSupplier writeErrno;
+    private final Predicate<IOException> sendFailureEndsPeer;
     private final AtomicBoolean stalledOnRead;
     private final AtomicBoolean retryAfterIngress = new AtomicBoolean();
 
@@ -69,13 +81,23 @@ final class NativeTcpStreamTlsDrain {
         void abort(boolean peerGone);
     }
 
+    /** Ends the stream after a send found the peer gone, and returns the signal to throw. */
+    /* default */ @FunctionalInterface interface PeerGoneSink {
+        TransportStreamClosedException peerGone(long bytesSent, Throwable cause);
+    }
+
     /* default */ NativeTcpStreamTlsDrain(String engineName, AtomicBoolean remoteClosed, AtomicBoolean closed,
-                                          AtomicBoolean stalledOnRead, AbortSink abortSink) {
+                                          AtomicBoolean stalledOnRead, AbortSink abortSink,
+                                          PeerGoneSink peerGoneSink, IntSupplier writeErrno,
+                                          Predicate<IOException> sendFailureEndsPeer) {
         this.stalledOnRead = stalledOnRead;
         this.engineName = engineName;
         this.remoteClosed = remoteClosed;
         this.closed = closed;
         this.abortSink = abortSink;
+        this.peerGoneSink = peerGoneSink;
+        this.writeErrno = writeErrno;
+        this.sendFailureEndsPeer = sendFailureEndsPeer;
     }
 
     /**
@@ -117,10 +139,19 @@ final class NativeTcpStreamTlsDrain {
      * @param pending the head of the outbound queue; the caller holds the outbound slot
      * @return {@link #DRAIN_OK} or {@link #DRAIN_STALLED}
      * @throws TransportException ({@code EX-NET-4002}) if the engine reported an unrecoverable
-     *                            status; the stream is already aborting
+     *                            status while the peer had not ended the stream; the stream is already
+     *                            aborting
+     * @throws TransportStreamClosedException ({@code EX-NET-4008}) if the peer ended the stream: the
+     *                            session is gone, the remote end was observed, or the write's errno
+     *                            says reset; the stream is already aborting
      */
     /* default */ int drain(NativeTcpStreamPendingWrite pending) {
-        TlsStatus status = pending.prepareCipher();
+        TlsStatus status;
+        try {
+            status = pending.prepareCipher();
+        } catch (TlsHandshakeException _) {
+            return endAfterRefusedWrap(pending);
+        }
         if (status != TlsStatus.NEED_UNWRAP && stalledOnRead.get()) {
             stalledOnRead.set(false);
         }
@@ -128,17 +159,46 @@ final class NativeTcpStreamTlsDrain {
             return tryDrainCipherWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
         }
         if (status == TlsStatus.NEED_WRAP || status == TlsStatus.NEED_UNWRAP) {
-            Runnable hook = ON_WRITE_STALL_FOR_TEST.get();
-            if (hook != null) {
-                hook.run();
-            }
-            return DRAIN_STALLED;
+            return stall();
         }
-        // An unrecoverable wrap status must not leave the queued write stuck: hasPendingData()
-        // would stay true and hang teardown, and a nested close() would release the slot this
-        // frame still holds.
-        abortSink.abort(remoteClosed.get());
-        throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
+        throw abortOnFatalStatus(pending);
+    }
+
+    private static int stall() {
+        Runnable hook = ON_WRITE_STALL_FOR_TEST.get();
+        if (hook != null) {
+            hook.run();
+        }
+        return DRAIN_STALLED;
+    }
+
+    /**
+     * The engine refused the wrap. The handshake is complete before a drain starts, and nothing local
+     * ends the session while this caller holds the outbound slot, so a refusal means the peer ended it
+     * (close_notify or a fatal read), and this engine does not wrap after that. The shared refusal
+     * exception is not chained under the signal: it is the same instance for every stream, and its
+     * message names a handshake failure.
+     */
+    private int endAfterRefusedWrap(NativeTcpStreamPendingWrite pending) {
+        if (closed.get()) {
+            return DRAIN_OK;
+        }
+        throw peerGoneSink.peerGone(pending.bytesWritten(), null);
+    }
+
+    /**
+     * An unrecoverable wrap status must not leave the queued write stuck: hasPendingData() would stay
+     * true and hang teardown, and a nested close() would release the slot this frame still holds.
+     */
+    private RuntimeException abortOnFatalStatus(NativeTcpStreamPendingWrite pending) {
+        // In fd-owner mode OpenSSL writes to the socket itself, so a send the peer's reset broke
+        // arrives as a fatal status whose errno is the send's. The errno is read right after the wrap
+        // that failed, on this thread, which holds the outbound slot.
+        if (remoteClosed.get() || SyscallErrno.isPeerReset(writeErrno.getAsInt())) {
+            return peerGoneSink.peerGone(pending.bytesWritten(), null);
+        }
+        abortSink.abort(false);
+        return TransportException.sendFailure(engineName, pending.bytesWritten(), null);
     }
 
     private boolean tryDrainCipherWrite(NativeTcpStreamPendingWrite pending) {
@@ -148,7 +208,10 @@ final class NativeTcpStreamTlsDrain {
             if (closed.get()) {
                 return true;
             }
-            abortSink.abort(remoteClosed.get());
+            if (sendFailureEndsPeer.test(e)) {
+                throw peerGoneSink.peerGone(pending.bytesWritten(), e);
+            }
+            abortSink.abort(false);
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
         }
     }

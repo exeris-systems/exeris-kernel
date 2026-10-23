@@ -95,7 +95,7 @@ class NativeTcpStreamTerminalWakeTest {
     @DisplayName("a second close after an abort wakes the registered reader")
     void secondCloseAfterAbortWakesReader() throws Exception {
         try (Rig rig = new Rig(); ParkProbe probe = new ParkProbe()) {
-            rig.abortOnFlush();
+            rig.abortOnFlush(TransportException.class);
             rig.stream.registerReaderWaiterForTest(probe.thread());
             probe.awaitParked();
 
@@ -255,7 +255,7 @@ class NativeTcpStreamTerminalWakeTest {
             LoanedBuffer first = rig.offerInbound(new byte[] {1, 2, 3});
             LoanedBuffer second = rig.offerInbound(new byte[] {4, 5});
             rig.stream.markRemoteClosed();
-            rig.abortOnFlush();
+            rig.abortOnFlush(TransportStreamClosedException.class);
             assertEquals(1, rig.closeCalls.get(), "the abort finished the teardown");
 
             try (LoanedBuffer sink = ALLOCATOR.allocateNetwork(64)) {
@@ -297,7 +297,7 @@ class NativeTcpStreamTerminalWakeTest {
         try (Rig rig = new Rig()) {
             LoanedBuffer buffered = rig.offerInbound(new byte[] {1, 2, 3});
             rig.stream.markRemoteClosed();
-            rig.abortOnFlush();
+            rig.abortOnFlush(TransportStreamClosedException.class);
             assertTrue(buffered.isAlive(), "the abort keeps the bytes for the reader");
 
             rig.stream.close();
@@ -354,11 +354,14 @@ class NativeTcpStreamTerminalWakeTest {
             return buffer;
         }
 
-        /** Runs an abort: the queued write fails on a channel closed underneath the stream. */
-        private void abortOnFlush() throws IOException {
+        /**
+         * Runs an abort: the queued write fails on a channel closed underneath the stream. The failure is the
+         * closed signal when the stream had already observed the peer's end, and a send failure otherwise.
+         */
+        private void abortOnFlush(Class<? extends RuntimeException> failure) throws IOException {
             enqueueUnflushed();
             clientChannel.close();
-            assertThrows(TransportException.class, stream::flushPendingWrites);
+            assertThrows(failure, stream::flushPendingWrites);
         }
 
         private ReaderRun startReader() {

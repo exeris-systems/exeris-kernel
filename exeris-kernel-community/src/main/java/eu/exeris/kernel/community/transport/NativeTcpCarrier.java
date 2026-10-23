@@ -22,6 +22,7 @@ import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.ConnectionHandler;
@@ -1318,7 +1319,15 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /* default */ void flushStream(NativeTcpStream stream, SelectionKey key) {
         stream.signalWriteReady();
-        boolean drained = stream.flushPendingWrites();
+        boolean drained;
+        try {
+            drained = stream.flushPendingWrites();
+        } catch (TransportStreamClosedException _) {
+            // The peer ended the stream: the abort already released the queue and the stream finishes
+            // its own close and cancels the key, so this is not a dispatch fault. The writer's next
+            // call reports the signal.
+            return;
+        }
         if (drained && !stream.hasPendingData() || stream.hasPendingData() && stream.stalledOnRead()) {
             key.interestOps(SelectionKey.OP_READ);
         }

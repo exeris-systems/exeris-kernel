@@ -24,6 +24,23 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.12.x → 0.13 — a send to a peer that ended the stream throws the closed-stream signal
+
+A `write` or `queueWrite` on a Community TCP or TLS stream whose peer reset or closed it, or ended the TLS
+session with `close_notify`, throws `TransportStreamClosedException` (`EX-NET-4008`) instead of
+`TransportException` (`EX-NET-4002`). It extends `IllegalStateException`, so a catch of that type keeps
+working; a catch of `TransportException` around a send does not see the peer's end any more.
+
+1. **Catch `TransportStreamClosedException` around sends.** Treat it as the end of the connection, as you
+   treat the same type from `read` and from a send on a closed stream. A send failure that is not the peer's
+   end is still `TransportException`.
+2. **Read the transport failure from the cause.** The `EX-NET-4002` failure is available through
+   `getCause()`, and its own cause is the I/O failure when there is one.
+3. **An Enterprise transport that binds `AbstractTransportStreamTck` adopts the contract.** A send after the
+   peer's `reset(long)` has to fail first with `EX-NET-4008`; the suite has a case for it.
+
+---
+
 ## 0.12.x → 0.13 — entitlement-requiring artifacts: a class, a manifest in every environment, a developer licence (ADR-088, ADR-089)
 
 Five changes land together, and an artifact that registers an `EntitlementRequirement` is affected by all of them.
