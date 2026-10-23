@@ -59,6 +59,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **The Community HTTP/2 writer hands every frame to the transport through `queueWrite`, so a slow peer no longer holds its lock.** Stream heads, end-of-stream frames, `RST_STREAM`, coalesced responses and the control frames (PING and SETTINGS acknowledgements, GOAWAY) were written with the blocking `write`; the bytes on the wire and their order are unchanged.
 - **The four stream JFR events carry the protocol's stream id, and the park event the window.**
   `StreamOpened`, `StreamClosed`, `StreamAbortiveTeardown` and `StreamBackpressurePark` gain
   `protocolStreamId`, the HTTP/2 stream id and `0` on HTTP/1.1, so two streams of one connection are told
