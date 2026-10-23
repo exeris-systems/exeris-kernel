@@ -59,4 +59,25 @@ class LocalityFlagsTest {
                 () -> LocalityFlags.of(Map.of("exeris.locality.timer.count", "yes")));
         assertTrue(bool.getMessage().contains("exeris.locality.timer.count"));
     }
+
+    @Test
+    @DisplayName("combinations that cannot work fail at construction with a message naming the flags")
+    void rejectsInvalidCombinations() {
+        IllegalArgumentException needsDeque = assertThrows(IllegalArgumentException.class,
+                () -> LocalityFlags.of(Map.of("exeris.locality.selfWakeup", "true",
+                        "exeris.locality.carrierResolve", "mounted")));
+        assertTrue(needsDeque.getMessage().contains("queue=deque"), needsDeque.getMessage());
+        IllegalArgumentException needsMounted = assertThrows(IllegalArgumentException.class,
+                () -> LocalityFlags.of(Map.of("exeris.locality.selfWakeup", "true",
+                        "exeris.locality.queue", "deque")));
+        assertTrue(needsMounted.getMessage().contains("carrierResolve=mounted"), needsMounted.getMessage());
+        assertThrows(IllegalArgumentException.class,
+                () -> LocalityFlags.of(Map.of("exeris.locality.yield.checkEvery", "0")));
+        assertThrows(IllegalArgumentException.class,
+                () -> LocalityFlags.of(Map.of("exeris.locality.idle.spinNs", "-1")));
+        LocalityFlags valid = LocalityFlags.of(Map.of("exeris.locality.selfWakeup", "true",
+                "exeris.locality.queue", "deque", "exeris.locality.carrierResolve", "mounted"));
+        assertTrue(valid.selfWakeup());
+        assertEquals(LocalityFlags.QueueKind.DEQUE, valid.queue());
+    }
 }

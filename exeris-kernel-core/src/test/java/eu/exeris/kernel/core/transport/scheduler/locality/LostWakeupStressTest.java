@@ -36,11 +36,29 @@ class LostWakeupStressTest {
         List<Map<String, String>> cells = new ArrayList<>();
         for (String spin : new String[] {"0", "20000"}) {
             for (String wakeup : new String[] {"getAndSet", "readFirst"}) {
-                Map<String, String> cell = new LinkedHashMap<>();
-                cell.put("exeris.locality.idle.spinNs", spin);
-                cell.put("exeris.locality.wakeup", wakeup);
-                cells.add(cell);
+                for (String queue : new String[] {"clq", "deque"}) {
+                    Map<String, String> cell = new LinkedHashMap<>();
+                    cell.put("exeris.locality.idle.spinNs", spin);
+                    cell.put("exeris.locality.wakeup", wakeup);
+                    cell.put("exeris.locality.queue", queue);
+                    cells.add(cell);
+                }
             }
+        }
+        return cells.stream();
+    }
+
+    /** The matrix plus the cells that need the installed scheduler to exercise their flag. */
+    static Stream<Map<String, String>> installedMatrix() {
+        List<Map<String, String>> cells = new ArrayList<>(flagMatrix().toList());
+        for (String wakeup : new String[] {"getAndSet", "readFirst"}) {
+            Map<String, String> cell = new LinkedHashMap<>();
+            cell.put("exeris.locality.wakeup", wakeup);
+            cell.put("exeris.locality.queue", "deque");
+            cell.put("exeris.locality.selfWakeup", "true");
+            cell.put("exeris.locality.carrierResolve", "mounted");
+            cell.put("exeris.locality.yield.checkEvery", "8");
+            cells.add(cell);
         }
         return cells.stream();
     }
@@ -115,7 +133,7 @@ class LostWakeupStressTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @MethodSource("flagMatrix")
+    @MethodSource("installedMatrix")
     @DisplayName("mounted virtual-thread and foreign-thread unparks under the installed scheduler")
     void installedScheduler(Map<String, String> flags) throws Exception {
         Map<String, String> result = ForkedSchedulerRunner.run("stress", flags);

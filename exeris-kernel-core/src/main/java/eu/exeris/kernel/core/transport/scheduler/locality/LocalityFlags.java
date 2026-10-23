@@ -29,6 +29,9 @@ final class LocalityFlags {
     /** How a producer decides whether the consumer carrier needs an unpark. */
     enum Wakeup { GETANDSET, READFIRST }
 
+    /** The data structure behind a carrier's run queue. */
+    enum QueueKind { CLQ, DEQUE }
+
     /** How a read-poller virtual thread is routed to its carrier. */
     enum PollerRoute { NAME, PREFERRED }
 
@@ -41,6 +44,9 @@ final class LocalityFlags {
     private final boolean timerCount;
     private final long idleSpinNs;
     private final Wakeup wakeup;
+    private final QueueKind queue;
+    private final boolean selfWakeup;
+    private final int yieldCheckEvery;
 
     private LocalityFlags(Function<String, String> source) {
         this.allVthreads = bool(source, "allVthreads");
@@ -56,6 +62,14 @@ final class LocalityFlags {
             throw new IllegalArgumentException(PREFIX + "idle.spinNs must not be negative, was " + idleSpinNs);
         }
         this.wakeup = choice(source, "wakeup", Wakeup.GETANDSET);
+        this.queue = choice(source, "queue", QueueKind.CLQ);
+        this.selfWakeup = bool(source, "selfWakeup");
+        this.yieldCheckEvery = intValue(source, PREFIX + "yield.checkEvery", 1);
+        if (yieldCheckEvery < 1) {
+            throw new IllegalArgumentException(
+                    PREFIX + "yield.checkEvery must be at least 1, was " + yieldCheckEvery);
+        }
+        validate();
     }
 
     /** Flags as set on the JVM's system properties. */
@@ -99,6 +113,30 @@ final class LocalityFlags {
 
     boolean timerCount() {
         return timerCount;
+    }
+
+    private void validate() {
+        if (selfWakeup && queue != QueueKind.DEQUE) {
+            throw new IllegalArgumentException(
+                    PREFIX + "selfWakeup=true requires " + PREFIX + "queue=deque: only the deque has an owner side");
+        }
+        if (selfWakeup && carrierResolve != CarrierResolve.MOUNTED) {
+            throw new IllegalArgumentException(PREFIX + "selfWakeup=true requires " + PREFIX
+                    + "carrierResolve=mounted: a stale scope binding would push to a deque "
+                    + "from a thread that does not own it");
+        }
+    }
+
+    QueueKind queue() {
+        return queue;
+    }
+
+    boolean selfWakeup() {
+        return selfWakeup;
+    }
+
+    int yieldCheckEvery() {
+        return yieldCheckEvery;
     }
 
     long idleSpinNs() {

@@ -12,7 +12,6 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.locks.LockSupport;
 
@@ -55,12 +54,13 @@ public final class ExerisCarrierThread {
     private final int id;
     private final int cpuCore;
     private final Thread carrierThread;
-    private final ConcurrentLinkedQueue<Runnable> runQueue = new ConcurrentLinkedQueue<>();
+    private final CarrierQueue runQueue;
     private final ThreadFactory vThreadFactory;
     private final long yieldBudgetNs;
     private final boolean factoryPreferredCarrier;
     private final long idleSpinNs;
     private final boolean readFirstWakeup;
+    private final int yieldCheckEvery;
 
     @SuppressWarnings("unused")
     private volatile int carrierState = RUNNING;
@@ -81,6 +81,10 @@ public final class ExerisCarrierThread {
         this.yieldBudgetNs = flags.yieldBudgetNs();
         this.factoryPreferredCarrier = flags.factoryPreferredCarrier();
         this.idleSpinNs = flags.idleSpinNs();
+        this.runQueue = flags.queue() == LocalityFlags.QueueKind.DEQUE
+                ? new DequeCarrierQueue()
+                : new ClqCarrierQueue(false);
+        this.yieldCheckEvery = flags.yieldCheckEvery();
         this.readFirstWakeup = flags.wakeup() == LocalityFlags.Wakeup.READFIRST;
         this.vThreadFactory = createVirtualThreadFactory(scheduler);
         this.carrierThread = new CarrierWorkerThread(this::runLoop, "exeris-carrier-" + id, this);
@@ -111,9 +115,19 @@ public final class ExerisCarrierThread {
         return vThreadFactory;
     }
 
+    /** Enqueues from any thread and wakes the carrier if it is parked. */
     public void enqueue(Runnable task) {
-        runQueue.offer(task);
+        runQueue.offerRemote(task);
         wakeup();
+    }
+
+    /**
+     * Enqueues from this carrier's own thread (or a virtual thread mounted on it). The caller is
+     * running on the carrier, so no wakeup is needed; calling this from any other thread corrupts
+     * the owner side of the queue.
+     */
+    void enqueueLocal(Runnable task) {
+        runQueue.offerLocal(task);
     }
 
     /**
@@ -224,6 +238,7 @@ public final class ExerisCarrierThread {
 
     private void drainTasks() {
         long start = System.nanoTime();
+        int untilCheck = yieldCheckEvery;
         Runnable task;
         while ((task = runQueue.poll()) != null) {
             try {
@@ -231,8 +246,11 @@ public final class ExerisCarrierThread {
             } catch (Throwable t) {
                 LOG.log(System.Logger.Level.WARNING, "Error executing carrier task", t);
             }
-            if (System.nanoTime() - start > yieldBudgetNs) {
-                break;
+            if (--untilCheck == 0) {
+                untilCheck = yieldCheckEvery;
+                if (System.nanoTime() - start > yieldBudgetNs) {
+                    break;
+                }
             }
         }
     }
@@ -274,6 +292,15 @@ public final class ExerisCarrierThread {
         return false;
     }
 
+    /**
+     * Requests termination of the carrier thread.
+     *
+     * <p>The task being run completes; the carrier then exits without starting another. Tasks that
+     * are queued and have not started when it exits are abandoned: they are neither run nor handed
+     * to another scheduler, and a task enqueued after the request is accepted and never run. The
+     * run queue is left as it was. A caller that needs the queued work finished must stop
+     * producing and wait for the queue to drain before it calls this.
+     */
     public void shutdown() {
         this.shutdown = true;
         wakeup();

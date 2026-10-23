@@ -41,6 +41,23 @@ final class ForkedSchedulerRunner {
 
     /** Runs a scenario with the given system properties; returns the keys of its RESULT line. */
     static Map<String, String> run(String scenario, Map<String, String> properties) throws Exception {
+        String output = runForOutput(scenario, properties, List.of());
+        for (String line : output.split("\n")) {
+            if (line.startsWith("RESULT ")) {
+                Map<String, String> result = new HashMap<>();
+                for (String pair : line.substring("RESULT ".length()).trim().split(" ")) {
+                    int eq = pair.indexOf('=');
+                    result.put(pair.substring(0, eq), pair.substring(eq + 1));
+                }
+                return result;
+            }
+        }
+        return fail("scenario " + scenario + " printed no RESULT line:\n" + output);
+    }
+
+    /** Runs a scenario with extra JVM arguments and returns everything the JVM printed. */
+    static String runForOutput(String scenario, Map<String, String> properties, List<String> jvmArgs)
+            throws Exception {
         assumeLoomJdk();
         List<String> command = new ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
@@ -49,6 +66,7 @@ final class ForkedSchedulerRunner {
         command.add("java.base/jdk.internal.access=ALL-UNNAMED");
         command.add("--enable-native-access=ALL-UNNAMED");
         command.add("-Dexeris.carrier.count=4");
+        command.addAll(jvmArgs);
         properties.forEach((k, v) -> command.add("-D" + k + "=" + v));
         command.add("-cp");
         command.add(location(ExerisCarrierScheduler.class) + java.io.File.pathSeparator + location(SchedulerScenarioMain.class));
@@ -69,17 +87,7 @@ final class ForkedSchedulerRunner {
             Files.deleteIfExists(log);
         }
         assertEquals(0, process.exitValue(), "scenario " + scenario + " " + properties + " failed:\n" + output);
-        for (String line : output.split("\n")) {
-            if (line.startsWith("RESULT ")) {
-                Map<String, String> result = new HashMap<>();
-                for (String pair : line.substring("RESULT ".length()).trim().split(" ")) {
-                    int eq = pair.indexOf('=');
-                    result.put(pair.substring(0, eq), pair.substring(eq + 1));
-                }
-                return result;
-            }
-        }
-        return fail("scenario " + scenario + " printed no RESULT line:\n" + output);
+        return output;
     }
 
     static int intOf(Map<String, String> result, String key) {

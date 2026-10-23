@@ -7,10 +7,12 @@ package eu.exeris.kernel.core.transport.scheduler.locality;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static eu.exeris.kernel.core.transport.scheduler.locality.ForkedSchedulerRunner.intOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -85,5 +87,35 @@ class InstalledSchedulerTest {
                 "exeris.locality.poller.route", "preferred"));
         assertEquals(intOf(r, "target"), intOf(r, "ranOn"));
         assertEquals("true", r.get("pinned"));
+    }
+
+    @Test
+    @DisplayName("the deque classes are loaded only when queue=deque")
+    void dequeClassesLoadOnlyWhenSelected() throws Exception {
+        List<String> logging = List.of("-Xlog:class+load:stdout");
+        String defaults = ForkedSchedulerRunner.runForOutput("smoke", Map.of(), logging);
+        for (String name : List.of("DequeCarrierQueue", "WorkStealingDeque", "MpscInbox")) {
+            assertFalse(defaults.contains(name), name + " must not be loaded at the defaults");
+        }
+        assertTrue(defaults.contains("ClqCarrierQueue"));
+        String deque = ForkedSchedulerRunner.runForOutput("smoke", Map.of("exeris.locality.queue", "deque"), logging);
+        for (String name : List.of("DequeCarrierQueue", "WorkStealingDeque", "MpscInbox")) {
+            assertTrue(deque.contains(name), name + " must be loaded for queue=deque");
+        }
+        assertFalse(deque.contains("ClqCarrierQueue"), "the baseline queue must not be loaded for queue=deque");
+    }
+
+    @Test
+    @DisplayName("queue=deque with selfWakeup: streams run, park and unpark on their carrier")
+    void dequeSelfWakeupSmoke() throws Exception {
+        Map<String, String> r = ForkedSchedulerRunner.run("smoke", Map.of(
+                "exeris.locality.queue", "deque",
+                "exeris.locality.selfWakeup", "true",
+                "exeris.locality.carrierResolve", "mounted",
+                "exeris.locality.allVthreads", "true"));
+        int streams = intOf(r, "streams");
+        assertEquals(streams, intOf(r, "onCustom"));
+        assertEquals(streams, intOf(r, "stable"));
+        assertEquals(streams, intOf(r, "childOnCustom"));
     }
 }

@@ -38,6 +38,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
     private final boolean resolveMounted;
     private final boolean pollerRoutePreferred;
     private final boolean timerCount;
+    private final boolean selfWakeup;
 
     /**
      * Counts of timed tasks the JDK handed to {@link #schedule} and of those cancelled before they
@@ -58,6 +59,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         this.resolveMounted = flags.carrierResolve() == CarrierResolve.MOUNTED;
         this.pollerRoutePreferred = flags.pollerRoute() == PollerRoute.PREFERRED;
         this.timerCount = flags.timerCount();
+        this.selfWakeup = flags.selfWakeup();
         this.group = new ExerisCarrierGroup(this, flags, carrierCount);
         instance = this;
     }
@@ -122,6 +124,19 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         }
     }
 
+    /**
+     * Hands a task to its carrier. With {@code selfWakeup} a waker that is itself running on the
+     * target carrier pushes to the carrier's owner side; every other waker, including one that does
+     * not resolve to a carrier, goes through the carrier's inbox and wakes it.
+     */
+    private void dispatch(ExerisCarrierThread carrier, VirtualThreadTask task) {
+        if (selfWakeup && CarrierResolver.mounted() == carrier) {
+            carrier.enqueueLocal(task);
+        } else {
+            carrier.enqueue(task);
+        }
+    }
+
     /** The carrier the calling thread executes on; {@code null} when it is not on one. */
     private ExerisCarrierThread resolveCurrent() {
         return resolveMounted ? CarrierResolver.mounted() : ExerisCarrierThread.currentCarrier();
@@ -145,7 +160,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         if (task.attachment() instanceof CarrierSchedulingContext context) {
             ExerisCarrierThread carrier = context.carrier();
             if (carrier != null) {
-                carrier.enqueue(task);
+                dispatch(carrier, task);
                 return;
             }
             task.attach(null);
@@ -155,7 +170,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
                 CarrierSchedulingContext context = new CarrierSchedulingContext(carrier.id(), carrier, true);
                 context.setVThreadId(task.thread().threadId());
                 task.attach(context);
-                carrier.enqueue(task);
+                dispatch(carrier, task);
                 return;
             }
             ExerisCarrierThread currentCarrier =
@@ -166,7 +181,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
                         new CarrierSchedulingContext(currentCarrier.id(), currentCarrier);
                 context.setVThreadId(task.thread().threadId());
                 task.attach(context);
-                currentCarrier.enqueue(task);
+                dispatch(currentCarrier, task);
                 return;
             }
             if (assignAllVThreads && group != null && group.size() > 0) {
@@ -177,7 +192,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
                         new CarrierSchedulingContext(carrier.id(), carrier);
                 context.setVThreadId(task.thread().threadId());
                 task.attach(context);
-                carrier.enqueue(task);
+                dispatch(carrier, task);
                 return;
             }
         }
@@ -189,7 +204,7 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         if (task.attachment() instanceof CarrierSchedulingContext context) {
             ExerisCarrierThread carrier = context.carrier();
             if (carrier != null) {
-                carrier.enqueue(task);
+                dispatch(carrier, task);
                 return;
             }
             task.attach(null);
