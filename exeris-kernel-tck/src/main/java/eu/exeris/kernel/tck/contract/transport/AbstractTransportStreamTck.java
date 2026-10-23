@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -58,6 +59,9 @@ import static org.assertj.core.api.Assertions.fail;
  *       {@code close()}, even while queued writes are still draining, and by the peer's
  *       {@code reset()}; it then returns end of stream or throws the closed-stream signal, and a
  *       write after the peer's reset is refused</li>
+ *   <li>{@code queueWrite()} returns without waiting for a peer that does not read, and releases each
+ *       loan once its bytes leave the stream (or the stream ends), and not before</li>
+ *   <li>a thread blocked in {@code write()} is woken by the stream's end</li>
  *   <li>{@code streamId()} returns a non-negative identifier</li>
  *   <li>{@code connection()} returns non-null parent</li>
  * </ul>
@@ -126,6 +130,21 @@ public abstract class AbstractTransportStreamTck {
      */
     protected AutoCloseable holdOutboundEgress(TransportStream writer) {
         return () -> { };
+    }
+
+    /**
+     * Declares whether {@link TransportStream#write} blocks at a bounded outbound queue.
+     *
+     * <p>When {@code false} (the default) the {@link WriteBackpressure} cases are SKIPPED via a JUnit
+     * assumption, so a binding without a bounded outbound is visibly exempt rather than silently
+     * passing. When {@code true}, the binding configures a bound small enough that 64 MiB of writes
+     * exceed the bound plus its kernel buffers, and pairs it with
+     * {@link #holdOutboundEgress(TransportStream)} when its peer would otherwise absorb the writes.
+     *
+     * @return {@code true} if {@code write()} blocks at a bounded outbound; {@code false} by default
+     */
+    protected boolean supportsWriteBackpressure() {
+        return false;
     }
 
     /**
@@ -214,6 +233,125 @@ public abstract class AbstractTransportStreamTck {
     }
 
     /**
+     * Body of {@link QueueWriteDoesNotWait}, extracted so the TCK's own meta-test can drive it against
+     * a fake binding whose {@code queueWrite} waits for the peer: such a binding MUST make this throw
+     * {@link AssertionError}. Package-private, test-only.
+     */
+    final void runQueueWriteDoesNotWaitDiscriminator() throws Exception {
+        runQueuedBurst(false);
+    }
+
+    /**
+     * Queues {@link #BURST_LOANS} pattern loans on the writer while its peer does not take them.
+     *
+     * @param retentionCase when {@code true}, asserts that no loan is released while its bytes are
+     *                      still queued and stops there; when {@code false}, asserts that the queueing
+     *                      thread returns, then lets the peer drain and asserts every byte arrives in
+     *                      order and every loan is released
+     */
+    private void runQueuedBurst(boolean retentionCase) throws Exception {
+        TransportStream writer = streams.writer();
+        CountDownLatch released = new CountDownLatch(BURST_LOANS);
+        AtomicReference<Throwable> queueFailure = new AtomicReference<>();
+        try (var _ = holdOutboundEgress(writer)) {
+            Thread queuer = Thread.ofVirtual().start(() -> {
+                try {
+                    for (int chunk = 0; chunk < BURST_LOANS; chunk++) {
+                        queuePatternLoan(writer, chunk, released);
+                    }
+                } catch (RuntimeException | Error failure) {
+                    queueFailure.set(failure);
+                }
+            });
+            queuer.join(TimeUnit.SECONDS.toMillis(QUEUE_SECONDS));
+            assertThat(queuer.isAlive())
+                    .as("queueWrite returns without waiting for a peer that does not read")
+                    .isFalse();
+            assertThat(queueFailure.get()).as("queueWrite does not fail while the peer does not read").isNull();
+            assertThat(writer.hasPendingData())
+                    .as("precondition: the peer has not taken the queued bytes, so they are still pending — "
+                            + "if false, neither the bound nor holdOutboundEgress() held them back and the "
+                            + "case proves nothing")
+                    .isTrue();
+            if (retentionCase) {
+                assertThat(released.getCount())
+                        .as("a loan is not released while its bytes are still queued")
+                        .isPositive();
+                return;
+            }
+        }
+        assertThat(drainAndVerify(streams.reader(), BURST_LOANS, DRAIN_SECONDS))
+                .as("the peer receives every queued byte, in order")
+                .isNull();
+        assertThat(released.await(RELEASE_SECONDS, TimeUnit.SECONDS))
+                .as("every loan is released once the peer has taken its bytes")
+                .isTrue();
+    }
+
+    private void queuePatternLoan(TransportStream stream, int chunk, CountDownLatch released) {
+        LoanedBuffer loan = allocator.allocateNetwork(BURST_CHUNK);
+        fillPattern(loan.segment(), chunk);
+        loan.setSize(BURST_CHUNK);
+        loan.addCloseAction(released::countDown);
+        try {
+            stream.queueWrite(loan, BURST_CHUNK);
+        } catch (RuntimeException refused) {
+            // a throwing queueWrite leaves the loan with the caller
+            loan.close();
+            throw refused;
+        }
+    }
+
+    private static byte patternByte(int chunk, int offset) {
+        return (byte) (chunk * 131 + offset);
+    }
+
+    private static void fillPattern(MemorySegment segment, int chunk) {
+        for (int offset = 0; offset < BURST_CHUNK; offset++) {
+            segment.set(ValueLayout.JAVA_BYTE, offset, patternByte(chunk, offset));
+        }
+    }
+
+    /**
+     * Reads {@code chunks} pattern chunks from {@code peer} on a virtual thread and checks every byte.
+     *
+     * @return {@code null} when all arrived in order in time, otherwise what went wrong
+     */
+    private String drainAndVerify(TransportStream peer, int chunks, long seconds) throws InterruptedException {
+        AtomicReference<String> problem = new AtomicReference<>();
+        Thread drainer = Thread.ofVirtual().start(() -> {
+            try (LoanedBuffer sink = allocator.allocateNetwork(BURST_CHUNK)) {
+                long expected = (long) chunks * BURST_CHUNK;
+                long total = 0;
+                while (total < expected && problem.get() == null) {
+                    int read = peer.read(sink.segment(), (int) Math.min(BURST_CHUNK, expected - total));
+                    if (read < 0) {
+                        problem.set("the stream ended after " + total + " of " + expected + " bytes");
+                    } else {
+                        problem.compareAndSet(null, firstMismatch(sink.segment(), read, total));
+                        total += read;
+                    }
+                }
+            } catch (RuntimeException failure) {
+                problem.set("the read failed: " + failure);
+            }
+        });
+        drainer.join(TimeUnit.SECONDS.toMillis(seconds));
+        return drainer.isAlive() ? "the drain did not finish within " + seconds + "s" : problem.get();
+    }
+
+    private static String firstMismatch(MemorySegment segment, int length, long globalOffset) {
+        for (int i = 0; i < length; i++) {
+            long global = globalOffset + i;
+            byte expected = patternByte((int) (global / BURST_CHUNK), (int) (global % BURST_CHUNK));
+            if (segment.get(ValueLayout.JAVA_BYTE, i) != expected) {
+                return "byte " + global + " is out of order or corrupt";
+            }
+        }
+        return null;
+    }
+
+    /**
      * Stream pair for loopback testing.
      *
      * @param writer the stream that sends data
@@ -221,6 +359,12 @@ public abstract class AbstractTransportStreamTck {
      */
     public record StreamPair(TransportStream writer, TransportStream reader) {
     }
+
+    private static final int BURST_CHUNK = 64 * 1024;
+    private static final int BURST_LOANS = 256;
+    private static final long QUEUE_SECONDS = 5L;
+    private static final long RELEASE_SECONDS = 10L;
+    private static final long DRAIN_SECONDS = 30L;
 
     private StreamPair streams;
     private MemoryAllocator allocator;
@@ -963,6 +1107,182 @@ public abstract class AbstractTransportStreamTck {
                     .as("the first failure says the peer ended the stream, not that the send failed")
                     .isInstanceOfSatisfying(TransportStreamClosedException.class,
                             e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4008));
+        }
+    }
+
+    // =========================================================================
+    // queueWrite never waits for the peer
+    // =========================================================================
+
+    @Nested
+    @DisplayName("queueWrite() does not wait for the peer")
+    class QueueWriteDoesNotWait {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the non-waiting {@code queueWrite} obligation.
+         */
+        QueueWriteDoesNotWait() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @DisplayName("queueWrite returns without waiting for a peer that does not read, and every loan is "
+                + "released once the peer drains")
+        @Timeout(value = 90, unit = TimeUnit.SECONDS)
+        void queueWriteReturnsWithoutWaitingAndLoansAreReleased() throws Exception {
+            runQueueWriteDoesNotWaitDiscriminator();
+        }
+
+        @Test
+        @DisplayName("a loan is not released while its bytes are still queued")
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        void loanIsNotReleasedBeforeItsBytesLeaveTheQueue() throws Exception {
+            runQueuedBurst(true);
+        }
+    }
+
+    // =========================================================================
+    // write() blocks at the outbound bound
+    // =========================================================================
+
+    @Nested
+    @DisplayName("write() blocks at a bounded outbound")
+    class WriteBackpressure {
+
+        private static final int WRITE_CHUNKS = 1024;
+        private static final long PARK_SECONDS = 10L;
+        private static final long WAKE_SECONDS = 2L;
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise write backpressure.
+         */
+        WriteBackpressure() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @DisplayName("write() blocks while the peer does not read and resumes, in order, when it drains")
+        @Timeout(value = 120, unit = TimeUnit.SECONDS)
+        void writeBlocksAtTheBoundAndResumesWhenThePeerDrains() throws Exception {
+            Assumptions.assumeTrue(supportsWriteBackpressure(), "binding does not declare write backpressure");
+            TransportStream writer = streams.writer();
+            warmUp();
+            ParkedWriter parked;
+            try (var _ = holdOutboundEgress(writer)) {
+                parked = parkWriter(writer);
+                assertThat(parked.written.get())
+                        .as("the writer parked before it had written everything")
+                        .isLessThan(WRITE_CHUNKS - 1);
+            }
+            assertThat(parked.outcome(DRAIN_SECONDS))
+                    .as("the blocked write resumes and completes once the peer drains")
+                    .isNull();
+            assertThat(drainAndVerify(streams.reader(), WRITE_CHUNKS, DRAIN_SECONDS))
+                    .as("the peer receives every byte, in order")
+                    .isNull();
+        }
+
+        @Test
+        @DisplayName("a blocked write is released by its own stream's close() with EX-NET-4009")
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
+        void blockedWriteIsReleasedByCloseWithTheLocalCode() throws Exception {
+            Assumptions.assumeTrue(supportsWriteBackpressure(), "binding does not declare write backpressure");
+            TransportStream writer = streams.writer();
+            warmUp();
+            try (var _ = holdOutboundEgress(writer)) {
+                ParkedWriter parked = parkWriter(writer);
+
+                writer.close();
+
+                assertThat(parked.outcome(WAKE_SECONDS))
+                        .as("close() ends the stream for its own blocked writer")
+                        .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
+            }
+        }
+
+        @Test
+        @DisplayName("a blocked write is released by the peer's reset() with EX-NET-4008")
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
+        void blockedWriteIsReleasedByThePeersResetWithThePeerCode() throws Exception {
+            Assumptions.assumeTrue(supportsWriteBackpressure(), "binding does not declare write backpressure");
+            TransportStream writer = streams.writer();
+            warmUp();
+            try (var _ = holdOutboundEgress(writer)) {
+                ParkedWriter parked = parkWriter(writer);
+
+                streams.reader().reset(0L);
+
+                assertThat(parked.outcome(WAKE_SECONDS))
+                        .as("the peer's reset ends the stream for a blocked writer, naming the peer")
+                        .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4008));
+            }
+        }
+
+        /**
+         * One byte each way before anything is measured, so a TLS binding's handshake wait is not
+         * mistaken for the park the cases look for.
+         */
+        private void warmUp() {
+            try (LoanedBuffer probe = allocator.allocate(AllocationHint.MICRO)) {
+                probe.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0x2A);
+                streams.writer().write(probe.segment(), 1);
+                assertThat(streams.reader().read(probe.segment(), 1)).as("the warm-up byte arrives").isEqualTo(1);
+            }
+        }
+
+        /**
+         * Leaves the first pattern chunk queued, so the outbound is already at its bound, then starts a
+         * writer for the rest and waits until it is blocked.
+         */
+        private ParkedWriter parkWriter(TransportStream writer) throws InterruptedException {
+            queuePatternLoan(writer, 0, new CountDownLatch(1));
+            ParkedWriter parked = new ParkedWriter(writer);
+            parked.thread.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(PARK_SECONDS);
+            while (parked.thread.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            assertThat(parked.thread.getState())
+                    .as("write() blocks while the peer does not read")
+                    .isEqualTo(Thread.State.WAITING);
+            return parked;
+        }
+
+        /** A virtual thread writing the pattern chunks after the first, with the way it ended exposed. */
+        private final class ParkedWriter {
+
+            private final AtomicInteger written = new AtomicInteger();
+            private final AtomicReference<Throwable> failure = new AtomicReference<>();
+            private final Thread thread;
+
+            private ParkedWriter(TransportStream writer) {
+                thread = Thread.ofVirtual().unstarted(() -> {
+                    try (LoanedBuffer chunk = allocator.allocateNetwork(BURST_CHUNK)) {
+                        for (int index = 1; index < WRITE_CHUNKS; index++) {
+                            fillPattern(chunk.segment(), index);
+                            writer.write(chunk.segment(), BURST_CHUNK);
+                            written.incrementAndGet();
+                        }
+                    } catch (RuntimeException | Error ended) {
+                        failure.set(ended);
+                    }
+                });
+            }
+
+            /** How the writer ended: {@code null} when it wrote everything, otherwise the failure. */
+            private Throwable outcome(long seconds) throws InterruptedException {
+                thread.join(TimeUnit.SECONDS.toMillis(seconds));
+                if (thread.isAlive()) {
+                    return new AssertionError("the blocked writer was not released within " + seconds + "s");
+                }
+                return failure.get();
+            }
         }
     }
 

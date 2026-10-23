@@ -14,6 +14,7 @@ slug: adr/ADR-071
 | **Status**      | **ACCEPTED**                                                              |
 | **Deciders**    | Arkadiusz Przychocki                                                      |
 | **Date**        | 2026-08-18                                                                |
+| **Amended**     | 2026-10-23 — a per-stream outbound write bound (third class, on `TransportConfig`), see [Amendment 2026-10-23](#amendment-2026-10-23--a-per-stream-outbound-write-bound) |
 | **Scope**       | `kernel/config`                                                           |
 | **Owning Repo** | `exeris-kernel`                                                           |
 | **Driven By**   | v0.12 Stream D / T1-4 (1.0-blocking); the 2026-07-31 hardcoded-limits sweep |
@@ -158,6 +159,7 @@ turns an operator's configuration error into what looks like a client error, onc
   that worked stops working. Neither needed SPI surface — Community reads the generic provider, the
   same route `transport.paqs.maxActiveStreams` takes, so no SPI record grows a driver-specific
   field.
+  _(Amended 2026-10-23: a limit every transport tier meets does grow the SPI record — see Amendment 2026-10-23.)_
 
   **Two are refused, and the reason is lifecycle rather than taste.**
   `transport.maxTlsRecordsPerRead` and `transport.queueBackpressureEnabled` are `static final`
@@ -259,3 +261,44 @@ one this ADR cares about:
 
 The Context above is left as it stood — it records the shape at the time of the decision, which is
 what makes the amendment legible.
+
+## Amendment 2026-10-23 — a per-stream outbound write bound
+
+`TransportStream#write` documented that it blocks the caller while the peer's receive window is full.
+The Community stream never did: the remainder a full socket refused was copied into an outbound queue
+that had no limit, so a writer faster than its peer grew memory until the idle sweep reclaimed the
+connection, if it was ever configured. The bound is one more operational limit, and this decision's
+classes rule it.
+
+1. **Third class.** `transport.maxQueuedWriteBytes` is protective with a viable unbounded setting:
+   `-1` (`TransportConfig.UNBOUNDED_QUEUED_WRITE_BYTES`) removes the bound, a positive value is the
+   bound, and `0` is refused. The reason `0` is refused is the mechanism §3 insists on stating
+   accurately: a bound of zero would park every write, so it fails closed and catastrophically rather
+   than open. The default is 256 KiB. Refusal happens in `TransportConfig`'s compact constructor, where
+   the value is named (§4).
+2. **It lives on the record.** Unlike the 2026-08-28 amendment's keys, which needed no SPI surface, this
+   limit is meaningful to every transport tier: an Enterprise transport bounds its own outbound by the
+   same number, and `TransportStream`'s `write` contract names it. `TransportConfig` therefore gains the
+   component `maxQueuedWriteBytes`, as it gained `maxActiveStreams` in 0.12. The earlier amendment's
+   "no SPI record grows a driver-specific field" stays true of what it ruled: this field is not
+   driver-specific.
+3. **One key, three builders, no twin.** The key fills the component at the transport subsystem and at
+   the HTTP and WebSocket listeners, which build their own `TransportConfig`, through
+   `CommunityQueuedWriteBoundResolver`. It has no `network.*` twin, for the reason given for
+   `transport.paqs.maxActiveStreams`: nothing ever published one.
+4. **The retained constructors apply the default.** The nine-argument constructor of 0.12 and the
+   eight-argument one before it delegate with 256 KiB rather than the unbounded sentinel, unlike the
+   `maxActiveStreams` bridge, which preserved the behaviour of a caller written before the key. The
+   protection is the point of this limit, and `write` blocking is already the documented behaviour; a
+   caller that wants none passes `-1` through the canonical constructor. `MIGRATION.md` records it.
+
+### Engineering Protocol
+
+- `NativeTcpCarrierQueuedWriteBoundTest` pins that the accepted and the dialled stream carry the
+  engine's configured bound, and the three `*QueuedWriteBoundWiringTest` cases pin that each of the
+  three builders passes the key. Mutation-checked: passing the default from the carrier reddens only
+  the carrier case, and dropping the key read from one builder reddens only that builder's case.
+- `NativeTcpStreamWriteBoundTest` covers the unbounded setting beside the bounded one: comparing `-1`
+  raw as a bound parks every write and reddens only the unbounded case.
+- `TransportConfigQueuedWriteBoundTest` pins acceptance of `1` and `-1`, refusal of `0` and `-2`, the
+  defaulting constructors and that `DISABLED` skips the check.

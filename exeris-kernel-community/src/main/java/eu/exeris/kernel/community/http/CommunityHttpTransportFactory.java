@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
+import eu.exeris.kernel.community.transport.CommunityQueuedWriteBoundResolver;
 import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
@@ -180,7 +181,8 @@ final class CommunityHttpTransportFactory {
                 keyPath,
                 config.maxConnections(),
                 config.idleTimeoutMillis(),
-                CommunityAdmissionCeilingResolver.resolve(configProvider));
+                CommunityAdmissionCeilingResolver.resolve(configProvider),
+                CommunityQueuedWriteBoundResolver.resolve(configProvider));
     }
 
     private static String resolveTransportProperty(ConfigProvider configProvider,

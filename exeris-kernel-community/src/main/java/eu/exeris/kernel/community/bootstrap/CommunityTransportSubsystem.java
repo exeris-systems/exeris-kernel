@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
+import eu.exeris.kernel.community.transport.CommunityQueuedWriteBoundResolver;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
@@ -144,6 +145,7 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
             .orElse(30_000L);
 
         int maxActiveStreams = CommunityAdmissionCeilingResolver.resolve(configProvider);
+        int maxQueuedWriteBytes = CommunityQueuedWriteBoundResolver.resolve(configProvider);
 
         String certPath = configProvider.getString("transport.certPath")
                 .orElse(configProvider.getString("network.certPath").orElse(null));
@@ -159,7 +161,8 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
                 keyPath,
             maxConnections,
             idleTimeoutMillis,
-            maxActiveStreams
+            maxActiveStreams,
+            maxQueuedWriteBytes
         );
     }
 
