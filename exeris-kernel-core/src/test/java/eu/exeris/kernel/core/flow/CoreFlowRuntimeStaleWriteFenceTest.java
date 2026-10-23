@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +30,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
 
@@ -69,7 +71,7 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
     @DisplayName("abandoned gen-1 worker cannot resurrect a row reclaimed by gen-2 (savesAfterReclaim == 0)")
-    void abandonedWorkerCannotResurrectReclaimedRow() {
+    void abandonedWorkerCannotResurrectReclaimedRow() throws InterruptedException {
         CountingSnapshotStore store = new CountingSnapshotStore();
 
         // The shared flow key both engines operate on.
@@ -79,8 +81,10 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
         // release flag (interrupt-immune park loop) and only then returns PARK -> persistSnapshot.
         CountDownLatch gen1InStep = new CountDownLatch(1);
         AtomicBoolean releaseGen1 = new AtomicBoolean(false);
+        AtomicReference<Thread> gen1Worker = new AtomicReference<>();
 
         FlowStepAction blockingPark = _ -> {
+            gen1Worker.set(Thread.currentThread());
             gen1InStep.countDown();
             // Survive close()'s interrupt+5s join: park-loop ignores interruption so the
             // worker is genuinely abandoned past the join window, then proceeds to PARK.
@@ -138,12 +142,13 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
 
         // The released worker resumes from its park-loop, returns PARK, and the runtime
         // synchronously runs applyParkOutcome -> persistSnapshot in that same call stack. Wait
-        // for the gen-1 worker virtual thread to terminate, then settle, so any save it would
+        // for the gen-1 worker virtual thread to terminate directly, so any save it would
         // land has already been attempted (and counted) regardless of whether the fence blocks it.
-        assertThat(await(() -> liveGen1WorkerCount(ctx) == 0L, 5))
+        Thread worker = gen1Worker.get();
+        assertThat(worker).as("gen-1 worker thread was captured").isNotNull();
+        assertThat(worker.join(Duration.ofSeconds(5)))
                 .as("released gen-1 worker VT MUST terminate after PARK return")
                 .isTrue();
-        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
 
         int savesAfterReclaim = store.savesAfterReclaim();
         boolean rowResurrected = store.exists(ctx.instanceIdMost(), ctx.instanceIdLeast());
@@ -217,19 +222,6 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
             @Override public FlowState state()        { return FlowState.RUNNING; }
             @Override public long timeoutNanos()      { return System.nanoTime() + 30_000_000_000L; }
         };
-    }
-
-    private static long liveGen1WorkerCount(FlowContext ctx) {
-        // Both engines name their worker VT "exeris-flow-{most}-{least}" (same flow key), so this
-        // count cannot distinguish gen-1 from gen-2 by name. The caller relies on gen-2 having
-        // already completed (completedFlows >= 1 awaited earlier) before releasing gen-1, so a
-        // non-zero count here is gen-1's still-abandoned worker, not a lingering gen-2 VT.
-        String name = "exeris-flow-" + ctx.instanceIdMost() + '-' + ctx.instanceIdLeast();
-        return Thread.getAllStackTraces().keySet().stream()
-                .filter(Thread::isAlive)
-                .map(Thread::getName)
-                .filter(name::equals)
-                .count();
     }
 
     private static boolean await(BooleanSupplier condition, int timeoutSeconds) {
