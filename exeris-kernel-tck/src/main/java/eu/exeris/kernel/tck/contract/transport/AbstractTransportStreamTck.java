@@ -1240,7 +1240,7 @@ public abstract class AbstractTransportStreamTck {
          * Leaves the first pattern chunk queued, so the outbound is already at its bound, then starts a
          * writer for the rest and waits until it is blocked.
          */
-        private ParkedWriter parkWriter(TransportStream writer) throws InterruptedException {
+        private ParkedWriter parkWriter(TransportStream writer) {
             queuePatternLoan(writer, 0, new CountDownLatch(1));
             ParkedWriter parked = new ParkedWriter(writer);
             parked.thread.start();
