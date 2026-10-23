@@ -281,7 +281,8 @@ The pilot is archived as non-evidence and is not a result of this track.
   and 1.25 against 1.32 (30 ms backend). The pilot's CPU premium does not reproduce.
 - **HYP-CAPACITY — not falsified with the 1 ms backend, falsified with the 30 ms backend.**
   Capacity at p99 ≤ 5 ms: `D` and `B_pin` 95 % of `A_iso`'s saturation, `A_iso` and `C_iso` 50 %
-  (70 % on a freshly booted host; the campaign started ~14 h after boot);
+  (70 % without connection tracking on loopback; the campaign ran with the Docker daemon's
+  conntrack and NAT rules loaded, which add about 7 % netfilter samples to every arm's carriers);
   `B_pin` lands at `D`'s, so pinning carries the gain. Capacity at p99 ≤ 80 ms: `C_iso` 80 %,
   `A_iso` 70 %, `D` and `B_pin` 50 %, both pinned arms failing the 70 % rung on the backend stall;
   highest passing rung `B_pin` 95 %, `D` 85 %. Under pinning the custom scheduler costs tail and
@@ -329,11 +330,10 @@ Diagnostic runs (exploratory, recorders attached): `exeris-benchmarks`
 Next, in order: why the backend stalls under pinned carriers at I/O-bound 70 % — a 60 s warmup
 (does the jump follow the mock's age or the measurement phase), a JIT, deoptimisation and pinning
 record of the mock with its `ForkJoinPool` size, and the arrival pattern at the mock under `B_pin`
-against `A_iso` (same algorithm, only the binding differs); why the floating arms' CPU-bound tails
-are worse in the capacity campaign than in the first one at the same rates (a 2×2 check rules out
-the app's backend pool and the descriptor limit; the difference goes with the time since the
-host's boot — runs started minutes after boot reproduce the first campaign, runs 14–34 h after
-reproduce the capacity one — and what accumulates is not identified); what drives `C_iso`'s tail at 85 %; the `kernel` backend; the HYP-CACHE sweep.
+against `A_iso` (same algorithm, only the binding differs); what keeps `A_iso`'s carriers 6 points
+of sys above a host without iptables once loopback is exempted from tracking (the floating arms'
+CPU-bound drift between the campaigns is connection tracking on loopback: exempting it in one boot
+takes `A_iso` at 70 % from 8.59 to 2.70 ms and leaves `D` at 2.5 ms); what drives `C_iso`'s tail at 85 %; the `kernel` backend; the HYP-CACHE sweep.
 
 ---
 
