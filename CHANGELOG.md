@@ -174,6 +174,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **`AbstractHttpResponseBodyEncoderTck` and `AbstractHttpResponseBodyEncoderRegistryTck` pin the server-side response body encoder contract (TCK, ADR-034).** The suites judge `supports`, the live non-empty body allocated through the context allocator, a `null` payload, release of every buffer on a failed encode, no retention of the returned buffer, the declared `content-type`, and the registry's `null`-not-fallback answer; bound at Community tier by `CommunityJsonResponseBodyEncoderTckTest` and `CommunityResponseBodyEncoderRegistryTckTest`. No SPI change.
 - **Stream routes are resolved and served over HTTP/2.** A request for a stream route that arrives over TLS
   with ALPN `h2` or a prior-knowledge preface now reaches its stream handler instead of the respond-once
   handler. The `h2c` upgrade path does not yet consume the client connection preface that follows `101`, so a
