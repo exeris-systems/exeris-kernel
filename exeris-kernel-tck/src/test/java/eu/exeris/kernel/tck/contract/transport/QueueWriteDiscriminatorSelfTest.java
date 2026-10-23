@@ -37,7 +37,7 @@ class QueueWriteDiscriminatorSelfTest {
 
     @Test
     @DisplayName("discriminator FAILS a binding whose queueWrite waits for the peer to read")
-    void waitingBindingFailsDiscriminator() throws Exception {
+    void waitingBindingFailsDiscriminator() {
         PipeBinding waiting = new PipeBinding(true);
         waiting.setUp();
         try {
@@ -51,7 +51,7 @@ class QueueWriteDiscriminatorSelfTest {
 
     @Test
     @DisplayName("discriminator PASSES a binding that queues without waiting and releases loans as the peer reads")
-    void queueingBindingPassesDiscriminator() throws Exception {
+    void queueingBindingPassesDiscriminator() {
         PipeBinding queueing = new PipeBinding(false);
         queueing.setUp();
         try {
@@ -116,7 +116,7 @@ class QueueWriteDiscriminatorSelfTest {
                     window.release(done.length);
                 }
                 return bytes;
-            } catch (InterruptedException interrupted) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
                 return -1;
             }

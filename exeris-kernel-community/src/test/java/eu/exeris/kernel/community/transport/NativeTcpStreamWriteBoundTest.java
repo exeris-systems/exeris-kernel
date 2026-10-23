@@ -330,7 +330,7 @@ class NativeTcpStreamWriteBoundTest {
 
     @Test
     @DisplayName("a stream refuses a bound that is neither positive nor the unbounded sentinel")
-    void streamRefusesAnInvalidBound() throws Exception {
+    void streamRefusesAnInvalidBound() {
         for (int invalid : new int[] {0, -2}) {
             org.assertj.core.api.Assertions.assertThatThrownBy(() -> new Rig(invalid).close())
                     .isInstanceOf(IllegalArgumentException.class)

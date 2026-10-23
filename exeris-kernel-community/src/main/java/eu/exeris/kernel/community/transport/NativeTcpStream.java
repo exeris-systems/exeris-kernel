@@ -1061,7 +1061,7 @@ final class NativeTcpStream implements TransportStream {
 
     private void completeQueueHeadAfterDrain(NativeTcpStreamPendingWrite expectedHead) {
         NativeTcpStreamPendingWrite completed = outboundQueue.poll();
-        if (!Objects.equals(completed, expectedHead)) {
+        if (completed == null || !completed.equals(expectedHead)) {
             throw new IllegalStateException("Outbound queue head changed during flush for stream " + streamId);
         }
         closePendingWriteAfterPoll(completed);

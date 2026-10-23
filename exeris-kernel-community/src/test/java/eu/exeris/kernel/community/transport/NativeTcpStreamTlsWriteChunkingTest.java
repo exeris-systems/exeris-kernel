@@ -114,8 +114,8 @@ class NativeTcpStreamTlsWriteChunkingTest {
         assertThat(failure.get()).as("the write completes once the drain frees the queue").isNull();
         List<WriteCall> calls = openSsl.writeCalls();
         assertThat(calls.get(1)).as("the stalled head is offered the same address and length").isEqualTo(calls.get(0));
-        assertThat(calls).isNotEmpty();
-        assertThat(calls).allSatisfy(call -> assertThat(call.length()).isLessThanOrEqualTo(CHUNK));
+        assertThat(calls).isNotEmpty()
+                .allSatisfy(call -> assertThat(call.length()).isLessThanOrEqualTo(CHUNK));
         assertThat(calls.stream().skip(1).mapToLong(WriteCall::length).sum())
                 .as("every byte reached SSL_write once, apart from the stalled attempt")
                 .isEqualTo(PAYLOAD);
