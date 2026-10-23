@@ -56,6 +56,12 @@ class CommunityProviderInventoryTest {
         assertThat(registeredSpis).isNotEmpty();
 
         ProvidersSnapshot snapshot = CommunityProviderInventory.snapshot();
+        // Names are matched across all SPIs, so a name shared by two providers could stand in for a
+        // missing sweep; distinct names keep the match per provider.
+        assertThat(snapshot.providers())
+                .extracting(ProviderDescriptor::providerName)
+                .as("provider names in the snapshot")
+                .doesNotHaveDuplicates();
         Set<String> snapshotProviderNames = snapshot.providers().stream()
                 .map(ProviderDescriptor::providerName)
                 .collect(Collectors.toSet());
