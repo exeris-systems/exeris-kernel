@@ -103,9 +103,13 @@ class CommunityGraphSessionPostgresContractTckIT extends AbstractGraphSessionLiv
                 "tck-graph-ds1", cfg("jdbc:postgresql://" + host + ":" + port + "/tck_graph_d1"),
                 "tck-graph-ds2", cfg("jdbc:postgresql://" + host + ":" + port + "/tck_graph_d2")
         );
+        // Graph scoping is under test here, not row-level security, and the fixture needs a role that can
+        // create databases: that role bypasses RLS, so the consent is explicit. Dedicated pools take the
+        // parent engine's consent.
         persistence = new CommunityPersistenceProvider().createEngine(new PersistenceConfig(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
-                4, 1, 5_000L, 60_000L, 600_000L, false, false, false, 0, Map.of(), dedicated));
+                4, 1, 5_000L, 60_000L, 600_000L, false, false, false, 0,
+                Map.of("rls.allowBypassRole", "true"), dedicated));
         persistence.registerInterceptor(RlsConnectionInterceptor.INSTANCE);
         graph = new CommunityGraphEngine(GraphConfig.create("postgresql"));
         ScopedValue.where(KernelProviders.PERSISTENCE_ENGINE, persistence)
