@@ -290,6 +290,56 @@ class CarrierQueueConcurrencyTest {
         assertEquals(plainTotal, ownerPlain + stolen.get());
     }
 
+    @Test
+    @DisplayName("deque queue with pollersFirst: a pinned task is served ahead of earlier plain ones")
+    void pinnedTasksFirstWhenAsked() {
+        CarrierSchedulingContext pinnedContext = new CarrierSchedulingContext(0, null, true);
+        DequeCarrierQueue queue = new DequeCarrierQueue(true, false);
+        Ticket plainA = new Ticket(1);
+        Ticket plainB = new Ticket(2);
+        PinnedTask poller = new PinnedTask(pinnedContext);
+        queue.offerRemote(plainA);
+        queue.offerRemote(plainB);
+        queue.offerRemote(poller);
+        assertSame(poller, queue.poll(), "the pinned task is drained from the inbox with the batch, then served first");
+        assertSame(plainA, queue.poll());
+        assertSame(plainB, queue.poll());
+        assertNull(queue.poll());
+        assertTrue(queue.isEmpty());
+    }
+
+    @Test
+    @DisplayName("deque queue with the run-next slot: only the displaced task is visible to a thief")
+    void lifoSlotIsInvisibleToThieves() {
+        DequeCarrierQueue queue = new DequeCarrierQueue(false, true);
+        Ticket a = new Ticket(1);
+        Ticket b = new Ticket(2);
+        queue.offerLocal(a);
+        queue.offerLocal(b);
+        assertSame(a, queue.steal());
+        assertNull(queue.steal());
+        assertSame(b, queue.poll());
+    }
+
+    @Test
+    @DisplayName("deque queue with the run-next slot: the newest self-wakeup runs next, but not twice in a row")
+    void lifoSlotRunsOnceInARow() {
+        DequeCarrierQueue queue = new DequeCarrierQueue(false, true);
+        Ticket a = new Ticket(1);
+        Ticket b = new Ticket(2);
+        Ticket c = new Ticket(3);
+        queue.offerLocal(a);
+        queue.offerLocal(b);
+        assertEquals(2, queue.sizeEstimate());
+        assertSame(b, queue.poll(), "the slot is served first");
+        queue.offerLocal(c);
+        assertFalse(queue.isEmpty());
+        assertSame(a, queue.poll(), "the slot was just served: the queue goes first");
+        assertSame(c, queue.poll(), "with nothing else queued the slot is served");
+        assertNull(queue.poll());
+        assertTrue(queue.isEmpty());
+    }
+
     private static void assertAllTakenOnce(AtomicIntegerArray taken, int total) {
         for (int i = 0; i < total; i++) {
             int n = taken.get(i);

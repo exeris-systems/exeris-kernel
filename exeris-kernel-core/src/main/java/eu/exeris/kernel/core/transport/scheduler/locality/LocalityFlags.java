@@ -29,6 +29,9 @@ final class LocalityFlags {
     /** How a producer decides whether the consumer carrier needs an unpark. */
     enum Wakeup { GETANDSET, READFIRST }
 
+    /** Whether pinned (poller) tasks run in arrival order with the rest or ahead of it. */
+    enum PollerPriority { FIFO, FRONT }
+
     /** Where a virtual thread that has no carrier yet is first placed. */
     enum Place { CURRENT, P2C }
 
@@ -53,6 +56,8 @@ final class LocalityFlags {
     private final boolean steal;
     private final int stealBatch;
     private final Place place;
+    private final PollerPriority pollerPriority;
+    private final boolean lifoSlot;
 
     private LocalityFlags(Function<String, String> source) {
         this.allVthreads = bool(source, "allVthreads");
@@ -78,6 +83,8 @@ final class LocalityFlags {
         this.steal = bool(source, "steal");
         this.stealBatch = stealBatch(source.apply(PREFIX + "steal.batch"));
         this.place = choice(source, "place", Place.CURRENT);
+        this.pollerPriority = choice(source, "poller.priority", PollerPriority.FIFO);
+        this.lifoSlot = bool(source, "lifoSlot");
         validate();
     }
 
@@ -141,6 +148,14 @@ final class LocalityFlags {
     }
 
     private void validate() {
+        if (pollerPriority == PollerPriority.FRONT && queue != QueueKind.DEQUE) {
+            throw new IllegalArgumentException(PREFIX + "poller.priority=front requires " + PREFIX
+                    + "queue=deque: only the deque queue keeps pinned tasks apart from the rest");
+        }
+        if (lifoSlot && !selfWakeup) {
+            throw new IllegalArgumentException(PREFIX + "lifoSlot=true requires " + PREFIX
+                    + "selfWakeup=true: the slot holds the task a carrier woke itself");
+        }
         if (steal && queue != QueueKind.DEQUE) {
             throw new IllegalArgumentException(
                     PREFIX + "steal=true requires " + PREFIX + "queue=deque: only the deque can be stolen from");
@@ -154,6 +169,14 @@ final class LocalityFlags {
                     + "carrierResolve=mounted: a stale scope binding would push to a deque "
                     + "from a thread that does not own it");
         }
+    }
+
+    PollerPriority pollerPriority() {
+        return pollerPriority;
+    }
+
+    boolean lifoSlot() {
+        return lifoSlot;
     }
 
     boolean steal() {

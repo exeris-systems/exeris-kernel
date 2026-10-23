@@ -18,6 +18,9 @@ import java.lang.Thread.VirtualThreadTask;
  *   <li>The owner takes the newest local task (last in, first out, which keeps a woken task on
  *       the cache its waker just used). Every {@value #OLDEST_TICK}th poll it takes the oldest
  *       one instead, so no local task waits for ever behind newer ones.</li>
+ *   <li>Optionally the pinned FIFO is served ahead of everything else, and a single "run next"
+ *       slot holds the task a carrier woke itself: it runs next, at most once in a row, and is not
+ *       visible to thieves.</li>
  * </ul>
  */
 final class DequeCarrierQueue implements CarrierQueue {
@@ -32,7 +35,20 @@ final class DequeCarrierQueue implements CarrierQueue {
     private Runnable[] fifo = new Runnable[16];
     private int fifoHead;
     private int fifoSize;
+    private final boolean pollersFirst;
+    private final boolean lifoSlot;
+    private Runnable slot;
+    private boolean slotJustRan;
     private int tick;
+
+    DequeCarrierQueue() {
+        this(false, false);
+    }
+
+    DequeCarrierQueue(boolean pollersFirst, boolean lifoSlot) {
+        this.pollersFirst = pollersFirst;
+        this.lifoSlot = lifoSlot;
+    }
 
     @Override
     public void offerRemote(Runnable task) {
@@ -43,6 +59,12 @@ final class DequeCarrierQueue implements CarrierQueue {
     public void offerLocal(Runnable task) {
         if (isPinned(task)) {
             fifoAdd(task);
+        } else if (lifoSlot) {
+            Runnable displaced = slot;
+            slot = task;
+            if (displaced != null) {
+                deque.push(displaced);
+            }
         } else {
             deque.push(task);
         }
@@ -50,9 +72,37 @@ final class DequeCarrierQueue implements CarrierQueue {
 
     @Override
     public Runnable poll() {
+        if (!lifoSlot) {
+            return pollQueues();
+        }
+        if (slot != null && !slotJustRan) {
+            return takeSlot();
+        }
+        Runnable task = pollQueues();
+        if (task == null && slot != null) {
+            return takeSlot();
+        }
+        slotJustRan = false;
+        return task;
+    }
+
+    private Runnable takeSlot() {
+        Runnable task = slot;
+        slot = null;
+        slotJustRan = true;
+        return task;
+    }
+
+    private Runnable pollQueues() {
         tick++;
         if ((tick & (INBOX_TICK - 1)) == 0) {
             refill();
+        }
+        if (pollersFirst) {
+            Runnable poller = fifoPoll();
+            if (poller != null) {
+                return poller;
+            }
         }
         if ((tick & (OLDEST_TICK - 1)) == 0) {
             Runnable oldest = deque.steal();
@@ -69,7 +119,10 @@ final class DequeCarrierQueue implements CarrierQueue {
             return task;
         }
         if (refill()) {
-            task = deque.pop();
+            task = pollersFirst ? fifoPoll() : null;
+            if (task == null) {
+                task = deque.pop();
+            }
             return task != null ? task : fifoPoll();
         }
         return null;
@@ -77,12 +130,12 @@ final class DequeCarrierQueue implements CarrierQueue {
 
     @Override
     public boolean isEmpty() {
-        return deque.isEmpty() && fifoSize == 0 && inbox.isEmpty();
+        return slot == null && deque.isEmpty() && fifoSize == 0 && inbox.isEmpty();
     }
 
     @Override
     public int sizeEstimate() {
-        return deque.size() + inbox.sizeEstimate() + fifoSize;
+        return deque.size() + inbox.sizeEstimate() + fifoSize + (slot != null ? 1 : 0);
     }
 
     @Override

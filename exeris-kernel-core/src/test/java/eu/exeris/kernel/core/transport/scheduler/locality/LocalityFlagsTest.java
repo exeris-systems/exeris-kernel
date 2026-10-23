@@ -75,6 +75,10 @@ class LocalityFlagsTest {
                 () -> LocalityFlags.of(Map.of("exeris.locality.yield.checkEvery", "0")));
         assertThrows(IllegalArgumentException.class,
                 () -> LocalityFlags.of(Map.of("exeris.locality.idle.spinNs", "-1")));
+        assertThrows(IllegalArgumentException.class,
+                () -> LocalityFlags.of(Map.of("exeris.locality.lifoSlot", "true")));
+        assertThrows(IllegalArgumentException.class,
+                () -> LocalityFlags.of(Map.of("exeris.locality.poller.priority", "front")));
         LocalityFlags valid = LocalityFlags.of(Map.of("exeris.locality.selfWakeup", "true",
                 "exeris.locality.queue", "deque", "exeris.locality.carrierResolve", "mounted"));
         assertTrue(valid.selfWakeup());

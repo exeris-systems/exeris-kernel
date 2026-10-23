@@ -97,7 +97,8 @@ public final class ExerisCarrierThread {
         this.factoryPreferredCarrier = flags.factoryPreferredCarrier();
         this.idleSpinNs = flags.idleSpinNs();
         this.runQueue = flags.queue() == LocalityFlags.QueueKind.DEQUE
-                ? new DequeCarrierQueue()
+                ? new DequeCarrierQueue(flags.pollerPriority() == LocalityFlags.PollerPriority.FRONT,
+                        flags.lifoSlot())
                 : new ClqCarrierQueue(flags.place() == LocalityFlags.Place.P2C);
         this.yieldCheckEvery = flags.yieldCheckEvery();
         this.readFirstWakeup = flags.wakeup() == LocalityFlags.Wakeup.READFIRST;

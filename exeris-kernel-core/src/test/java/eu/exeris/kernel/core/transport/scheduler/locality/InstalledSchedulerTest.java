@@ -133,7 +133,9 @@ class InstalledSchedulerTest {
             Map.entry("exeris.locality.yield.checkEvery", "8"),
             Map.entry("exeris.locality.steal", "true"),
             Map.entry("exeris.locality.steal.batch", "half"),
-            Map.entry("exeris.locality.place", "p2c"));
+            Map.entry("exeris.locality.place", "p2c"),
+            Map.entry("exeris.locality.poller.priority", "front"),
+            Map.entry("exeris.locality.lifoSlot", "true"));
 
     @Test
     @DisplayName("all flags on: streams and children run on locality carriers and complete")
