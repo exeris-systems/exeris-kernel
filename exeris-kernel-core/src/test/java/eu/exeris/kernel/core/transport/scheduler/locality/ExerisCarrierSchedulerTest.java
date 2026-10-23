@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("ExerisCarrierScheduler and Locality Subsystem Unit Tests")
@@ -76,5 +78,34 @@ class ExerisCarrierSchedulerTest {
         assertTrue(executed.get());
 
         group.shutdown();
+    }
+
+    @Test
+    @DisplayName("stats off: no counters exist, the snapshot is empty and reset is a no-op")
+    void statsOffHoldsNoCounters() {
+        ExerisCarrierScheduler scheduler = new ExerisCarrierScheduler(null);
+        ExerisCarrierGroup group = scheduler.carrierGroup();
+        assertNull(scheduler.stats());
+        for (int i = 0; i < group.size(); i++) {
+            assertNull(group.carrier(i).counters());
+        }
+        assertTrue(ExerisCarrierScheduler.statsSnapshot().isEmpty());
+        ExerisCarrierScheduler.resetStats();
+        group.shutdown();
+    }
+
+    @Test
+    @DisplayName("stats on: the snapshot carries every key, sorted, and is immutable")
+    void statsOnSnapshotShape() {
+        LocalityFlags flags = LocalityFlags.of(java.util.Map.of("exeris.locality.stats", "true"));
+        ExerisCarrierScheduler scheduler = new ExerisCarrierScheduler(null, flags, 2);
+        java.util.Map<String, Long> snapshot = ExerisCarrierScheduler.statsSnapshot();
+        assertTrue(snapshot.keySet().containsAll(java.util.List.of("start.factory", "start.p2c.other",
+                "continue.inbox.remote", "lifo.hits", "idle.parks", "idle.unparks.elided", "yield.budget",
+                "tasks.run", "steal.tasks", "wake.peer", "timer.scheduled", "timer.cancelled",
+                "carrier.0.tasks.run", "carrier.1.idle.parks", "carrier.1.steal.tasks")));
+        assertEquals(new java.util.TreeSet<>(snapshot.keySet()).toString(), snapshot.keySet().toString());
+        assertThrows(UnsupportedOperationException.class, () -> snapshot.put("x", 1L));
+        scheduler.carrierGroup().shutdown();
     }
 }

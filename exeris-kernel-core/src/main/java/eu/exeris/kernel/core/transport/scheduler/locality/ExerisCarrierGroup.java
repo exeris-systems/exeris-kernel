@@ -81,10 +81,19 @@ public final class ExerisCarrierGroup {
      * length estimate. Spreads new work without a global view and without hot-spotting one carrier.
      */
     ExerisCarrierThread selectShorterOfTwo() {
+        return selectShorterOfTwo(null);
+    }
+
+    /** As {@link #selectShorterOfTwo()}; counts a pick that differs from the first draw when {@code stats} is given. */
+    ExerisCarrierThread selectShorterOfTwo(SchedulerStats stats) {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         ExerisCarrierThread first = carriers[random.nextInt(carriers.length)];
         ExerisCarrierThread second = carriers[random.nextInt(carriers.length)];
-        return second.queueLengthEstimate() < first.queueLengthEstimate() ? second : first;
+        ExerisCarrierThread chosen = second.queueLengthEstimate() < first.queueLengthEstimate() ? second : first;
+        if (stats != null && chosen != first) {
+            stats.startP2cOther.increment();
+        }
+        return chosen;
     }
 
     public void shutdown() {

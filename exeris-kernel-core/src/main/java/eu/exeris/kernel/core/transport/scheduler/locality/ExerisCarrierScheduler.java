@@ -6,6 +6,8 @@ package eu.exeris.kernel.core.transport.scheduler.locality;
 
 import java.lang.Thread.VirtualThreadScheduler;
 import java.lang.Thread.VirtualThreadTask;
+import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +29,7 @@ import eu.exeris.kernel.core.transport.scheduler.locality.LocalityFlags.PollerRo
  */
 public class ExerisCarrierScheduler implements VirtualThreadScheduler {
 
+    private static final System.Logger LOG = System.getLogger(ExerisCarrierScheduler.class.getName());
     private static volatile ExerisCarrierScheduler instance;
     private static final LongAdder TIMERS_SCHEDULED = new LongAdder();
     private static final LongAdder TIMERS_CANCELLED = new LongAdder();
@@ -40,6 +43,8 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
     private final boolean timerCount;
     private final boolean selfWakeup;
     private final boolean placeP2c;
+    private final boolean stats;
+    private final SchedulerStats schedulerStats;
 
     /**
      * Counts of timed tasks the JDK handed to {@link #schedule} and of those cancelled before they
@@ -59,11 +64,46 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         this.assignAllVThreads = flags.allVthreads();
         this.resolveMounted = flags.carrierResolve() == CarrierResolve.MOUNTED;
         this.pollerRoutePreferred = flags.pollerRoute() == PollerRoute.PREFERRED;
-        this.timerCount = flags.timerCount();
+        this.timerCount = flags.timerCount() || flags.stats();
         this.selfWakeup = flags.selfWakeup();
         this.placeP2c = flags.place() == LocalityFlags.Place.P2C;
+        this.stats = flags.stats();
+        this.schedulerStats = stats ? new SchedulerStats() : null;
+        LOG.log(System.Logger.Level.INFO, "[ExerisCarrierScheduler] locality flags: {0}", flags.describe());
         this.group = new ExerisCarrierGroup(this, flags, carrierCount);
         instance = this;
+    }
+
+    /** The shared counters; {@code null} unless stats are on. */
+    SchedulerStats stats() {
+        return schedulerStats;
+    }
+
+    /**
+     * An immutable snapshot of the scheduling event counts, sorted by key. Empty when
+     * {@code exeris.locality.stats} is off or the scheduler is not installed; it never installs
+     * the scheduler. Values are monotonic but are read while the carriers run, so they are not a
+     * consistent cut.
+     */
+    public static Map<String, Long> statsSnapshot() {
+        ExerisCarrierScheduler inst = instance;
+        if (inst == null || !inst.stats) {
+            return Collections.emptyMap();
+        }
+        return inst.schedulerStats.snapshot(inst.group, timerStats());
+    }
+
+    /** Zeroes every counter that {@link #statsSnapshot()} reports; a no-op when stats are off. */
+    public static void resetStats() {
+        ExerisCarrierScheduler inst = instance;
+        if (inst == null || !inst.stats) {
+            return;
+        }
+        inst.schedulerStats.reset();
+        for (int i = 0; i < inst.group.size(); i++) {
+            inst.group.carrier(i).counters().reset();
+        }
+        resetTimerStats();
     }
 
     public static TimerStats timerStats() {
@@ -139,6 +179,27 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         }
     }
 
+    /**
+     * As {@link #dispatch}, counting how the waker related to the target carrier. The waker is
+     * resolved only when {@code selfWakeup} asks for it, so the other modes count every wakeup as
+     * remote.
+     */
+    private void dispatchCounted(ExerisCarrierThread carrier, VirtualThreadTask task) {
+        if (!selfWakeup) {
+            schedulerStats.continueInboxRemote.increment();
+            carrier.enqueue(task);
+            return;
+        }
+        ExerisCarrierThread waker = CarrierResolver.mounted();
+        if (waker == carrier) {
+            schedulerStats.continueLocal.increment();
+            carrier.enqueueLocal(task);
+        } else {
+            (waker != null ? schedulerStats.continueInboxCarrier : schedulerStats.continueInboxRemote).increment();
+            carrier.enqueue(task);
+        }
+    }
+
     /** The carrier the calling thread executes on; {@code null} when it is not on one. */
     private ExerisCarrierThread resolveCurrent() {
         return resolveMounted ? CarrierResolver.mounted() : ExerisCarrierThread.currentCarrier();
@@ -162,6 +223,9 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         if (task.attachment() instanceof CarrierSchedulingContext context) {
             ExerisCarrierThread carrier = context.carrier();
             if (carrier != null) {
+                if (stats) {
+                    schedulerStats.startFactory.increment();
+                }
                 dispatch(carrier, task);
                 return;
             }
@@ -172,6 +236,9 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
                 CarrierSchedulingContext context = new CarrierSchedulingContext(carrier.id(), carrier, true);
                 context.setVThreadId(task.thread().threadId());
                 task.attach(context);
+                if (stats) {
+                    schedulerStats.startPollerPreferred.increment();
+                }
                 dispatch(carrier, task);
                 return;
             }
@@ -183,15 +250,24 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
                         new CarrierSchedulingContext(currentCarrier.id(), currentCarrier);
                 context.setVThreadId(task.thread().threadId());
                 task.attach(context);
+                if (stats) {
+                    schedulerStats.startPollerName.increment();
+                }
                 dispatch(currentCarrier, task);
                 return;
             }
             if (assignAllVThreads && group != null && group.size() > 0) {
                 ExerisCarrierThread carrier;
                 if (placeP2c) {
-                    carrier = group.selectShorterOfTwo();
+                    carrier = group.selectShorterOfTwo(schedulerStats);
+                    if (stats) {
+                        schedulerStats.startP2c.increment();
+                    }
                 } else {
                     carrier = currentCarrier != null ? currentCarrier : group.selectCarrier();
+                    if (stats) {
+                        countPlacement(currentCarrier != null);
+                    }
                 }
                 CarrierSchedulingContext context =
                         new CarrierSchedulingContext(carrier.id(), carrier);
@@ -201,7 +277,21 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
                 return;
             }
         }
+        if (stats) {
+            schedulerStats.startBuiltin.increment();
+        }
         builtinScheduler.onStart(task);
+    }
+
+    /** Counts a placement made without {@code place=p2c}: the starter's own carrier, or a random one. */
+    private void countPlacement(boolean fromCurrent) {
+        if (!fromCurrent) {
+            schedulerStats.startRandom.increment();
+        } else if (resolveMounted) {
+            schedulerStats.startCurrentMounted.increment();
+        } else {
+            schedulerStats.startCurrentScope.increment();
+        }
     }
 
     @Override
@@ -209,10 +299,17 @@ public class ExerisCarrierScheduler implements VirtualThreadScheduler {
         if (task.attachment() instanceof CarrierSchedulingContext context) {
             ExerisCarrierThread carrier = context.carrier();
             if (carrier != null) {
-                dispatch(carrier, task);
+                if (stats) {
+                    dispatchCounted(carrier, task);
+                } else {
+                    dispatch(carrier, task);
+                }
                 return;
             }
             task.attach(null);
+        }
+        if (stats) {
+            schedulerStats.continueBuiltin.increment();
         }
         builtinScheduler.onContinue(task);
     }

@@ -37,6 +37,8 @@ final class DequeCarrierQueue implements CarrierQueue {
     private int fifoSize;
     private final boolean pollersFirst;
     private final boolean lifoSlot;
+    private final boolean stats;
+    private final CarrierCounters counters;
     private Runnable slot;
     private boolean slotJustRan;
     private int tick;
@@ -46,8 +48,15 @@ final class DequeCarrierQueue implements CarrierQueue {
     }
 
     DequeCarrierQueue(boolean pollersFirst, boolean lifoSlot) {
+        this(pollersFirst, lifoSlot, null);
+    }
+
+    /** {@code counters} is non-null only while stats are on; the owner's slot hits are counted there. */
+    DequeCarrierQueue(boolean pollersFirst, boolean lifoSlot, CarrierCounters counters) {
         this.pollersFirst = pollersFirst;
         this.lifoSlot = lifoSlot;
+        this.stats = counters != null;
+        this.counters = counters;
     }
 
     @Override
@@ -90,6 +99,9 @@ final class DequeCarrierQueue implements CarrierQueue {
         Runnable task = slot;
         slot = null;
         slotJustRan = true;
+        if (stats) {
+            counters.inc(CarrierCounters.LIFO_HITS);
+        }
         return task;
     }
 

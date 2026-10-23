@@ -66,6 +66,9 @@ public final class ExerisCarrierThread {
     private final boolean steal;
     private final int stealBatch;
     private final ExerisCarrierThread[] peers;
+    private final boolean stats;
+    private final CarrierCounters counters;
+    private final SchedulerStats sharedStats;
 
     @SuppressWarnings("unused")
     private volatile int carrierState = RUNNING;
@@ -96,9 +99,12 @@ public final class ExerisCarrierThread {
         this.yieldBudgetNs = flags.yieldBudgetNs();
         this.factoryPreferredCarrier = flags.factoryPreferredCarrier();
         this.idleSpinNs = flags.idleSpinNs();
+        this.stats = flags.stats() && scheduler != null;
+        this.counters = stats ? new CarrierCounters() : null;
+        this.sharedStats = stats ? scheduler.stats() : null;
         this.runQueue = flags.queue() == LocalityFlags.QueueKind.DEQUE
                 ? new DequeCarrierQueue(flags.pollerPriority() == LocalityFlags.PollerPriority.FRONT,
-                        flags.lifoSlot())
+                        flags.lifoSlot(), counters)
                 : new ClqCarrierQueue(flags.place() == LocalityFlags.Place.P2C);
         this.yieldCheckEvery = flags.yieldCheckEvery();
         this.readFirstWakeup = flags.wakeup() == LocalityFlags.Wakeup.READFIRST;
@@ -109,6 +115,11 @@ public final class ExerisCarrierThread {
 
     void start() {
         carrierThread.start();
+    }
+
+    /** This carrier's event counts; {@code null} unless stats are on. */
+    CarrierCounters counters() {
+        return counters;
     }
 
     /** An O(1) estimate of the queued tasks; readable from any thread. */
@@ -172,9 +183,15 @@ public final class ExerisCarrierThread {
 
     private boolean tryWake() {
         if (readFirstWakeup && (int) CARRIER_STATE.getVolatile(this) != PARKED) {
+            if (stats) {
+                sharedStats.idleUnparksElided.increment();
+            }
             return false;
         }
         if ((int) CARRIER_STATE.getAndSet(this, RUNNING) == PARKED) {
+            if (stats) {
+                sharedStats.idleUnparks.increment();
+            }
             LockSupport.unpark(carrierThread);
             Runnable wakeup = pinnedPollerWakeup;
             if (wakeup != null) {
@@ -242,6 +259,9 @@ public final class ExerisCarrierThread {
                             // shutdown is re-read with the queue: a request that raced the state
                             // change must not be slept through
                             if (runQueue.isEmpty() && !shutdown) {
+                                if (stats) {
+                                    counters.inc(CarrierCounters.IDLE_PARKS);
+                                }
                                 LockSupport.park();
                             }
                         } finally {
@@ -259,6 +279,18 @@ public final class ExerisCarrierThread {
      * arrived; on false the caller proceeds to the unchanged park handshake.
      */
     private boolean spinForWork() {
+        if (!stats) {
+            return spin();
+        }
+        counters.inc(CarrierCounters.IDLE_SPINS);
+        boolean found = spin();
+        if (found) {
+            counters.inc(CarrierCounters.SPINS_FOUND);
+        }
+        return found;
+    }
+
+    private boolean spin() {
         long deadline = System.nanoTime() + idleSpinNs;
         do {
             if (!runQueue.isEmpty() || shutdown) {
@@ -276,6 +308,18 @@ public final class ExerisCarrierThread {
      * to its carrier rather than run here.
      */
     private boolean trySteal() {
+        if (!stats) {
+            return stealFromPeers();
+        }
+        counters.inc(CarrierCounters.STEAL_ATTEMPTS);
+        boolean stole = stealFromPeers();
+        if (stole) {
+            counters.inc(CarrierCounters.STEAL_SUCCESSES);
+        }
+        return stole;
+    }
+
+    private boolean stealFromPeers() {
         int n = peers.length;
         if (n < 2) {
             return false;
@@ -304,6 +348,9 @@ public final class ExerisCarrierThread {
                 taken++;
             }
             if (taken > 0) {
+                if (stats) {
+                    counters.add(CarrierCounters.STEAL_TASKS, taken);
+                }
                 return true;
             }
         }
@@ -320,6 +367,9 @@ public final class ExerisCarrierThread {
         for (int i = 0; i < n; i++) {
             ExerisCarrierThread peer = peers[(first + i) % n];
             if (peer != null && peer != this && (int) CARRIER_STATE.getVolatile(peer) == PARKED && peer.tryWake()) {
+                if (stats) {
+                    counters.inc(CarrierCounters.WAKE_PEER);
+                }
                 return;
             }
         }
@@ -333,6 +383,9 @@ public final class ExerisCarrierThread {
             if (steal && runQueue.sizeEstimate() > 1) {
                 wakeIdlePeer();
             }
+            if (stats) {
+                counters.inc(CarrierCounters.TASKS_RUN);
+            }
             try {
                 task.run();
             } catch (Throwable t) {
@@ -341,6 +394,9 @@ public final class ExerisCarrierThread {
             if (--untilCheck == 0) {
                 untilCheck = yieldCheckEvery;
                 if (System.nanoTime() - start > yieldBudgetNs) {
+                    if (stats) {
+                        counters.inc(CarrierCounters.YIELD_BUDGET);
+                    }
                     break;
                 }
             }

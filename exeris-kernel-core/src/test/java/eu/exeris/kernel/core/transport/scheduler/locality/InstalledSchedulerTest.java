@@ -166,4 +166,62 @@ class InstalledSchedulerTest {
         assertEquals(intOf(poller, "target"), intOf(poller, "ranOn"));
         assertEquals("true", poller.get("pinned"));
     }
+
+    private static final String STARTUP_PREFIX = "[ExerisCarrierScheduler] locality flags: ";
+
+    @Test
+    @DisplayName("the scheduler logs its effective flags once at construction, at the defaults too")
+    void startupLineAtDefaults() throws Exception {
+        String output = ForkedSchedulerRunner.runForOutput("idle", Map.of(), List.of());
+        String expected = STARTUP_PREFIX + LocalityFlags.defaults().describe();
+        assertEquals(1, occurrences(output, STARTUP_PREFIX), output);
+        assertTrue(output.contains(expected), output);
+    }
+
+    @Test
+    @DisplayName("stats=false: the counter classes are never loaded and the snapshot is empty")
+    void statsOffLoadsNoCounters() throws Exception {
+        String output = ForkedSchedulerRunner.runForOutput("idle", Map.of(), List.of("-Xlog:class+load:stdout"));
+        assertTrue(output.contains("RESULT snapshotSize=0"), output);
+        for (String name : List.of("SchedulerStats", "CarrierCounters")) {
+            assertFalse(output.contains(name), name + " must not be loaded while stats are off");
+        }
+    }
+
+    @Test
+    @DisplayName("stats=true with stealing: placement, run, park and steal events are counted")
+    void statsCountEvents() throws Exception {
+        Map<String, String> properties = Map.of(
+                "exeris.locality.stats", "true",
+                "exeris.locality.queue", "deque",
+                "exeris.locality.steal", "true");
+        String output = ForkedSchedulerRunner.runForOutput("stats", properties, List.of());
+        String expected = STARTUP_PREFIX + LocalityFlags.of(properties).describe();
+        assertEquals(1, occurrences(output, STARTUP_PREFIX), output);
+        assertTrue(output.contains(expected), output);
+        Map<String, Long> stats = new java.util.HashMap<>();
+        for (String line : output.split("\n")) {
+            if (line.startsWith("STATS ")) {
+                for (String pair : line.substring("STATS ".length()).trim().split(" ")) {
+                    int eq = pair.indexOf('=');
+                    stats.put(pair.substring(0, eq), Long.parseLong(pair.substring(eq + 1)));
+                }
+            }
+        }
+        assertFalse(stats.isEmpty(), "no STATS line:\n" + output);
+        for (String key : List.of("start.factory", "tasks.run", "idle.parks", "steal.tasks", "steal.attempts",
+                "steal.successes", "continue.inbox.remote")) {
+            assertTrue(stats.get(key) > 0, key + " should be counted: " + stats);
+        }
+        assertEquals(stats.get("tasks.run"), stats.entrySet().stream()
+                .filter(e -> e.getKey().matches("carrier\\.\\d+\\.tasks\\.run")).mapToLong(Map.Entry::getValue).sum());
+    }
+
+    private static int occurrences(String text, String needle) {
+        int count = 0;
+        for (int at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+            count++;
+        }
+        return count;
+    }
 }

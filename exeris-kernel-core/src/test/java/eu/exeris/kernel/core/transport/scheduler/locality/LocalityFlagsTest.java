@@ -84,4 +84,52 @@ class LocalityFlagsTest {
         assertTrue(valid.selfWakeup());
         assertEquals(LocalityFlags.QueueKind.DEQUE, valid.queue());
     }
+
+    @Test
+    @DisplayName("describe lists every flag at its default, sorted by name")
+    void describeDefaults() {
+        assertEquals("exeris.locality.allVthreads=false exeris.locality.carrierResolve=scope "
+                + "exeris.locality.factory.preferredCarrier=false exeris.locality.idle.spinNs=0 "
+                + "exeris.locality.lifoSlot=false exeris.locality.place=current "
+                + "exeris.locality.poller.priority=fifo exeris.locality.poller.route=name "
+                + "exeris.locality.queue=clq exeris.locality.selfWakeup=false exeris.locality.stats=false "
+                + "exeris.locality.steal=false exeris.locality.steal.batch=half "
+                + "exeris.locality.timer.count=false exeris.locality.wakeup=getandset "
+                + "exeris.locality.yield.checkEvery=1 exeris.locality.yield.us=50 jdk.pollerMode=-1",
+                LocalityFlags.defaults().describe());
+    }
+
+    @Test
+    @DisplayName("describe reports every flag as set, in the canonical spelling")
+    void describeAllSet() {
+        LocalityFlags flags = LocalityFlags.of(Map.ofEntries(
+                Map.entry("exeris.locality.allVthreads", "TRUE"),
+                Map.entry("exeris.locality.carrierResolve", "Mounted"),
+                Map.entry("exeris.locality.factory.preferredCarrier", "true"),
+                Map.entry("exeris.locality.idle.spinNs", "20000"),
+                Map.entry("exeris.locality.lifoSlot", "true"),
+                Map.entry("exeris.locality.place", "P2C"),
+                Map.entry("exeris.locality.poller.priority", "Front"),
+                Map.entry("exeris.locality.poller.route", "PREFERRED"),
+                Map.entry("exeris.locality.queue", "Deque"),
+                Map.entry("exeris.locality.selfWakeup", "true"),
+                Map.entry("exeris.locality.stats", "true"),
+                Map.entry("exeris.locality.steal", "true"),
+                Map.entry("exeris.locality.steal.batch", "8"),
+                Map.entry("exeris.locality.timer.count", "true"),
+                Map.entry("exeris.locality.wakeup", "readFirst"),
+                Map.entry("exeris.locality.yield.checkEvery", "8"),
+                Map.entry("exeris.locality.yield.us", "200"),
+                Map.entry("jdk.pollerMode", "3")));
+        assertEquals("exeris.locality.allVthreads=true exeris.locality.carrierResolve=mounted "
+                + "exeris.locality.factory.preferredCarrier=true exeris.locality.idle.spinNs=20000 "
+                + "exeris.locality.lifoSlot=true exeris.locality.place=p2c "
+                + "exeris.locality.poller.priority=front exeris.locality.poller.route=preferred "
+                + "exeris.locality.queue=deque exeris.locality.selfWakeup=true exeris.locality.stats=true "
+                + "exeris.locality.steal=true exeris.locality.steal.batch=8 "
+                + "exeris.locality.timer.count=true exeris.locality.wakeup=readfirst "
+                + "exeris.locality.yield.checkEvery=8 exeris.locality.yield.us=200 jdk.pollerMode=3",
+                flags.describe());
+        assertTrue(flags.stats());
+    }
 }

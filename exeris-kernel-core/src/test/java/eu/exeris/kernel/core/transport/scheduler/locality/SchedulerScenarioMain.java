@@ -35,6 +35,8 @@ public final class SchedulerScenarioMain {
             case "resolve" -> resolve(group);
             case "poller" -> poller(group);
             case "stress" -> stress(group);
+            case "stats" -> stats(group);
+            case "idle" -> idle();
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.flush();
@@ -96,6 +98,44 @@ public final class SchedulerScenarioMain {
         System.out.println("RESULT streams=" + STREAMS + " onCustom=" + onCustom.get()
                 + " stable=" + stable.get() + " childOnCustom=" + childOnCustom.get()
                 + " timersScheduled=" + timers.scheduled() + " timersCancelled=" + timers.cancelled());
+    }
+
+    /**
+     * Waves of yielding virtual threads, all started on carrier 0, until the stealing carriers
+     * have taken work and the idle ones have parked; then every counter is printed on one
+     * {@code STATS} line.
+     */
+    private static void stats(ExerisCarrierGroup group) throws Exception {
+        ExerisCarrierScheduler.resetStats();
+        boolean stealing = Boolean.getBoolean("exeris.locality.steal");
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        do {
+            runWave(group, 400);
+            require(System.nanoTime() < deadline, "no steal or park observed: " + ExerisCarrierScheduler.statsSnapshot());
+        } while (ExerisCarrierScheduler.statsSnapshot().get("idle.parks") == 0
+                || stealing && ExerisCarrierScheduler.statsSnapshot().get("steal.tasks") == 0);
+        StringBuilder line = new StringBuilder("STATS");
+        ExerisCarrierScheduler.statsSnapshot().forEach((k, v) -> line.append(' ').append(k).append('=').append(v));
+        System.out.println(line);
+        System.out.println("RESULT done=1");
+    }
+
+    private static void runWave(ExerisCarrierGroup group, int threads) throws Exception {
+        CountDownLatch done = new CountDownLatch(threads);
+        for (int i = 0; i < threads; i++) {
+            group.carrier(0).virtualThreadFactory().newThread(() -> {
+                for (int r = 0; r < 50; r++) {
+                    Thread.yield();
+                }
+                done.countDown();
+            }).start();
+        }
+        require(done.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "wave did not complete");
+    }
+
+    /** Prints the snapshot size; the scheduler is installed but its counters are off. */
+    private static void idle() {
+        System.out.println("RESULT snapshotSize=" + ExerisCarrierScheduler.statsSnapshot().size());
     }
 
     @SuppressWarnings("unchecked")

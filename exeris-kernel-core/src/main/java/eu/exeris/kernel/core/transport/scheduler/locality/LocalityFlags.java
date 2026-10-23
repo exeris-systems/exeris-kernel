@@ -6,6 +6,7 @@ package eu.exeris.kernel.core.transport.scheduler.locality;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.function.Function;
 
 /**
@@ -42,7 +43,9 @@ final class LocalityFlags {
     enum PollerRoute { NAME, PREFERRED }
 
     private final boolean allVthreads;
-    private final boolean perCarrierPollers;
+    private final int pollerMode;
+    private final long yieldUs;
+    private final boolean stats;
     private final long yieldBudgetNs;
     private final CarrierResolve carrierResolve;
     private final PollerRoute pollerRoute;
@@ -61,9 +64,10 @@ final class LocalityFlags {
 
     private LocalityFlags(Function<String, String> source) {
         this.allVthreads = bool(source, "allVthreads");
-        this.perCarrierPollers = intValue(source, "jdk.pollerMode", -1) == 3;
-        this.yieldBudgetNs = java.util.concurrent.TimeUnit.MICROSECONDS.toNanos(
-                longValue(source, PREFIX + "yield.us", 50));
+        this.pollerMode = intValue(source, "jdk.pollerMode", -1);
+        this.yieldUs = longValue(source, PREFIX + "yield.us", 50);
+        this.yieldBudgetNs = java.util.concurrent.TimeUnit.MICROSECONDS.toNanos(yieldUs);
+        this.stats = bool(source, "stats");
         this.carrierResolve = choice(source, "carrierResolve", CarrierResolve.SCOPE);
         this.pollerRoute = choice(source, "poller.route", PollerRoute.NAME);
         this.factoryPreferredCarrier = bool(source, "factory.preferredCarrier");
@@ -108,7 +112,43 @@ final class LocalityFlags {
     }
 
     boolean perCarrierPollers() {
-        return perCarrierPollers;
+        return pollerMode == 3;
+    }
+
+    /** Whether the scheduler counts its scheduling events. */
+    boolean stats() {
+        return stats;
+    }
+
+    /**
+     * The effective value of every flag this class parses, as {@code name=value} pairs sorted by
+     * name and joined by single spaces. Values use the spelling the parser accepts in lower case,
+     * so a line can be turned back into system properties.
+     */
+    String describe() {
+        Map<String, String> effective = new TreeMap<>();
+        effective.put(PREFIX + "allVthreads", String.valueOf(allVthreads));
+        effective.put(PREFIX + "carrierResolve", carrierResolve.name().toLowerCase(Locale.ROOT));
+        effective.put(PREFIX + "factory.preferredCarrier", String.valueOf(factoryPreferredCarrier));
+        effective.put(PREFIX + "idle.spinNs", String.valueOf(idleSpinNs));
+        effective.put(PREFIX + "lifoSlot", String.valueOf(lifoSlot));
+        effective.put(PREFIX + "place", place.name().toLowerCase(Locale.ROOT));
+        effective.put(PREFIX + "poller.priority", pollerPriority.name().toLowerCase(Locale.ROOT));
+        effective.put(PREFIX + "poller.route", pollerRoute.name().toLowerCase(Locale.ROOT));
+        effective.put(PREFIX + "queue", queue.name().toLowerCase(Locale.ROOT));
+        effective.put(PREFIX + "selfWakeup", String.valueOf(selfWakeup));
+        effective.put(PREFIX + "stats", String.valueOf(stats));
+        effective.put(PREFIX + "steal", String.valueOf(steal));
+        effective.put(PREFIX + "steal.batch", stealBatch == 0 ? "half" : String.valueOf(stealBatch));
+        effective.put(PREFIX + "timer.count", String.valueOf(timerCount));
+        effective.put(PREFIX + "wakeup", wakeup.name().toLowerCase(Locale.ROOT));
+        effective.put(PREFIX + "yield.checkEvery", String.valueOf(yieldCheckEvery));
+        effective.put(PREFIX + "yield.us", String.valueOf(yieldUs));
+        effective.put("jdk.pollerMode", String.valueOf(pollerMode));
+        StringBuilder line = new StringBuilder();
+        effective.forEach((name, value) -> line.append(line.isEmpty() ? "" : " ").append(name).append('=')
+                .append(value));
+        return line.toString();
     }
 
     long yieldBudgetNs() {
