@@ -182,6 +182,41 @@ policies unless the table is forced. An application connecting as the role that 
 default in every quick-start) otherwise gets a policy that is enabled, listed in `pg_policies`, and
 never applied: no error, and other tenants' rows in every read.
 
+### Writes pin the scope tag (ADR-012 §4c.2, since 0.13)
+
+The reference owner policy pins the shared-scope tag of a written row as well as its owner, so a row's
+own column never grants visibility that no verified token carried:
+
+```sql
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON table_name
+  USING (tenant_id = current_setting('exeris.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)
+              AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
+
+CREATE POLICY shared_scope_read ON table_name FOR SELECT
+  USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''));
+```
+
+- **Scoped by token only.** A written row is tenant-private or carries the scope the request published;
+  an insert or update tagging a row with any other scope fails, and so does tagging a row from a request
+  that published no scope.
+- **`''` and `NULL` are always admissible.** Both are tenant-private; `NULL` needs a nullable tag column,
+  and `COALESCE` is what keeps a `NULL` tag from evaluating the check to `NULL`.
+- **Un-sharing is admitted.** An owner may re-tag its own row to `''` from a request that does not carry
+  the row's scope, because narrowing visibility widens nothing.
+- **Keeping a tag from a request without the scope is refused.** `WITH CHECK` sees only the new row, so
+  an owner whose request lacks scope `S` cannot update a row tagged `S` and leave the tag in place.
+
+Moving a row from a scope the request does not hold into the scope it publishes is admitted by this
+policy, for the same reason. A per-deployment trigger comparing old and new rows can refuse both that
+and the keep-tag case; the kernel ships no such trigger, and the matrix TCK pins neither.
+
+The tenant arm shown is the `TEXT` form. Update `tenant_isolation` on an existing deployment with
+`ALTER POLICY` (see `MIGRATION.md`).
+
 Placement decides which connection a request lands on; it does not decide what the previous borrower
 left in the session. `set_config(..., false)` is session-scoped, so with `persistence.perTenantPooling`
 at its default of `false` a Dedicated-Schema request is served from the pool a Shared-Schema request

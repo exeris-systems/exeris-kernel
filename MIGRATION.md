@@ -24,6 +24,35 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.12.x → 0.13 — the shared-scope reference policy pins the tag on write (ADR-012 §4c.2)
+
+The reference `tenant_isolation` policy used to pin only `tenant_id` on write, so an owner could insert or
+update its own row carrying any `shared_scope` value, including a scope its request does not hold. Its
+`WITH CHECK` now pins the tag too.
+
+**Who is affected.** A deployment that copied the reference policy from `RlsConnectionInterceptor` or
+`docs/subsystems/persistence.md`, and an out-of-repo binding of `AbstractSharedScopeAccessMatrixTck`.
+The kernel ships no DDL, so nothing changes until you change the policy.
+
+1. **Replace the `WITH CHECK` of the owner policy** on every table that carries a shared-scope column:
+
+   ```sql
+   ALTER POLICY tenant_isolation ON table_name
+     WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)
+                 AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
+   ```
+
+2. **Expect the new failure.** An insert or update that tags a row with a scope the request does not
+   publish, or that leaves a scope tag in place from a request lacking that scope, fails with
+   `EX-PERS-5003` (SQLSTATE `42501`). To stop sharing such a row, re-tag it to `''` (or `NULL` where the
+   column allows it), which the policy admits.
+3. **Bind the matrix TCK.** An implementation of `AbstractSharedScopeAccessMatrixTck` overrides the new
+   `retagScope(StorageContext, String, String)`, which sets a row's tag (`null` for none) and returns the
+   affected row count or throws `PersistenceProviderException`. The default throws
+   `UnsupportedOperationException`, so a binding that does not fails the tag cells instead of skipping them.
+
+---
+
 ## 0.12.x → 0.13 — a send to a peer that ended the stream throws the closed-stream signal
 
 A `write` or `queueWrite` on a Community TCP or TLS stream whose peer reset or closed it, or ended the TLS
