@@ -44,7 +44,9 @@ import java.util.concurrent.TimeUnit;
  *                               durable {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}
  *                               (when {@code persistenceEnabled = true}) to honor the idempotency
  *                               fence — see {@code docs/subsystems/flow.md}
- *                               §Terminal-State Catalog Retention. (since 0.7.0)
+ *                               §Terminal-State Catalog Retention. The engine then writes one durable row per finished
+ *                               instance and never reclaims it; storage retention belongs to the
+ *                               store's binder. (since 0.7.0)
  * @param defaultSagaTimeoutShortNanos baseline timeout for short-lived (transactional) sagas;
  *                                     {@link #DEFAULT_SAGA_TIMEOUT_SHORT_NANOS} = 30 s. Exposed for
  *                                     callers that classify saga lifetimes when constructing a
@@ -257,7 +259,8 @@ public record FlowEngineConfig(
      *          the deployment's density target before using this in production. Keep
      *          {@code persistenceEnabled} on while {@code terminalCatalogMaxSize > 0}: an evicted
      *          catalog entry has to stay recoverable from the snapshot store for the resubmit fence
-     *          to hold.
+     *          to hold. The engine adds one durable row per finished instance and reclaims none;
+     *          the binder owns their retention, and deleting a row reopens that instance id.
      */
     public static FlowEngineConfig enterpriseDefaults(String engineName) {
         return new FlowEngineConfig(

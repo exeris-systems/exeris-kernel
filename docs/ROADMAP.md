@@ -60,13 +60,16 @@ Community tier follows a **best-effort performance contract**:
 
 **Merge Gate:** Architecture sign-off on retention semantics in subsystem docs; if SPI/config surface changes, extend Flow TCK before release.
 
-**Status (v0.13): PARTIALLY DELIVERED — the limit exists and no test exercises it.**
+**Status (v0.13): DELIVERED — exercised by `CoreFlowRuntimeBoundedTerminalFenceTest`, with row retention owned by the binder.**
 `FlowEngineConfig.terminalCatalogMaxSize` bounds `CoreFlowRuntime`'s terminal-state catalog as an LRU
 (`0`, the default, is unbounded; `enterpriseDefaults` sets 100 000), and an evicted key falls back to
 `FlowSnapshotStore` for the idempotency fence; `flow.md` §"Terminal-State Catalog Retention" records
-the semantics (v0.7.0, ADR-013). The config surface changed, so the Merge Gate's second clause
-applies, and it is unmet: no TCK or test configures a size above `0`, so eviction and the
-snapshot-store fallback run in no build.
+the semantics (v0.7.0, ADR-013). In bounded mode with a snapshot store, completion replaces the
+instance's row with a `COMPLETED` snapshot, so a finished flow stays finished after an eviction or a
+restart. The Merge Gate's second clause is met by `CoreFlowRuntimeBoundedTerminalFenceTest`, the
+`AbstractSagaRecoveryTck` bounded cases and the terminal-snapshot cases of
+`AbstractDistributedFlowSnapshotStoreTck`. The kernel reclaims no terminal row (the saga TTL eviction
+half was never built), so storage retention belongs to the store's binder.
 
 See also: [Flow Subsystem](./subsystems/flow.md) — Known Constraints.
 
@@ -452,7 +455,7 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 **Merge Gate:** Restart/recovery tests pass for durable Community snapshot storage.
 
-**Status (v0.7):** **DELIVERED** under EPIC-1 in Sprints 3 and 4 — `JdbcFlowSnapshotStore` + `exeris_saga_state` DDL + auto-DDL bootstrap (Sprint 3); `lookupParked` snapshot fallback, bounded terminal-state catalog, saga TTL enforcement, `FlowEngineShutdownEvent` JFR (Sprint 4). `AbstractDistributedFlowSnapshotStoreTck` + `AbstractSagaRecoveryTck` Community Testcontainers PostgreSQL bindings green. ADR-013 signed off.
+**Status (v0.7):** **DELIVERED** under EPIC-1 in Sprints 3 and 4 — `JdbcFlowSnapshotStore` + `exeris_saga_state` DDL + auto-DDL bootstrap (Sprint 3); `lookupParked` snapshot fallback, bounded terminal-state catalog, saga timeout enforcement, `FlowEngineShutdownEvent` JFR (Sprint 4). TTL-based eviction of `exeris_saga_state` rows was not built; retention of terminal rows belongs to the binder (see the 0.13 status of the terminal-state catalog item). `AbstractDistributedFlowSnapshotStoreTck` + `AbstractSagaRecoveryTck` Community Testcontainers PostgreSQL bindings green. ADR-013 signed off.
 
 ---
 
@@ -813,7 +816,7 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
   - `FlowEngineConfig.defaultSagaTimeoutShort` (e.g. 30 s for transactional sagas)
   - `FlowEngineConfig.defaultSagaTimeoutLong` (e.g. 30 days for long-running business process sagas)
   - Timeout enforcement in the scheduler: on wake, check `snapshot.timeout().isBefore(Instant.now())` → trigger compensation path
-  - TTL-based eviction from `terminalStateCatalog` and `exeris_saga_state` table (configurable retention period)
+  - TTL-based eviction from `terminalStateCatalog` and `exeris_saga_state` table (configurable retention period). *Not built: timeout enforcement was delivered, row eviction was not, and retention of terminal rows belongs to the binder.*
   - JFR event: `FlowTimeoutEvent` with fields `definitionName`, `instanceIdMost`, `instanceIdLeast`, `timeoutAt`
 - **Acceptance:** `AbstractFlowEngineTck` test for timeout-triggered compensation; TCK passes.
 

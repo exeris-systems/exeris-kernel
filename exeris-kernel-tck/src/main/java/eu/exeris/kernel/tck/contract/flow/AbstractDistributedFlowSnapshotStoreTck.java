@@ -231,6 +231,62 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
             assertThatThrownBy(() -> store.save(staleAttempt))
                     .isInstanceOf(FlowEngineException.class);
         }
+
+        @Test
+        @DisplayName("Terminal snapshots (COMPLETED, FAILED_ROLLEDBACK) round-trip with every field intact")
+        void terminalSnapshotRoundTrips() {
+            for (FlowState terminal : List.of(FlowState.COMPLETED, FlowState.FAILED_ROLLEDBACK)) {
+                UUID id = UUID.randomUUID();
+                FlowSnapshot original = snapshot(id, terminal, 4, FlowSnapshot.SCHEMA_VERSION_INITIAL);
+
+                store.save(original);
+
+                FlowSnapshot got = store.load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                        .orElseThrow();
+                assertThat(got.state()).isEqualTo(terminal);
+                assertThat(got.currentStep()).isEqualTo(4);
+                assertThat(got.currentStepName()).isEqualTo(original.currentStepName());
+                assertThat(got.compensationStack()).containsExactly(7, 9);
+                assertThat(got.compensationStepNames()).containsExactly("step-7", "step-9");
+                assertThat(got.stackPointer()).isEqualTo(original.stackPointer());
+                assertThat(got.opaqueState()).containsExactly(0x01, 0x02);
+                assertThat(got.schemaVersion()).isEqualTo(original.schemaVersion() + 1L);
+            }
+
+            // A completion recorded past the last step has no step name to carry.
+            UUID past = UUID.randomUUID();
+            FlowSnapshot completed = new FlowSnapshot(
+                    past.getMostSignificantBits(), past.getLeastSignificantBits(), "demo-saga",
+                    FlowDefinition.INITIAL_VERSION, 9, Optional.empty(), FlowState.COMPLETED,
+                    Instant.parse("2026-05-02T10:00:00Z"), Instant.parse("2026-05-02T11:00:00Z"),
+                    new int[0], new String[0], 0, new byte[0], FlowSnapshot.SCHEMA_VERSION_INITIAL);
+
+            store.save(completed);
+
+            FlowSnapshot got = store.load(past.getMostSignificantBits(), past.getLeastSignificantBits())
+                    .orElseThrow();
+            assertThat(got.state()).isEqualTo(FlowState.COMPLETED);
+            assertThat(got.currentStep()).isEqualTo(9);
+            assertThat(got.currentStepName()).isEmpty();
+            assertThat(got.schemaVersion()).isEqualTo(completed.schemaVersion() + 1L);
+        }
+
+        @Test
+        @DisplayName("A COMPLETED snapshot replaces a PARKED row under the loaded version")
+        void completedSnapshotReplacesParkedUnderTheLoadedVersion() {
+            UUID id = UUID.randomUUID();
+            store.save(snapshot(id, FlowState.PARKED, 1, FlowSnapshot.SCHEMA_VERSION_INITIAL));
+            FlowSnapshot parked = store.load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                    .orElseThrow();
+
+            store.save(snapshot(id, FlowState.COMPLETED, 2, parked.schemaVersion()));
+
+            FlowSnapshot got = store.load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                    .orElseThrow();
+            assertThat(got.state()).isEqualTo(FlowState.COMPLETED);
+            assertThat(got.schemaVersion()).isEqualTo(parked.schemaVersion() + 1L);
+            assertThat(store.exists(id.getMostSignificantBits(), id.getLeastSignificantBits())).isTrue();
+        }
     }
 
     @Nested
@@ -301,6 +357,22 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
             assertThat(parked).allSatisfy(s -> assertThat(s.state()).isEqualTo(FlowState.PARKED));
             assertThat(parked).extracting(FlowSnapshot::instanceIdMost)
                     .containsExactlyInAnyOrder(parkedA.getMostSignificantBits(), parkedB.getMostSignificantBits());
+        }
+
+        @Test
+        @DisplayName("A row replaced by a COMPLETED snapshot is no longer listed as parked")
+        void rowReplacedByCompletedIsNotListed() {
+            UUID id = UUID.randomUUID();
+            store.save(snapshot(id, FlowState.PARKED, 1, FlowSnapshot.SCHEMA_VERSION_INITIAL));
+            FlowSnapshot parked = store.load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                    .orElseThrow();
+            assertThat(store.listParked()).extracting(FlowSnapshot::instanceIdMost)
+                    .contains(id.getMostSignificantBits());
+
+            store.save(snapshot(id, FlowState.COMPLETED, 2, parked.schemaVersion()));
+
+            assertThat(store.listParked()).extracting(FlowSnapshot::instanceIdMost)
+                    .doesNotContain(id.getMostSignificantBits());
         }
 
         @Test

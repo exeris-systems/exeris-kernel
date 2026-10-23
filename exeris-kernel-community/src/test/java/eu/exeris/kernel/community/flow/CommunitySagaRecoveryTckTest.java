@@ -27,11 +27,21 @@ class CommunitySagaRecoveryTckTest extends AbstractSagaRecoveryTck {
     }
 
     @Override
+    protected FlowEngine createBoundedEngine(int terminalCatalogMaxSize) {
+        return new ScopedStoreFlowEngine(
+                provider.createEngine(persistenceConfig(terminalCatalogMaxSize)), sharedStore);
+    }
+
+    @Override
     protected FlowSnapshotStore snapshotStore() {
         return sharedStore;
     }
 
     private static FlowEngineConfig persistenceConfig() {
+        return persistenceConfig(0);
+    }
+
+    private static FlowEngineConfig persistenceConfig(int terminalCatalogMaxSize) {
         FlowEngineConfig defaults = FlowEngineConfig.defaults("Community/HeapFlow");
         return new FlowEngineConfig(
                 defaults.engineName(),
@@ -44,7 +54,10 @@ class CommunitySagaRecoveryTckTest extends AbstractSagaRecoveryTck {
                 defaults.partitionName(),
                 defaults.partitionBytes(),
                 true,
-                defaults.compensationEnabled()
+                defaults.compensationEnabled(),
+                terminalCatalogMaxSize,
+                defaults.defaultSagaTimeoutShortNanos(),
+                defaults.defaultSagaTimeoutLongNanos()
         );
     }
 }

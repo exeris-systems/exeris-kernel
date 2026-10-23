@@ -196,5 +196,17 @@
     "since": "0.13",
     "adr": "ADR-088",
     "justification": "TCK contract, source-breaking for bindings: verifyManifest takes a TckKeyScope, and a new abstract decide hook runs the contract gate's decision for a declared environment and the requirements of each entitlement class. Tests 5 to 8 refuse an environment, a validity, a workload envelope and a requirement class outside the signing key's scope, and further cases pin the rule levels, the order of the checks and EX-LIC-0005 in every environment. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.flow.AbstractSagaRecoveryTck#createBoundedEngine(int)",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "TCK contract: AbstractSagaRecoveryTck gains BoundedTerminalCatalogFence, which asserts that a completed saga stays completed after a bounded terminal catalog evicts it or the engine restarts (a resubmit is absorbed as terminal, lookupParked is empty, a wake is refused NOT_PARKED). The cases build their engine through the new template method createBoundedEngine(int terminalCatalogMaxSize), which throws UnsupportedOperationException by default, so an existing binding fails them until it implements it; a skip would report green. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.flow.model.FlowSnapshotStore#save(eu.exeris.kernel.spi.flow.model.FlowSnapshot)",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the implementor obligation is stated. save must accept a snapshot in any FlowState, COMPLETED and FAILED_ROLLEDBACK included, and load must return it as written, because under a bounded terminal catalog the engine replaces an instance's row with a COMPLETED snapshot on completion and relies on it as the proof of completion after an eviction or a restart. A store that kept only PARKED rows, or filtered load by state, loses that proof; AbstractDistributedFlowSnapshotStoreTck now checks both. The stability matrix records it as a 0.13 behavioural note on spi.flow. The SPI compatibility gate diffs signatures only and does not read this entry."
   }
 ]
