@@ -1,3 +1,12 @@
+---
+title: "ADR-057: Adopt a JobScheduler SPI dispatching on virtual threads, without a scheduled executor"
+type: adr
+slug: adr/ADR-057
+visibility: public
+owning-repo: exeris-kernel
+status: active
+---
+
 # ADR-057: Adopt a `JobScheduler` SPI dispatching on virtual threads, without a scheduled executor
 
 | Attribute       | Value                                                                                      |
