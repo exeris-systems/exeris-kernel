@@ -1,5 +1,29 @@
 [ {
-  "t" : 1792738510128,
+  "t" : 1792824707487,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.UUID",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792824707487,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.UUID",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792824707496,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "[B",
   "thread" : "main",
@@ -8,34 +32,10 @@
   "sizeKind" : "sample_weight",
   "kind" : "array",
   "category" : "test_harness",
-  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:78)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792738510128,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[B",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "array",
-  "category" : "test_harness",
-  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:78)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792738510131,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[B",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261544,
-  "sizeKind" : "sample_weight",
-  "kind" : "array",
-  "category" : "test_harness",
   "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
   "stackId" : "stk_0002"
 }, {
-  "t" : 1792738510131,
+  "t" : 1792824707496,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "[B",
   "thread" : "main",
