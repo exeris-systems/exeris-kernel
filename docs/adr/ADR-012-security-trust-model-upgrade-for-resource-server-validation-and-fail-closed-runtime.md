@@ -18,6 +18,7 @@ status: active
 | **Amended**    | 2026-07-29 — §4a/§4b/§9/§10: adds the **shared-scope tier** as an orthogonal row-visibility dimension (`sharedScopeKey`), rules its carrier shape / claim name / binding-gate interpretation, and re-points the isolation mapping site from `SecurityProvider.authenticate()` to `IdentityStorageMapping.fromClaims` per ADR-040 (implements `RFC-2026-07-02`) |
 | **Amended**    | 2026-10-07 — **ACCEPTED** (2026-10-08), §4c/§4b.4/§10/§11: rules the persistence-boundary questions of the 0.13 milestone — no principal session key and no field-level encryption at rest in the kernel at 1.0 (#585), the write check pins the shared-scope tag (#611), what an absent session key yields, and a boot check on a role that bypasses row-level security (#581) |
 | **Amended**    | 2026-10-23 — §4c.2/§9/§10: records how the 0.13 implementation of the tag-pinning write check resolves the points §4c.2 left to it — the matrix carries nine tag cells with direction controls, the Community binding uses a nullable tag column, and a move from a scope the request does not hold into the one it publishes is admitted and not a conformance cell |
+| **Amended**    | 2026-10-23 — §4c.4/§10: records how the 0.13 implementation of the bypass-role check resolves the points §4c.4 left to it — the check runs when the RLS interceptor is registered, dedicated pools are refused at their first request, a probe that cannot run is refused whatever the key says, and the suite is abstract (see Amendments) |
 | **Driven By**  | ADR-007, performance contract, subsystem contracts security/transport/persistence      |
 | **Compliance** | [Strategic Pillar: Secure Fail-Closed Resource-Server Trust](../whitepaper.md)        |
 
@@ -179,6 +180,8 @@ Four questions about what the kernel promises at the database session, raised by
 recommendation, and the reasons. The owner ruled on 2026-10-08 that each point takes the recommended
 option. Nothing in this section is implemented: every behaviour change it names is planned for 0.13.
 The points the recommendations left open were ruled by the owner on the same date.
+_(Amended 2026-10-23: the paragraph above and the measured state below describe 2026-10-08; §4c.2 and
+§4c.4 are implemented in 0.13 — see Amendments.)_
 
 Measured state the rulings build on:
 
@@ -394,12 +397,12 @@ standing: the isolation it configured (`persistence.rlsEnabled`) is not applied.
 connect that way, for example a local quick-start as the database superuser, says so in configuration
 and is told about it on every boot.
 
-Shape, planned for 0.13; the code and the event are **to be registered** with the
-implementation:
+Shape, implemented in 0.13 (the four points the implementation resolves are recorded under Amendments):
 
 - **When:** on the first connection of each pool the engine creates while the RLS interceptor is
-  installed. Each pool may log in as a different role, and the check costs one query per pool, never per
-  request.
+  installed _(Amended 2026-10-23: when the interceptor is registered, for the shared pool; for a
+  dedicated pool, before it is first used — see Amendments.)_ Each pool may log in as a different
+  role, and the check costs one query per pool, never per request.
 - **What:** `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`. Either value
   `true` is a bypass. An engine whose database is not PostgreSQL skips the check.
 - **Key:** `persistence.rlsAllowBypassRole`, `boolean`, default `false`, immutable. The name follows the
@@ -413,7 +416,8 @@ implementation:
   named `eu.exeris.kernel.persistence.RlsBypassRole`, carrying the same three fields.
 - **TCK / IT:** a PostgreSQL integration test connecting as a `BYPASSRLS` role sees the refused boot
   by default and the error plus the event with the key set; a `NOSUPERUSER NOBYPASSRLS` role boots
-  unchanged.
+  unchanged. _(Amended 2026-10-23: the suite is `AbstractRlsBypassRoleCheckTck`, bound by a Community
+  PostgreSQL integration test — see Amendments.)_
 
 Limits, stated so the check is not read as more than it is:
 
@@ -510,9 +514,11 @@ Limits, stated so the check is not read as more than it is:
   `RlsConnectionInterceptor` javadoc and `docs/subsystems/persistence.md`), the Community binding
   `CommunityPersistenceSharedScopeIT` installing it on a nullable tag column, and the tag cells of
   `AbstractSharedScopeAccessMatrixTck` with its `retagScope` template method (see Amendments).
-- **Planned for 0.13 (§4c, ACCEPTED 2026-10-08):** the raise-on-absent-tenant reference policy (§4c.3);
-  the bypass-role boot check with `persistence.rlsAllowBypassRole`, `EX-PERS-5009` and its JFR event
-  (§4c.4). None of it is implemented.
+- **Implemented now (§4c.4, 0.13):** the bypass-role boot check: `persistence.rlsAllowBypassRole`,
+  `EX-PERS-5009` and the JFR event `eu.exeris.kernel.persistence.RlsBypassRole`, with
+  `AbstractRlsBypassRoleCheckTck` bound by the Community engine against live PostgreSQL.
+- **Planned for 0.13 (§4c, ACCEPTED 2026-10-08):** the raise-on-absent-tenant reference policy
+  (§4c.3). It is not implemented.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.
 - Anti-drift rule: if code differs from ADR text, update implementation plus TCK or amend ADR before merge.
@@ -628,3 +634,36 @@ tenant so that a binding whose `retagScope` does nothing and returns 1 cannot pa
   visibility, `S`, is what the token authorizes; leaving `T` only narrows. A stricter deployment trigger
   that refuses it, or that refuses keeping a tag from a request lacking the scope, stays conforming, so
   the matrix pins neither.
+
+### 2026-10-23 — §4c.4: how the bypass-role check is implemented
+
+§4c.4 fixed the ruling, the key, the code and the event, and left the timing and the test host to the
+implementation. The implementation resolves four points:
+
+- **The check runs when the RLS interceptor is registered, not on the pool's first connection.** The
+  engine opens shared-pool connections before any interceptor can be registered, for migrations and
+  pool warm-up, so "the first connection while the interceptor is installed" cannot be observed there.
+  Registration of `RlsConnectionInterceptor` is the earliest point at which the premise holds, and it is
+  the one signal that both the bootstrap path and direct construction pass through. Migrations and
+  warm-up therefore run as the connecting role before the check; the kernel's own tables carry no policy,
+  so nothing is exposed by it. A refusal at registration stands for the whole engine: the bootstrap path
+  closes the engine, and a direct caller owns it.
+- **Tenant pools are covered by the shared probe; dedicated pools are probed before publication.** Tenant
+  pools reuse the shared pool's URL and credentials. A dedicated pool is built lazily, on the first
+  request routed to it, possibly with other credentials, so "refuse the boot" cannot hold for it. It is
+  probed before it is published, refused at that first request with `EX-PERS-5009`, and the refusal is
+  remembered so later requests are refused without a new connection. The engine's
+  `persistence.rlsAllowBypassRole` governs dedicated pools.
+- **A probe that cannot run is `EX-PERS-5001` and the key does not downgrade it.** The key consents to a
+  role known to bypass, not to one whose attributes are unknown. The remedy of `EX-PERS-5009`, a role
+  change, does not fit a probe failure, which is a bootstrap failure.
+- **PostgreSQL is detected through the `DatabaseMetaData` product name, and the suite is
+  `AbstractRlsBypassRoleCheckTck`.** A URL prefix test misses wrapped drivers. §9 makes a contract change
+  incomplete without an abstract suite and both binding layers, so the TCK / IT line of §4c.4 is met by the
+  abstract suite plus the Community binding. The downgrade's log line and event are asserted in the
+  binding, because the TCK depends on the SPI only.
+
+Two status lines were brought to repository state with this entry: the §4c.4 lead-in, which read
+"Shape, planned for 0.13; the code and the event are to be registered with the implementation", now
+reads "Shape, implemented in 0.13", and §10 lists §4c.4 under "Implemented now" instead of "Planned for
+0.13". The shape itself is unchanged.

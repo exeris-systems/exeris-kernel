@@ -26,6 +26,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *       dedicated-datasource routing failure</li>
  *   <li>{@value KernelErrorCodes#EX_PERS_5007} — No provider on the classpath</li>
  *   <li>{@value KernelErrorCodes#EX_PERS_5008} — Column type outside the accessor's domain</li>
+ *   <li>{@value KernelErrorCodes#EX_PERS_5009} — Connected role bypasses row-level security</li>
  * </ul>
  *
  * @apiNote Construct instances only through the static factories below: each one owns the
@@ -49,6 +50,7 @@ public final class PersistenceProviderException extends ExerisKernelException {
     private static final String TRANSPORT_MSG = "Persistence transport I/O failure";
     private static final String INTERCEPTOR_MSG = "Persistence interceptor initialization failure";
     private static final String UNSUPPORTED_TYPE_MSG = "Column type outside the accessor's domain";
+    private static final String BYPASS_ROLE_MSG = "Connected role bypasses row-level security";
 
     // -----------------------------------------------------------------------
     // Private constructor — use static factories
@@ -254,5 +256,27 @@ public final class PersistenceProviderException extends ExerisKernelException {
         return new PersistenceProviderException(
                 KernelErrorCodes.EX_PERS_5008, UNSUPPORTED_TYPE_MSG, null,
                 declaredTypeName, columnIndex, accessor);
+    }
+
+    /**
+     * The connected role bypasses row-level security while the RLS interceptor is installed
+     * (ADR-012 §4c.4).
+     *
+     * <p>A role with {@code SUPERUSER} or {@code BYPASSRLS} skips every policy, {@code FORCE}d ones
+     * included, so isolation would rest on application code. Remedy: connect as a role that has
+     * neither attribute, or consent explicitly with {@code persistence.rlsAllowBypassRole=true}.
+     *
+     * @param providerName provider id, e.g. {@code "ExerisCommunity/JDBC"}
+     * @param roleName     the role the pool connects as
+     * @param attribute    {@code "SUPERUSER"}, {@code "BYPASSRLS"} or {@code "SUPERUSER,BYPASSRLS"}
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5009} with rawArgs:
+     *         [providerName, roleName, attribute]
+     * @since 0.13
+     */
+    public static PersistenceProviderException rlsBypassRole(
+            String providerName, String roleName, String attribute) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5009, BYPASS_ROLE_MSG, null,
+                providerName, roleName, attribute);
     }
 }

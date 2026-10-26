@@ -169,6 +169,7 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.persistence.PersistenceEngineBootstrapEvent",
             "eu.exeris.kernel.core.persistence.PersistenceTenantPoolCreatedEvent",
             "eu.exeris.kernel.core.persistence.PersistenceTenantPoolReclaimedEvent",
+            "eu.exeris.kernel.core.persistence.RlsBypassRoleEvent",
             "eu.exeris.kernel.core.persistence.SchemaMigrationRefusedEvent",
             "eu.exeris.kernel.core.scheduling.SchedulingBootstrapSelectedEvent",
             "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$RoleRegistryLoadedEvent",

@@ -111,7 +111,9 @@ into the DB connection state. A missing `StorageContext` is equivalent to a miss
 > `RlsConnectionInterceptor`'s javadoc) that key matches no tenant row, and `WITH CHECK` refuses every
 > write: a conforming deployment fails closed at the database. Rows are exposed only where the deployment
 > departs from that policy — a policy with an arm that admits the empty key (a "system" arm), or a
-> scoped table that is not `FORCE`'d while the application connects as its owner.
+> scoped table that is not `FORCE`'d while the application connects as its owner, or an application
+> that connects as a role with `SUPERUSER` or `BYPASSRLS` (refused at boot since 0.13 unless
+> `persistence.rlsAllowBypassRole` is set).
 >
 > **What the kernel reports.** When a `permitAll()` route's request session was opened for a storage
 > context that declares no tenant — an absent or blank isolation key, the case in which the tenant key is

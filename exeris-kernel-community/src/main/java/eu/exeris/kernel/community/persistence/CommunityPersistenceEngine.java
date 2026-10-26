@@ -81,6 +81,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
     private static final Runnable NOOP_ON_CLOSE = () -> { };
     private static final String REQUIRED_SHARED_INTERCEPTOR = "RlsConnectionInterceptor";
     private static final String RUN_MIGRATIONS_KEY = "run.migrations";
+    private static final String ALLOW_BYPASS_ROLE_KEY = "rls.allowBypassRole";
 
     private final PersistenceConfig config;
     private final HikariDataSource sharedPool;
@@ -90,6 +91,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
     private final List<ConnectionInterceptor> interceptors;
     private final AtomicReference<List<ConnectionInterceptor>> interceptorSnapshot;
     private final AtomicBoolean firstConnectionOpened = new AtomicBoolean(false);
+    private final AtomicBoolean rlsRoleCheckArmed = new AtomicBoolean(false);
+    private final boolean allowBypassRole;
     private final CommunityPersistenceAdmissionController admissionController =
             new CommunityPersistenceAdmissionController();
     private volatile boolean closed;
@@ -99,11 +102,14 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
         this.config = config;
         this.sharedPool = CommunityHikariSupport.buildPool(config, null);
         this.sharedHikari = CommunityHikariSupport.with(sharedPool);
+        this.allowBypassRole = Boolean.parseBoolean(config.properties().getOrDefault(ALLOW_BYPASS_ROLE_KEY, "false"));
         this.poolRegistry = new CommunityTenantPoolRegistry(
             CommunityPersistenceConstants.PROVIDER_ID,
             config,
             lifecycleLock,
-            sharedPool);
+            sharedPool,
+            rlsRoleCheckArmed::get,
+            allowBypassRole);
         this.interceptors = new ArrayList<>(2);
         this.interceptorSnapshot = new AtomicReference<>(List.of());
         this.closed = false;
@@ -325,9 +331,24 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
     // Package-private — interceptor registration (called by bootstrap / TCK)
     // =========================================================================
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Registering the row-level-security interceptor probes the role behind the shared pool
+     * first, and refuses with {@code EX-PERS-5009} when it bypasses row-level security unless
+     * {@code persistence.rlsAllowBypassRole} is set. Migrations and pool warm-up have already run
+     * as that role by then; the kernel's own tables carry no policy. A direct caller owns the
+     * engine and closes it after a refusal; the bootstrap path closes it itself.
+     */
     @Override
     public void registerInterceptor(ConnectionInterceptor interceptor) {
         Objects.requireNonNull(interceptor, "interceptor must not be null");
+        boolean rls = interceptor instanceof RlsConnectionInterceptor;
+        if (rls) {
+            // Outside the monitor: the probe is database I/O. Not guarded by a once-flag, so a caller
+            // that retries after a refusal is checked again instead of slipping through.
+            verifySharedRoleDoesNotBypassRls();
+        }
         synchronized (lifecycleLock) {
             ensureOpenUnderLock();
             if (firstConnectionOpened.get()) {
@@ -336,7 +357,18 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
             }
             interceptors.add(interceptor);
             interceptorSnapshot.set(List.copyOf(interceptors));
+            if (rls) {
+                rlsRoleCheckArmed.set(true);
+            }
         }
+    }
+
+    private void verifySharedRoleDoesNotBypassRls() {
+        ensureOpenUnderLock();
+        // Taken from the pool directly: this must not count as the first connection, which would make
+        // the interceptor registration that follows illegal.
+        RlsRoleCheck.verifyPool(
+                sharedPool, allowBypassRole, CommunityPersistenceConstants.PROVIDER_ID, config.connectionUrl());
     }
 
     // =========================================================================
