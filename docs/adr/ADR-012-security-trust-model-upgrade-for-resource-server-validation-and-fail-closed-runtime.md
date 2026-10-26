@@ -17,6 +17,7 @@ status: active
 | **Amended**    | 2026-06-10 — §4a/§9: incomplete/unrecognized/malformed isolation claim is now terminal-deny, not SHARED-downgrade (closes the S-P0-07 fail-OPEN storage-isolation finding) |
 | **Amended**    | 2026-07-29 — §4a/§4b/§9/§10: adds the **shared-scope tier** as an orthogonal row-visibility dimension (`sharedScopeKey`), rules its carrier shape / claim name / binding-gate interpretation, and re-points the isolation mapping site from `SecurityProvider.authenticate()` to `IdentityStorageMapping.fromClaims` per ADR-040 (implements `RFC-2026-07-02`) |
 | **Amended**    | 2026-10-07 — **ACCEPTED** (2026-10-08), §4c/§4b.4/§10/§11: rules the persistence-boundary questions of the 0.13 milestone — no principal session key and no field-level encryption at rest in the kernel at 1.0 (#585), the write check pins the shared-scope tag (#611), what an absent session key yields, and a boot check on a role that bypasses row-level security (#581) |
+| **Amended**    | 2026-10-23 — §4c.2/§9/§10: records how the 0.13 implementation of the tag-pinning write check resolves the points §4c.2 left to it — the matrix carries nine tag cells with direction controls, the Community binding uses a nullable tag column, and a move from a scope the request does not hold into the one it publishes is admitted and not a conformance cell |
 | **Driven By**  | ADR-007, performance contract, subsystem contracts security/transport/persistence      |
 | **Compliance** | [Strategic Pillar: Secure Fail-Closed Resource-Server Trust](../whitepaper.md)        |
 
@@ -299,6 +300,10 @@ and with `''`, accepted.
   does not carry `S`. The check allows it, because narrowing one's own row's visibility widens nothing.
   Refusing it would mean comparing the old row, which only a trigger can do.
 
+_(Amended 2026-10-23: the matrix carries nine tag cells with direction controls, the Community binding
+uses a nullable tag column, and a move from a scope the request does not hold into the published one is
+admitted and not a conformance cell — see Amendments.)_
+
 ### 4c.3 What an absent session key yields
 
 Under the reference `TEXT` policy, a request without a tenant publishes `exeris.tenant_id = ''`, the
@@ -501,10 +506,13 @@ Limits, stated so the check is not read as more than it is:
 - **Implemented now (§4b.7 enforceability signal, v0.11):** the kernel ships no RLS policy and cannot introspect the deployment's, so the deployment asserts enforceability itself via `exeris.security.shared-scope.enforced` (`IdentityStorageMapping.SHARED_SCOPE_ENFORCED_KEY`). `fromClaims` carries a declared shared scope onto the resolved context where the deployment has opted in, and denies it everywhere else. The tier is reachable end-to-end from that point: carrier, claim, mapping, and RLS enforcement all exist and are connected. Absent opt-in the behaviour is unchanged, so no existing deployment moves off tenant-private.
 - **Implemented now (§4b.7 wrong-typed shared scope, v0.11):** the driver-side type check that closes §4b.7's own consequence. `VerifiedClaims.claim` reports a wrong-typed claim as absent, so a malformed shared scope would reach the mapping as "none declared" and resolve to tenant-private — harmless while every declared scope was denied, and not harmless once §4b.7 made that deny conditional, since an enforcing deployment would then silently withhold visibility the caller asked for. The check sits in the binding's token validation next to the `ISOLATION_STRATEGY` one (§4a enforcement layers), denying `shared-scope-malformed`, and is pinned for every binding by `AbstractSecurityProviderTck` rather than left to each one's diligence. Both axes are checked because the structural cause is shared but the damage is not: a wrong-typed strategy weakens the tier, a wrong-typed scope withholds from it.
 - Implemented now (repository state): Community `PersistenceEngine` routes DEDICATED strategy to per-tenant pools from `PersistenceConfig.dedicatedDataSources()`.
-- **Planned for 0.13 (§4c, ACCEPTED 2026-10-08):** the scope-pinning `WITH CHECK` in the reference policy, the
-  Community binding and the shared-scope matrix (§4c.2); the raise-on-absent-tenant reference policy
-  (§4c.3); the bypass-role boot check with `persistence.rlsAllowBypassRole`, `EX-PERS-5009` and its JFR
-  event (§4c.4). None of it is implemented.
+- **Implemented now (§4c.2, 0.13):** the scope-pinning `WITH CHECK` in the reference policy (the
+  `RlsConnectionInterceptor` javadoc and `docs/subsystems/persistence.md`), the Community binding
+  `CommunityPersistenceSharedScopeIT` installing it on a nullable tag column, and the tag cells of
+  `AbstractSharedScopeAccessMatrixTck` with its `retagScope` template method (see Amendments).
+- **Planned for 0.13 (§4c, ACCEPTED 2026-10-08):** the raise-on-absent-tenant reference policy (§4c.3);
+  the bypass-role boot check with `persistence.rlsAllowBypassRole`, `EX-PERS-5009` and its JFR event
+  (§4c.4). None of it is implemented.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.
 - Anti-drift rule: if code differs from ADR text, update implementation plus TCK or amend ADR before merge.
@@ -588,3 +596,35 @@ Limits, stated so the check is not read as more than it is:
 - docs/modules/05-tck.md
 - docs/performance-contract.md
 - docs/architecture.md
+
+## Amendments
+
+### 2026-10-23 — §4c.2: the tag cells, the nullable column, the cross-scope move
+
+§4c.2 planned three cells. The matrix carries nine, because each refusal needs a control that differs
+from it only in the discriminating input, and each positive check reads visibility from a different
+tenant so that a binding whose `retagScope` does nothing and returns 1 cannot pass:
+
+| Cell | Act | Expect | Control for |
+|:--|:--|:--|:--|
+| Insert, scope not held | own row tagged `foreign` from a request holding `S` | refused | insert, published scope |
+| Insert, published scope | own row tagged `S` from a request holding `S` | accepted; a partition-mate reads it | insert, scope not held |
+| Insert, untagged | own row with no tag from a request holding `S` | accepted; a partition-mate does not read it | insert, scope not held |
+| Insert, unscoped request | own row tagged `S` from a request holding none | refused | insert, unscoped untagged |
+| Insert, unscoped untagged | own row with no tag from a request holding none | accepted | insert, unscoped request |
+| Re-tag, scope not held | own private row to `foreign` from a request holding `S` | refused | re-tag, published scope |
+| Re-tag, published scope | own private row to `S` from a request holding `S` | accepted; a partition-mate reads it | re-tag, scope not held |
+| Un-share | own in-scope row to none from a request holding none | accepted; a partition-mate does not read it | re-tag from an unscoped request |
+| Re-tag from an unscoped request | own in-scope row to `foreign` from a request holding none | refused; the row keeps its tag | un-share |
+
+- **`retagScope` is a template method whose default throws.** An inherited no-op would let the re-tag
+  cells report green for a binding that never implemented them; a throwing default keeps existing
+  bindings source-compatible and makes the missing obligation fail.
+- **The Community binding's tag column is nullable.** A `NOT NULL DEFAULT ''` column leaves the
+  `COALESCE` arm of the check unreachable, so a policy that drops it would pass; with `NULL` bound for an
+  absent tag, it does not.
+- **A move from a scope `T` the request does not hold into the scope `S` it publishes is admitted by the
+  reference policy and is not a conformance cell.** `WITH CHECK` sees only the new row, and the new
+  visibility, `S`, is what the token authorizes; leaving `T` only narrows. A stricter deployment trigger
+  that refuses it, or that refuses keeping a tag from a request lacking the scope, stays conforming, so
+  the matrix pins neither.

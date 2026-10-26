@@ -226,5 +226,11 @@
     "since": "0.13",
     "adr": "ADR-007",
     "justification": "TCK contract: AbstractTransportStreamTck gains PeerEndRefusesWrites, two cases asserting that after the peer's reset(long) the first failure of a write, and of a queueWrite, is TransportStreamClosedException with EX-NET-4008, with no read before it. A binding whose send reports another failure first, such as TransportException, fails them until it throws the closed signal for a peer that ended the stream; Enterprise transports that bind the suite adopt it. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.AbstractSharedScopeAccessMatrixTck#retagScope(eu.exeris.kernel.spi.security.StorageContext, java.lang.String, java.lang.String)",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: AbstractSharedScopeAccessMatrixTck gains nine cells that pin the shared-scope tag a written row carries: an insert tagged with a scope the request does not hold is refused, an insert tagged with the published scope or untagged is accepted, an unscoped request cannot write a scoped row, a re-tag to a scope the request does not hold is refused, a re-tag to the published scope is accepted, and an owner may un-share its own row from a request that lacks the scope. The re-tag cells go through the new template method retagScope(StorageContext, String, String), which throws UnsupportedOperationException by default, so an existing binding fails them until it implements it and installs a WITH CHECK that pins the tag; a skip would report green. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
   }
 ]
