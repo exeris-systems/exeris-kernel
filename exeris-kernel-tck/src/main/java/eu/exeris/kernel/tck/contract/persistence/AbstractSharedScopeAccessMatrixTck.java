@@ -4,8 +4,9 @@
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
-import eu.exeris.kernel.spi.security.ImmutableStorageContext;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * scope the acting request published, never with a scope the request does not hold. A cross-scope move
  * from a scope the request does not hold into the one it publishes has no cell here: the check sees only
  * the new row, so a reference policy admits it and a stricter deployment trigger may refuse it.
+ *
+ * <p>A context that declares no tenant is not a context the policy may serve. The kernel publishes the
+ * tenant key as {@code ''} for it and refuses nothing at the persistence boundary, so what the store does
+ * with that value is the policy's decision, and a conforming policy raises: a read and a write from a
+ * tenant-less context both fail with {@code EX-PERS-5003} instead of returning an empty result or
+ * admitting a row owned by the empty tenant (ADR-012 §4c.3). A binding states which owner value its policy
+ * would match against an unpublished key through {@link #tenantlessOwner()}.
  *
  * <h2>What is NOT here, on purpose</h2>
  * <p>Cross-tenant <em>mutation</em> of another owner's row is out of contract scope (ADR-012 §4b.4). It
@@ -124,6 +132,27 @@ public abstract class AbstractSharedScopeAccessMatrixTck {
      */
     protected String foreignScope() {
         return FOREIGN_SCOPE;
+    }
+
+    /**
+     * The owner-column value a policy that compared the owner against an unpublished tenant key would
+     * match, written by the tenant-less write cell. For a text column that is {@code ''}, the value the
+     * kernel publishes for an absent tenant: a policy that merely compares the owner with the setting
+     * admits that row, and a conforming one refuses it.
+     *
+     * <p>Not defaulted: the value depends on the owner column's type, and a default that is wrong for the
+     * binding's schema would make the write cell pass because the column rejects the value, not because
+     * the policy refuses the tenant-less context. The default throws, so a binding that does not
+     * override it fails the write cell instead of skipping it. A binding whose owner column cannot hold
+     * the empty value, a {@code uuid} for instance, returns any value the column accepts; the policy's
+     * cast then raises on the unpublished key whatever the row carries.
+     *
+     * @return the owner value a tenant-less write attempts
+     */
+    protected String tenantlessOwner() {
+        throw new UnsupportedOperationException(
+                "A binding of AbstractSharedScopeAccessMatrixTck must override tenantlessOwner to name the "
+                        + "owner value an unpublished tenant key would match (ADR-012 §4c.3)");
     }
 
     private StorageContext ctxAShared() {
@@ -472,6 +501,55 @@ public abstract class AbstractSharedScopeAccessMatrixTck {
         assertThat(readVisible(ctxBShared()))
                 .as("and the row keeps its previous tag")
                 .contains("a-in-scope");
+    }
+
+    @Test
+    @DisplayName("an absent tenant raises on read — a tenant-less context is refused, not served an empty result")
+    void assert_read_from_a_tenantless_context_is_refused() {
+        assertThatThrownBy(() -> readVisible(ImmutableStorageContext.GLOBAL))
+                .as("the kernel publishes '' for an absent tenant and the policy decides what it yields; "
+                        + "an empty result makes a mis-scoped read look like a read of an empty table, so "
+                        + "a conforming policy raises (ADR-012 §4c.3)")
+                .isInstanceOf(PersistenceProviderException.class)
+                .satisfies(refusal -> assertThat(((PersistenceProviderException) refusal).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_PERS_5003));
+    }
+
+    @Test
+    @DisplayName("a tenant reads — the same read from a context that declares a tenant succeeds")
+    void assert_read_from_a_tenant_context_is_served() {
+        // The direction control for the refusal above: it differs only in the tenant the context carries.
+        assertThat(readVisible(ctxAPrivate()))
+                .as("a raise on every read would pass the refusal and break the tier")
+                .contains("a-private", "a-in-scope");
+    }
+
+    @Test
+    @DisplayName("an absent tenant raises on write — a tenant-less context cannot write a row owned by the empty tenant")
+    void assert_write_from_a_tenantless_context_is_refused() {
+        assertThatThrownBy(() -> seed(ImmutableStorageContext.GLOBAL, tenantlessOwner(), null, "no-tenant-write"))
+                .as("a write check that only compares the owner with the published key admits a row owned "
+                        + "by the empty tenant, which every later tenant-less request reads back; a "
+                        + "conforming policy raises instead (ADR-012 §4c.3)")
+                .isInstanceOf(PersistenceProviderException.class)
+                .satisfies(refusal -> assertThat(((PersistenceProviderException) refusal).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_PERS_5003));
+
+        assertThat(readVisible(ctxAPrivate()))
+                .as("and the refused write left nothing behind")
+                .doesNotContain("no-tenant-write");
+    }
+
+    @Test
+    @DisplayName("a tenant writes — the same write from a context that declares a tenant succeeds")
+    void assert_write_from_a_tenant_context_is_admitted() {
+        // The direction control for the refusal above: it differs only in the tenant the context carries,
+        // and in the owner that tenant owns.
+        seed(ctxAPrivate(), ownerA(), null, "tenant-write");
+
+        assertThat(readVisible(ctxAPrivate()))
+                .as("the row was admitted, so the write was refused for the absent tenant and not for the write")
+                .contains("tenant-write");
     }
 
     /**

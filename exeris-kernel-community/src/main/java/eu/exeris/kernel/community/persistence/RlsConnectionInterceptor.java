@@ -52,8 +52,8 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
  *
  * CREATE POLICY tenant_isolation ON table_name
- *   USING (tenant_id = current_setting('exeris.tenant_id', true))
- *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)
+ *   USING (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id')))
+ *   WITH CHECK (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))
  *               AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
  *
  * CREATE POLICY shared_scope_read ON table_name FOR SELECT
@@ -79,15 +79,39 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * {@code CommunityPersistenceIsolationLeakTckIT}) all issue both statements <em>and</em> connect as a
  * non-owner role, so what they verify is the property a forced table has.
  *
- * <p><b>The comparison above is text-to-text, and that assumption is load-bearing.</b>
- * {@code current_setting} returns {@code text} and the tested schema declares {@code tenant_id TEXT},
- * so an unset key arrives as {@code ''}, matches no row, and fails closed. A deployment whose
- * {@code tenant_id} column is {@code uuid} must cast — and the cast turns that same {@code ''} into
- * {@code invalid input syntax for type uuid: ""} on every query against every scoped table, because
- * {@link #publishSessionKeys} publishes the key unconditionally (as {@code ''} when the context
- * declares no tenant) and a session-scoped setting survives connection reuse. Such a policy needs the
- * empty-string guard on the tenant arm too, the way the shared-scope arm already carries it:
- * {@code tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid}.
+ * <p><b>An absent tenant raises.</b> The interceptor publishes {@code exeris.tenant_id} as {@code ''}
+ * for a context that declares no tenant and refuses nothing at the persistence boundary: tenant-less
+ * contexts are a supported input, and most of them touch no scoped table. What {@code ''} yields is the
+ * policy's decision, and the reference policy decides that a statement against a scoped table fails.
+ * On a {@code TEXT} tenant column the deployment installs {@code exeris_required_setting}, which names
+ * the missing key in its message and fails with SQLSTATE {@code 42501}, reported as
+ * {@code EX-PERS-5003}:
+ *
+ * {@snippet lang="sql" :
+ * CREATE FUNCTION public.exeris_required_setting(key text) RETURNS text
+ *   LANGUAGE plpgsql STABLE AS $$
+ * DECLARE v text := current_setting(key, true);
+ * BEGIN
+ *   IF v IS NULL OR v = '' THEN
+ *     RAISE EXCEPTION 'session key % is not published', key USING ERRCODE = 'insufficient_privilege';
+ *   END IF;
+ *   RETURN v;
+ * END $$;
+ * }
+ *
+ * <p>The kernel does not install it. The policy names it with its schema because a session's
+ * {@code search_path} can put a schema the tenant role writes to ahead of {@code public}; an unqualified
+ * name would then resolve to whatever function of that name the role created there. The uncorrelated
+ * {@code (SELECT ...)} lets the planner evaluate the function once per statement rather than once per
+ * row; its cost is not measured. Without the function, a plain
+ * {@code tenant_id = current_setting('exeris.tenant_id', true)} is not conforming: it returns an empty
+ * result for a read, and its {@code WITH CHECK} admits a row whose {@code tenant_id} is {@code ''}, which
+ * every later tenant-less request reads back. A deployment whose {@code tenant_id} column is {@code uuid}
+ * writes the unguarded cast {@code tenant_id = current_setting('exeris.tenant_id', true)::uuid}, which
+ * raises {@code invalid input syntax for type uuid: ""} on the empty key; guarding the cast with
+ * {@code NULLIF} turns that error back into an empty result and is not conforming. The shared-scope arm
+ * is the opposite case: an absent scope is the legitimate tenant-private request, so
+ * {@code NULLIF(current_setting('exeris.shared_scope', true), '')} matches nothing and does not raise.
  *
  * <p>The owner policy pins the tag as well as the owner. A tenant can read its partition-mates' rows and
  * still only ever insert, update or delete its own, and what it writes is either tenant-private

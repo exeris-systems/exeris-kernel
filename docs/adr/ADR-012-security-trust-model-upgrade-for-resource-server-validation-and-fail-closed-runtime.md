@@ -19,6 +19,7 @@ status: active
 | **Amended**    | 2026-10-07 — **ACCEPTED** (2026-10-08), §4c/§4b.4/§10/§11: rules the persistence-boundary questions of the 0.13 milestone — no principal session key and no field-level encryption at rest in the kernel at 1.0 (#585), the write check pins the shared-scope tag (#611), what an absent session key yields, and a boot check on a role that bypasses row-level security (#581) |
 | **Amended**    | 2026-10-23 — §4c.2/§9/§10: records how the 0.13 implementation of the tag-pinning write check resolves the points §4c.2 left to it — the matrix carries nine tag cells with direction controls, the Community binding uses a nullable tag column, and a move from a scope the request does not hold into the one it publishes is admitted and not a conformance cell |
 | **Amended**    | 2026-10-23 — §4c.4/§10: records how the 0.13 implementation of the bypass-role check resolves the points §4c.4 left to it — the check runs when the RLS interceptor is registered, dedicated pools are refused at their first request, a probe that cannot run is refused whatever the key says, and the suite is abstract (see Amendments) |
+| **Amended**    | 2026-10-26 — §4c.3/§9/§10: records how the 0.13 implementation of the raising tenant arm resolves the points §4c.3 left to it — the matrix and the isolation-leak suite carry the absent-tenant cells with direction controls, the matrix gains the template method `tenantlessOwner` with a throwing default, three Community integration tests install `exeris_required_setting`, a tenant-less read of an empty table was measured not to raise, and per-statement evaluation of the function stays unmeasured (see Amendments) |
 | **Driven By**  | ADR-007, performance contract, subsystem contracts security/transport/persistence      |
 | **Compliance** | [Strategic Pillar: Secure Fail-Closed Resource-Server Trust](../whitepaper.md)        |
 
@@ -180,8 +181,8 @@ Four questions about what the kernel promises at the database session, raised by
 recommendation, and the reasons. The owner ruled on 2026-10-08 that each point takes the recommended
 option. Nothing in this section is implemented: every behaviour change it names is planned for 0.13.
 The points the recommendations left open were ruled by the owner on the same date.
-_(Amended 2026-10-23: the paragraph above and the measured state below describe 2026-10-08; §4c.2 and
-§4c.4 are implemented in 0.13 — see Amendments.)_
+_(Amended 2026-10-26: the paragraph above and the measured state below describe 2026-10-08; §4c.2,
+§4c.3 and §4c.4 are implemented in 0.13, so nothing in §4c is planned — see Amendments.)_
 
 Measured state the rulings build on:
 
@@ -341,7 +342,7 @@ RLS interceptor is installed:
 2. an absent or blank value is published as `''`, never as `NULL` and never as a sentinel;
 3. a tenant-less context is not refused at the persistence boundary.
 
-What `''` yields is the policy's decision, and the kernel's reference policy, planned for 0.13, decides
+What `''` yields is the policy's decision, and the kernel's reference policy, implemented in 0.13, decides
 it as follows:
 
 - **Tenant arm:** absence raises. On `uuid` columns the unguarded cast does this, and the `NULLIF` advice
@@ -378,6 +379,11 @@ rejection are unaffected.
 - **Ruled (2026-10-08):** the reference text of `exeris_required_setting` is published in
   `docs/subsystems/persistence.md`, beside the reference policy, for deployments to install. The kernel
   does not install it (§4b.7).
+
+_(Amended 2026-10-26: the absent-tenant cells are in `AbstractSharedScopeAccessMatrixTck` and
+`PersistenceIsolationLeakTck`, the matrix gains the template method `tenantlessOwner`, the function
+text is published in `docs/subsystems/persistence.md`, and a read of a table with no rows does not raise —
+see Amendments.)_
 
 ### 4c.4 Boot check on a role that bypasses row-level security (#581)
 
@@ -491,6 +497,9 @@ Limits, stated so the check is not read as more than it is:
     wrong-typed isolation case, which sat unbound behind a green suite until 2026-07-29. The matrix
     therefore lives in its own abstract suite whose binding is a live-database one, which keeps the
     obligation both abstract and non-vacuous. The requirement is unchanged; only its host is.
+- **Absent tenant (§4c.3, amended 2026-10-26).** `AbstractSharedScopeAccessMatrixTck` and
+  `PersistenceIsolationLeakTck` assert that a read and a write from a tenant-less context fail with
+  `PersistenceProviderException` (`EX-PERS-5003`), each next to the same operation under a tenant.
 - **"Two bindings" — RULED (amended 2026-07-29).** The §9 two-binding language means *every binding that
   exists in-repo, plus a recorded obligation on out-of-repo bindings* — not "block the contract until a
   second in-repo binding is invented". Only one in-repo persistence binding exists (Community/Postgres), so
@@ -517,8 +526,11 @@ Limits, stated so the check is not read as more than it is:
 - **Implemented now (§4c.4, 0.13):** the bypass-role boot check: `persistence.rlsAllowBypassRole`,
   `EX-PERS-5009` and the JFR event `eu.exeris.kernel.persistence.RlsBypassRole`, with
   `AbstractRlsBypassRoleCheckTck` bound by the Community engine against live PostgreSQL.
-- **Planned for 0.13 (§4c, ACCEPTED 2026-10-08):** the raise-on-absent-tenant reference policy
-  (§4c.3). It is not implemented.
+- **Implemented now (§4c.3, 0.13):** the raise-on-absent-tenant reference policy: the tenant arm in the
+  `RlsConnectionInterceptor` javadoc and `docs/subsystems/persistence.md` with the text of
+  `exeris_required_setting`, the absent-tenant cells of `AbstractSharedScopeAccessMatrixTck` and
+  `PersistenceIsolationLeakTck`, and the Community bindings installing the function (see Amendments).
+  Nothing in §4c is planned any more; the SPI javadoc correction named under §11 stays planned for 0.13.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.
 - Anti-drift rule: if code differs from ADR text, update implementation plus TCK or amend ADR before merge.
@@ -667,3 +679,52 @@ Two status lines were brought to repository state with this entry: the §4c.4 le
 "Shape, planned for 0.13; the code and the event are to be registered with the implementation", now
 reads "Shape, implemented in 0.13", and §10 lists §4c.4 under "Implemented now" instead of "Planned for
 0.13". The shape itself is unchanged.
+
+### 2026-10-26 — §4c.3: the absent-tenant cells, the hook, and what stays unmeasured
+
+§4c.3 fixed the ruling, the reference text and the MUST, and left the hosts and the Community wiring to
+the implementation. The implementation resolves these points:
+
+- **Two suites gained cells.** `AbstractSharedScopeAccessMatrixTck` carries four: a read and a write
+  from `ImmutableStorageContext.GLOBAL`, each refused with `PersistenceProviderException` carrying
+  `EX-PERS-5003`, and the same read and write under a tenant, which succeed. `PersistenceIsolationLeakTck`
+  carries two, each pairing the refusal with its control. The Community tenant-isolation test
+  `CommunityPersistenceTenantIsolationIT`, which is not bound to either suite, carries the same pair.
+  The suites assert the code and not the SQLSTATE: the function raises `42501`, but the unguarded `uuid`
+  cast §4c.3 rules for `uuid` columns raises `22P02`, and both are `EX-PERS-5003`.
+- **The write cell needs the owner value an unpublished key would match, so the matrix gains
+  `tenantlessOwner()`.** A write from a tenant-less context that names the owner `tenant-a` is refused by
+  the plain text too, because the owner differs from `''`; only a row owned by the empty tenant is what
+  the plain text admits, so a cell that wrote anything else would pass against the policy it exists to
+  reject. The value depends on the column type (`''` for text), so the default throws and a binding that
+  does not override it fails the cell. `PersistenceIsolationLeakTck` needs no hook, because its
+  `writeSentinelRow` takes the owner from the session.
+- **The cells use a tenant-less context, not a context with a blank key.** `GLOBAL` is what the kernel
+  hands a handler with no bound context, and the persistence boundary publishes `''` for it, so the cell
+  exercises the path §4c.3 describes.
+- **Three Community integration tests install the function and the raising arm:**
+  `CommunityPersistenceSharedScopeIT`, `CommunityPersistenceIsolationLeakTckIT` and
+  `CommunityPersistenceTenantIsolationIT`, through one test constant so the text cannot drift between
+  them. `CommunityRequestScopeBypassIsolationIT` keeps the plain policy: it never opens a tenant-less
+  context, and what it pins is which tenant a bypassed acquire carries, not what the policy does with an
+  absent one. No Community test binds a `uuid` tenant column, so the unguarded-cast form is specified and
+  documented and no binding here exercises it.
+- **A read of a table with no rows does not raise; it was measured.** The isolation-leak binding creates
+  its table afresh for each case, and a tenant-less `SELECT` on that empty table returns an empty result
+  without error: the function runs when a row is evaluated. The read
+  cell therefore writes a row under a tenant first, and the reference text states that an empty table
+  is served an empty result. A tenant-less `INSERT` raises on an empty table, because `WITH CHECK` is
+  evaluated for the new row. That is the plan dependence §4c.3 left open, resolved for `SELECT` and
+  `INSERT`; a zero-row `UPDATE` or `DELETE` stays unmeasured, and the cells pin neither.
+- **The reference names the function `public.exeris_required_setting`.** §4c.3's text calls it
+  unqualified. The SEPARATED_SCHEMA strategy publishes `search_path` as `<schema>, public`, so a tenant
+  role able to create objects in its own schema could define a function of that name that never raises,
+  and an unqualified reference would resolve to it. The qualified name closes that; the function body is
+  §4c.3's unchanged.
+- **Per-statement evaluation and its cost stay unmeasured.** Whether the uncorrelated
+  `(SELECT exeris_required_setting(...))` is evaluated once per statement rather than once per row, and
+  what it costs, was not measured here.
+
+Four status lines were brought to repository state with this entry: the header Amended row, the §4c
+opening marker, the §4c.3 lead-in, which read "planned for 0.13", and §10, which lists §4c.3 under
+"Implemented now" instead of "Planned for 0.13". The ruling itself is unchanged.

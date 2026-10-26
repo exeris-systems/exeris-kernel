@@ -41,7 +41,9 @@ import java.util.Map;
  * it. The owner policy's {@code WITH CHECK} pins the tag as well as the owner: a written row is
  * tenant-private ({@code ''} or {@code NULL}) or carries the scope the request published, so a row's own
  * column never grants visibility that no token carried. The {@code NULLIF} guard on the read arm stops a
- * cleared scope from matching rows whose own tag is empty.
+ * cleared scope from matching rows whose own tag is empty. The tenant arm calls the deployment-installed
+ * {@code exeris_required_setting}, so a tenant-less context raises on read and on write instead of
+ * matching the empty tenant.
  *
  * <p>The tag column is nullable on purpose: it is what exercises the {@code COALESCE} arm of the check,
  * which a {@code NOT NULL DEFAULT ''} column would leave unreachable.
@@ -126,6 +128,11 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
     }
 
     @Override
+    protected String tenantlessOwner() {
+        return "";
+    }
+
+    @Override
     protected int retagScope(StorageContext ctx, String value, String newSharedScope) {
         try (PersistenceConnection conn = engine.openConnection(ctx);
              PersistenceStatement stmt = conn.prepare("UPDATE scoped_docs SET shared_scope = ? WHERE value = ?")) {
@@ -176,14 +183,15 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
                     + "    CREATE ROLE exeris_app LOGIN NOSUPERUSER PASSWORD 'exeris_app_pw'; "
                     + "  END IF; "
                     + "END $$");
+            st.execute(RlsReferencePolicy.REQUIRED_SETTING_FUNCTION);
             st.execute("DROP TABLE IF EXISTS scoped_docs CASCADE");
             st.execute("CREATE TABLE scoped_docs (tenant_id TEXT NOT NULL, "
                     + "shared_scope TEXT, value TEXT NOT NULL)");
             st.execute("ALTER TABLE scoped_docs ENABLE ROW LEVEL SECURITY");
             st.execute("ALTER TABLE scoped_docs FORCE ROW LEVEL SECURITY");
             st.execute("CREATE POLICY tenant_isolation ON scoped_docs "
-                    + "USING (tenant_id = current_setting('exeris.tenant_id', true)) "
-                    + "WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true) "
+                    + "USING (" + RlsReferencePolicy.TENANT_ARM + ") "
+                    + "WITH CHECK (" + RlsReferencePolicy.TENANT_ARM + " "
                     + "AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)))");
             st.execute("CREATE POLICY shared_scope_read ON scoped_docs FOR SELECT "
                     + "USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''))");
