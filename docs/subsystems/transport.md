@@ -1122,6 +1122,7 @@ consumes heap, CPU, or a Virtual Thread.
 
 ## Owning ADRs
 
+- [ADR-007](../adr/ADR-007-next-gen-runtime-architecture.md) §3, Amendments 2026-10-23 — a vanished peer is EX-NET-4008; every ending of a stream wakes its reader and writer, `queueWrite` never waits for the peer, and `write` parks at the outbound bound
 - [ADR-071](../adr/ADR-071-operational-limit-configuration-path.md) — Give operational limits a configuration path, and rule what a zero means
 - [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) §4, Amendment A1 — a `CLIENT` or `DUAL` carrier verifies the server it dials, and records where it does not
 - [ADR-081](../adr/ADR-081-accept-time-connection-cap.md) — The connection cap and stream shedding are layers, and neither answers with a status
