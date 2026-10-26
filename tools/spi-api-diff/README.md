@@ -20,6 +20,16 @@ tools/spi-api-diff/spi-api-diff.sh --history v0.5.0,v0.6.0,v0.7.0,v0.7.1,v0.8.0,
 tools/spi-api-diff/spi-api-diff.sh --verify-surfaces
 ```
 
+Which labels judge a comparison depends on the mode. A single `--old/--new` run reads the
+**working-tree** conf, on purpose: the current labels hold every change since the baseline to the
+current stable rule. `--history` labels each transition `<old> -> <new>` with the conf **at its old
+ref** — the surface as it stood while the changes were made — so promoting a surface later never
+turns a past `preview` break into a `stable` break in the regenerated record. The new ref's conf is
+not used: a release that promotes a surface carries the promotion in its own conf, and would read
+the changes made while the surface was still `preview` as `stable` ones. A ref that predates the conf
+file (before v0.11.0) takes the earliest conf among the history's refs, or, when none of them has
+one, the file's first version in `HEAD`'s history.
+
 Reports land in `target/spi-api-diff/` unless `--out` says otherwise.
 Exit codes: `0` compatible (or report-only), `1` a `stable` surface broke, `2` usage/tooling error.
 
