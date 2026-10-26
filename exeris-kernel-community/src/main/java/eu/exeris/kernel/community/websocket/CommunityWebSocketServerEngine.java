@@ -8,6 +8,7 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.contract.ContractKernelProviders;
 import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.spi.websocket.WebSocketConfig;
@@ -38,6 +39,7 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
     private final MemoryAllocator allocator;
     /** True when no ambient allocator was bound, so this engine created one and must release it. */
     private final boolean ownsAllocator;
+    private final int maxQueuedWriteBytes;
     private final TransportEngine transport;
     private final int listenPort;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -58,8 +60,10 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
                 CommunityWebSocketTransportFactory.resolveAllocator();
         this.ownsAllocator = resolved.ours();
         this.allocator = resolved.allocator();
-        this.transport = CommunityWebSocketTransportFactory.buildTransport(nonNull, resolvedPort,
-                this.allocator);
+        TransportConfig transportConfig =
+                CommunityWebSocketTransportFactory.resolveTransportConfig(nonNull, resolvedPort);
+        this.maxQueuedWriteBytes = transportConfig.maxQueuedWriteBytes();
+        this.transport = CommunityWebSocketTransportFactory.buildTransport(transportConfig, this.allocator);
         this.listenPort = resolvedPort;
     }
 
@@ -122,7 +126,7 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
         try (TransportStream carrier = stream;
              CommunityWebSocketExchange exchange =
                      new CommunityWebSocketExchange(carrier, session, allocator,
-                             config.maxMessageBytes())) {
+                             config.maxMessageBytes(), maxQueuedWriteBytes)) {
             handler.handle(exchange);
         }
     }

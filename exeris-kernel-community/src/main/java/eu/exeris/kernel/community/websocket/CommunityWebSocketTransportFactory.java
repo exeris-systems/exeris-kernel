@@ -77,12 +77,19 @@ final class CommunityWebSocketTransportFactory {
                 new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults()), true);
     }
 
-    /* default */ static TransportEngine buildTransport(WebSocketConfig config, int port,
-                                                        MemoryAllocator allocator) {
+    /**
+     * The listener's {@link TransportConfig}, read from the ambient configuration once, so the engine
+     * and its connections agree on the values the transport enforces.
+     */
+    /* default */ static TransportConfig resolveTransportConfig(WebSocketConfig config, int port) {
         ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.isBound()
                 ? KernelProviders.CURRENT_CONFIG.get()
                 : null;
-        TransportConfig transportConfig = buildTransportConfig(config, port, configProvider);
+        return buildTransportConfig(config, port, configProvider);
+    }
+
+    /* default */ static TransportEngine buildTransport(TransportConfig transportConfig,
+                                                        MemoryAllocator allocator) {
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
             return provider.createEngine(transportConfig, CommunityOutboundTls.AMBIENT, LISTENER_ALPN);

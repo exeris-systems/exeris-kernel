@@ -140,14 +140,25 @@ frame seen so far. A `fill()` that does not need to grow **allocates nothing**. 
 `MemorySegment.copy` into a larger loan and releases the old one; partial frames are compacted to
 the front of the same segment rather than into a new one.
 
-*Egress* (`CommunityWebSocketEgress`) holds one outbound buffer and a `ReentrantLock`. The lock is
-the concurrency contract: **any thread may call `writeText`, `writeFrame` or `sendCloseOnce`**, and
-the lock orders them to one writer at a time. A write against sufficient existing capacity
-allocates nothing.
+*Egress* (`CommunityWebSocketEgress`) takes **one pooled network buffer per frame**, encodes the frame
+into it and hands it to the transport through `queueWrite`, which owns it from then on and releases
+it once the frame's bytes have left the stream's outbound queue. A `ReentrantLock` orders the
+enqueue: **any thread may call `writeText`, `writeFrame` or `sendCloseOnce`**, and frames reach the
+transport in the lock's order, so two messages never interleave.
 
-**Backpressure parks the virtual thread; it never queues on the heap.** A slow peer therefore costs
-a parked carrier-free thread rather than unbounded memory, which is the whole reason a duplex wire
-is affordable here (ADR-084 §7).
+**A slow peer parks `send`; it never queues on the heap and never stalls the receive path.** Data
+frames are admitted against a credit: the bytes handed to the transport and not yet released, against
+`transport.maxQueuedWriteBytes`. A frame is admitted while that count is below the bound, so one
+frame larger than the bound still goes out when nothing is outstanding. A `send` without credit
+parks the virtual thread **without holding the egress lock** and resumes when the transport releases
+bytes; concurrent senders take turns, and every sender on the connection waits behind a peer that
+has stopped reading. Control frames (pong, close) never wait for credit: the frame loop answers a
+ping or echoes a close while a `send` is parked, which is why the lock is never held across a wait
+on the peer. With `transport.maxQueuedWriteBytes = -1` a `send` never waits. A `send` parked when
+the connection closes throws `WebSocketClosedException`; an interrupted one throws
+`IllegalStateException` with its interrupt status restored. A slow peer costs a parked
+carrier-free thread rather than unbounded memory, which is the whole reason a duplex wire is
+affordable here (ADR-084 §7).
 
 The message-size ceiling is enforced, not advisory: a message over `maxMessageBytes` closes the
 connection with `MESSAGE_TOO_BIG` and is **never truncated and delivered**. Truncation would hand a
