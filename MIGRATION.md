@@ -24,6 +24,58 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.12.x → 0.13 — the reference policy raises when the tenant key is absent (ADR-012 §4c.3)
+
+The kernel still publishes `exeris.tenant_id` as `''` for a context that declares no tenant and still
+does not refuse such a context. The reference policy now decides that a statement against a scoped table
+fails, where it used to return an empty result and let `WITH CHECK` admit a row owned by the empty tenant.
+
+**Who is affected.** A deployment that copied the reference policy from `RlsConnectionInterceptor` or
+`docs/subsystems/persistence.md`, and an out-of-repo binding of `AbstractSharedScopeAccessMatrixTck` or
+`PersistenceIsolationLeakTck`. The kernel ships no DDL, so nothing changes until you change the policy.
+
+1. **Install the function** once per database (the kernel does not):
+
+   ```sql
+   CREATE FUNCTION public.exeris_required_setting(key text) RETURNS text
+     LANGUAGE plpgsql STABLE AS $$
+   DECLARE v text := current_setting(key, true);
+   BEGIN
+     IF v IS NULL OR v = '' THEN
+       RAISE EXCEPTION 'session key % is not published', key USING ERRCODE = 'insufficient_privilege';
+     END IF;
+     RETURN v;
+   END $$;
+   ```
+
+2. **Alter the owner policy** on every scoped table with a `TEXT` tenant column. Where the table also
+   carries a shared-scope tag, keep the tag clause from the previous section:
+
+   ```sql
+   ALTER POLICY tenant_isolation ON table_name
+     USING (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id')))
+     WITH CHECK (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))
+                 AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
+   ```
+
+3. **On a `uuid` tenant column, drop the `NULLIF`.** A policy written as
+   `tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid` returns an empty result for
+   an absent tenant; the unguarded `tenant_id = current_setting('exeris.tenant_id', true)::uuid` raises
+   on `''` and is the conforming form. The shared-scope arm keeps its `NULLIF`.
+4. **Expect the new failure.** A statement against a scoped table from a context that declares no
+   tenant (`ImmutableStorageContext.GLOBAL`, a `permitAll()` route, a handler outside any request) fails
+   with `EX-PERS-5003` (SQLSTATE `42501`; `22P02` for the `uuid` cast) instead of returning an empty
+   result. A system path that touches only kernel-owned tables, which carry no policy, is unaffected.
+   A path that needs a scoped table without a tenant must bind a tenant context, or the deployment adds
+   an explicit arm for it, which is a deployment decision the reference does not make.
+5. **Bind the TCK.** `AbstractSharedScopeAccessMatrixTck` gains four cells and the template method
+   `tenantlessOwner()`, which names the owner-column value an unpublished key would match (`""` for a
+   text column); its default throws, so a binding that does not override it fails the write cell
+   instead of skipping it. `PersistenceIsolationLeakTck` gains the same read and write refusals through
+   its existing template methods and needs no new override.
+
+---
+
 ## 0.12.x → 0.13 — the shared-scope reference policy pins the tag on write (ADR-012 §4c.2)
 
 The reference `tenant_isolation` policy used to pin only `tenant_id` on write, so an owner could insert or

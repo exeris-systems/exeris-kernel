@@ -106,14 +106,19 @@ into the DB connection state. A missing `StorageContext` is equivalent to a miss
 > persistence it receives a `GLOBAL`-scoped connection — not an aborted query and not an `EX-SEC-2004`.
 >
 > **What the database does with that connection.** `GLOBAL` declares no tenant, so
-> `RlsConnectionInterceptor` publishes `exeris.tenant_id` as `''`. Under the documented `FORCE`'d policy
-> (`tenant_id = current_setting('exeris.tenant_id', true)`, the canonical example in
-> `RlsConnectionInterceptor`'s javadoc) that key matches no tenant row, and `WITH CHECK` refuses every
-> write: a conforming deployment fails closed at the database. Rows are exposed only where the deployment
-> departs from that policy — a policy with an arm that admits the empty key (a "system" arm), or a
-> scoped table that is not `FORCE`'d while the application connects as its owner, or an application
-> that connects as a role with `SUPERUSER` or `BYPASSRLS` (refused at boot since 0.13 unless
-> `persistence.rlsAllowBypassRole` is set).
+> `RlsConnectionInterceptor` publishes `exeris.tenant_id` as `''`. Under the reference `FORCE`'d policy
+> (`tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))`, the canonical example in
+> `RlsConnectionInterceptor`'s javadoc and in `docs/subsystems/persistence.md`) an absent tenant key
+> raises, so a read or a write that touches a scoped table fails with `EX-PERS-5003` (SQLSTATE `42501`)
+> and a message naming the key: a conforming deployment fails closed at the database, and a handler on a
+> public route that touches a scoped table gets an error, not an empty result. The plain form,
+> `tenant_id = current_setting('exeris.tenant_id', true)`, is not conforming: it returns an empty result
+> for a read, and its `WITH CHECK` admits a row whose `tenant_id` is `''`, which every later
+> tenant-less request reads back. Rows are exposed only where the deployment departs from the reference
+> policy — a policy with an arm that admits the empty key (a "system" arm), or one that compares the
+> key without raising, or a scoped table that is not `FORCE`'d while the application connects as its
+> owner, or an application that connects as a role with `SUPERUSER` or `BYPASSRLS` (refused at boot
+> since 0.13 unless `persistence.rlsAllowBypassRole` is set).
 >
 > **What the kernel reports.** When a `permitAll()` route's request session was opened for a storage
 > context that declares no tenant — an absent or blank isolation key, the case in which the tenant key is

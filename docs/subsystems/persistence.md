@@ -171,8 +171,8 @@ The Mechanism column is what each strategy adds, not all it issues. **Every stra
 whether or not its own isolation reads them — and publishes `""` when the context declares none. Both
 names are published as constants on the persistence SPI (`ConnectionInterceptor.SESSION_KEY_TENANT_ID`,
 `SESSION_KEY_SHARED_SCOPE`) so a generator or migration tool can reference them instead of retyping
-them: a policy naming a key the runtime never publishes returns zero rows and refuses every write,
-which is a hard failure with nothing pointing at its cause.
+them: a policy naming a key the runtime never publishes sees it absent on every statement, and the
+reference policy's raising tenant arm then fails every statement against the table.
 
 **Publishing the keys is the kernel's half; enforcing them is the deployment's, and `ENABLE` alone
 does not enforce.** The kernel ships no RLS policy and cannot introspect one. A conforming policy —
@@ -206,8 +206,8 @@ ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
 ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON table_name
-  USING (tenant_id = current_setting('exeris.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)
+  USING (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id')))
+  WITH CHECK (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))
               AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
 
 CREATE POLICY shared_scope_read ON table_name FOR SELECT
@@ -228,8 +228,56 @@ Moving a row from a scope the request does not hold into the scope it publishes 
 policy, for the same reason. A per-deployment trigger comparing old and new rows can refuse both that
 and the keep-tag case; the kernel ships no such trigger, and the matrix TCK pins neither.
 
-The tenant arm shown is the `TEXT` form. Update `tenant_isolation` on an existing deployment with
-`ALTER POLICY` (see `MIGRATION.md`).
+The tenant arm shown is the `TEXT` form, and it calls the function the next subsection defines. Update
+`tenant_isolation` on an existing deployment with `ALTER POLICY` (see `MIGRATION.md`).
+
+### An absent tenant raises (ADR-012 §4c.3, since 0.13)
+
+The kernel publishes `exeris.tenant_id` as `''` for a context that declares no tenant
+(`ImmutableStorageContext.GLOBAL`, a `permitAll()` route, `TransactionOrchestrator`'s default) and does
+not refuse such a context: most of them touch no scoped table, and the kernel cannot tell which
+statements will. What `''` yields is the policy's decision, and the reference policy decides that a
+statement against a scoped table **fails** rather than returning an empty result. A mis-scoped read
+that looks like a read of an empty table is the failure this rules out, and so is a tenant-less write
+that a plain `tenant_id = current_setting(...)` check admits as a row owned by the empty tenant, which
+every later tenant-less request reads back.
+
+On a `TEXT` tenant column the deployment installs this function. The kernel does not install it:
+
+```sql
+CREATE FUNCTION public.exeris_required_setting(key text) RETURNS text
+  LANGUAGE plpgsql STABLE AS $$
+DECLARE v text := current_setting(key, true);
+BEGIN
+  IF v IS NULL OR v = '' THEN
+    RAISE EXCEPTION 'session key % is not published', key USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN v;
+END $$;
+-- USING / WITH CHECK (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id')))
+```
+
+- **The policy names the function with its schema.** A session's `search_path` can put a schema the
+  tenant role writes to ahead of `public` (the SEPARATED_SCHEMA strategy sets `<schema>, public`), and an
+  unqualified name would resolve to whatever function of that name the role created there. Install it
+  where the tenant role cannot create objects, and reference it qualified.
+- **The failure is `EX-PERS-5003`** with SQLSTATE `42501` and a message that names the key.
+- **On a `uuid` column the unguarded cast does the same job:**
+  `tenant_id = current_setting('exeris.tenant_id', true)::uuid` raises
+  `invalid input syntax for type uuid` on `''`, reported as `EX-PERS-5003`. Do not guard the cast with
+  `NULLIF(..., '')`: that turns the error back into an empty result.
+- **The shared-scope arm does not raise.** An absent scope is the legitimate tenant-private request, so
+  `NULLIF(current_setting('exeris.shared_scope', true), '')` matches nothing.
+- **Kernel-owned tables are unaffected.** They carry no policy, so system paths that touch only them
+  never meet the function.
+- **Conformance.** Raising is a MUST for a policy that claims conformance, not a deployment choice:
+  `AbstractSharedScopeAccessMatrixTck` and `PersistenceIsolationLeakTck` each assert that a read and a
+  write from a tenant-less context fail with `EX-PERS-5003`, with a control that succeeds under a tenant.
+- **A read of a table with no rows does not raise.** The function runs when a row is evaluated, so a
+  `SELECT` that reaches none returns an empty result. A tenant-less `INSERT` always raises, because
+  `WITH CHECK` is evaluated for the new row. A zero-row `UPDATE` or `DELETE` has not been measured.
+- **Not measured.** The uncorrelated `(SELECT ...)` is meant to let the planner evaluate the function
+  once per statement rather than per row; neither that nor its cost has been measured.
 
 Placement decides which connection a request lands on; it does not decide what the previous borrower
 left in the session. `set_config(..., false)` is session-scoped, so with `persistence.perTenantPooling`

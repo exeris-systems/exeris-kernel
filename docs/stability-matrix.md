@@ -67,7 +67,7 @@ this is informational and **not** a dependency of the open-core surface.
 | SPI package | Level | Since | Anchor ADR | TCK coverage | Enterprise overlay |
 |---|---|---|---|---|---|
 | `…spi.diagnostics` | **stable** | 0.9.0 | ADR-033 | `AbstractKernelDiagnosticsTck` (+ JSON schema fixture) | `KernelDiagnosticsProvider` priority=100 (follow-up) |
-| `…spi.persistence` | **stable** | 0.5.0 | ADR-012, ADR-022, ADR-080 [^rowcursor] [^scopetag] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, `AbstractRlsBypassRoleCheckTck`, +7 | yes (slab/FFM tier) |
+| `…spi.persistence` | **stable** | 0.5.0 | ADR-012, ADR-022, ADR-080 [^rowcursor] [^scopetag] [^tenantless] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, `AbstractRlsBypassRoleCheckTck`, +7 | yes (slab/FFM tier) |
 | `…spi.flow` | **stable** | 0.5.0 | ADR-013 [^flowterminal] | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +4 | v0.11 record-component note below |
 
 > **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). Because 0.11 is unreleased, the intermediate twelve- and thirteen-parameter descriptors never shipped, so no further bridge is owed — one overload covers the whole milestone.
@@ -293,6 +293,13 @@ maturity change here.
     `retagScope(StorageContext, String, String)`, whose default throws. An out-of-tree binding
     implements it and installs a `WITH CHECK` that admits only a tenant-private tag or the published
     scope. No SPI class changes.
+
+[^tenantless]: **Behavioural note, 0.13 (ADR-012 §4c.3).** `AbstractSharedScopeAccessMatrixTck` gains
+    four cells asserting that a read and a write from a tenant-less context fail with
+    `PersistenceProviderException` (`EX-PERS-5003`), each next to a control under a tenant, and the
+    template method `tenantlessOwner()`, whose default throws. `PersistenceIsolationLeakTck` gains the
+    same two refusals. An out-of-tree binding installs a policy whose tenant arm raises on an absent
+    key. No SPI class changes.
 
 [^eventbuscode]: **Behavioural note, 0.12.** `EventBusException`'s two message constructors,
     `EventBusException(String)` and `EventBusException(String, Throwable)`, set `EX-EVENT-6001`

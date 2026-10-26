@@ -274,5 +274,17 @@
     "since": "0.13",
     "adr": "ADR-007",
     "justification": "TCK contract: AbstractTransportStreamTck gains QueueWriteDoesNotWait, ungated, which fails a binding whose queueWrite waits for a peer that does not read or releases a loan before its bytes leave the stream, and WriteBackpressure, behind the new hook supportsWriteBackpressure() (default false), which asserts that write blocks at a bounded outbound, resumes in order when the peer drains and is released by the stream's own close() with EX-NET-4009 and by the peer's reset() with EX-NET-4008. Source-compatible: the hook has a default. A binding whose queueWrite waits fails the ungated cases until it queues without waiting."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.AbstractSharedScopeAccessMatrixTck#tenantlessOwner()",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: AbstractSharedScopeAccessMatrixTck gains four cells asserting that a read and a write from a context that declares no tenant fail with PersistenceProviderException (EX-PERS-5003), each next to the same operation under a tenant, which must succeed. The write cell goes through the new template method tenantlessOwner(), which names the owner-column value an unpublished tenant key would match and throws UnsupportedOperationException by default, so an existing binding fails the cell until it overrides it and installs a policy whose tenant arm raises on an absent key; a skip would report green. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.PersistenceIsolationLeakTck",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: PersistenceIsolationLeakTck gains two cases asserting that a read and a write from a context that declares no tenant, through the existing readSentinelRows and writeSentinelRow template methods, fail with PersistenceProviderException (EX-PERS-5003), each followed by the same operation under a tenant, which must succeed. A binding whose policy returns an empty result or admits a row owned by the empty tenant fails them until its tenant arm raises on an absent key. No template method is added. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
   }
 ]

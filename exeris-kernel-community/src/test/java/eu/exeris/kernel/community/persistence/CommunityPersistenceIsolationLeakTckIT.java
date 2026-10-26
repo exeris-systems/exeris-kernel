@@ -67,14 +67,15 @@ class CommunityPersistenceIsolationLeakTckIT extends PersistenceIsolationLeakTck
                        "    CREATE ROLE exeris_app LOGIN NOSUPERUSER PASSWORD 'exeris_app_pw'; " +
                        "  END IF; " +
                        "END $$");
+            st.execute(RlsReferencePolicy.REQUIRED_SETTING_FUNCTION);
             st.execute("DROP TABLE IF EXISTS tenant_docs CASCADE");
             st.execute("CREATE TABLE tenant_docs (tenant_id TEXT NOT NULL, value TEXT NOT NULL)");
             st.execute("ALTER TABLE tenant_docs ENABLE ROW LEVEL SECURITY");
             st.execute("ALTER TABLE tenant_docs FORCE ROW LEVEL SECURITY");
             st.execute("DROP POLICY IF EXISTS tenant_isolation ON tenant_docs");
             st.execute("CREATE POLICY tenant_isolation ON tenant_docs " +
-                       "USING (tenant_id = current_setting('exeris.tenant_id', true)) " +
-                       "WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true))");
+                       "USING (" + RlsReferencePolicy.TENANT_ARM + ") " +
+                       "WITH CHECK (" + RlsReferencePolicy.TENANT_ARM + ")");
             st.execute("GRANT USAGE ON SCHEMA public TO exeris_app");
             st.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_docs TO exeris_app");
         } catch (SQLException e) {
