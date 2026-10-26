@@ -180,6 +180,8 @@ Four questions about what the kernel promises at the database session, raised by
 recommendation, and the reasons. The owner ruled on 2026-10-08 that each point takes the recommended
 option. Nothing in this section is implemented: every behaviour change it names is planned for 0.13.
 The points the recommendations left open were ruled by the owner on the same date.
+_(Amended 2026-10-23: the paragraph above and the measured state below describe 2026-10-08; §4c.2 and
+§4c.4 are implemented in 0.13 — see Amendments.)_
 
 Measured state the rulings build on:
 
