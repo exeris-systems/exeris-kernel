@@ -71,6 +71,40 @@ Local quick-starts that connect as `postgres` are affected.
 
 ---
 
+## 0.12.x → 0.13 — `write` blocks at the outbound bound, `queueWrite` never waits, `TransportConfig` gains a component (ADR-007, ADR-071)
+
+A Community stream now honours the backpressure `TransportStream#write` documents. It holds at most
+`transport.maxQueuedWriteBytes` (default 262144) bytes its peer has not taken, and a `write` that finds
+the bound reached parks its caller until half of it has drained or the stream ends. It never parks a
+reactor thread.
+
+1. **Do not hold a lock across `write`.** A thread that parks in `write` while holding a monitor or a
+   lock orders every other sender behind a slow peer. Send through `queueWrite` instead, which never
+   waits for the peer, and bound the loans you have handed over and not yet seen released: the
+   transport releases a loan once its bytes have left the stream's queue, or when the stream ends, and
+   not before.
+2. **Expect `IllegalStateException` from a second blocking writer.** One thread at a time may park as a
+   stream's writer; a second that would park is refused. A write that throws after parking may already
+   have queued a prefix of its source.
+3. **Set the bound for your load.** `transport.maxQueuedWriteBytes` fills `TransportConfig#maxQueuedWriteBytes()`
+   at the transport subsystem and at the HTTP and WebSocket listeners. `-1` restores the unbounded queue;
+   `0` and other negatives stop the boot. With `transport.idleTimeoutMillis = 0` a writer to a peer that
+   never reads waits until the stream is closed or reset.
+4. **A `TransportConfig` built in code gets the default bound.** The nine-argument constructor that
+   `maxActiveStreams` introduced and the eight-argument one before it stay, and both apply 256 KiB, so
+   an embedded host is protected without a change and a host that wants the old behaviour passes `-1`
+   through the ten-argument canonical constructor. The record gained a component, so a record
+   deconstruction pattern over `TransportConfig` or reflection over `getRecordComponents()` sees ten
+   components; no gate reports that.
+5. **An implementor of `TransportStream` must make `queueWrite` non-waiting.** It returns once the loan
+   is in the stream's outbound order, apart from a wait for the connection to finish being established
+   (reported as `EX-NET-4003`), and releases the loan once its bytes have left the queue or the stream
+   ends. A transport that sends synchronously inside `queueWrite` fails
+   `AbstractTransportStreamTck.QueueWriteDoesNotWait`. A transport that bounds its outbound overrides
+   `supportsWriteBackpressure()` to opt into `WriteBackpressure`.
+
+---
+
 ## 0.12.x → 0.13 — a send to a peer that ended the stream throws the closed-stream signal
 
 A `write` or `queueWrite` on a Community TCP or TLS stream whose peer reset or closed it, or ended the TLS

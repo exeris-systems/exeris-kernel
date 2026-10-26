@@ -60,6 +60,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 })
 final class NativeTcpReactor {
 
+    /** Bound for the whole life of every reactor thread; unbound everywhere else. */
+    /* default */ static final ScopedValue<Boolean> REACTOR_THREAD = ScopedValue.newInstance();
+
     private final NativeTcpCarrier host;
     private final int index;
     private final Selector selector;
@@ -91,7 +94,16 @@ final class NativeTcpReactor {
     /* default */ void start() {
         this.thread = Thread.ofPlatform()
                 .name("carrier/native-tcp/reactor/" + index)
-                .start(this::runLoop);
+                .start(() -> ScopedValue.where(REACTOR_THREAD, Boolean.TRUE).run(this::runLoop));
+    }
+
+    /**
+     * Whether the calling thread is a reactor thread. A reactor thread serves every stream it owns,
+     * so it never blocks on one stream's peer: a write on it queues past the stream's outbound bound
+     * instead of parking.
+     */
+    /* default */ static boolean isReactorThread() {
+        return REACTOR_THREAD.isBound();
     }
 
     /* default */ void enqueueRegistration(SocketChannel channel) {

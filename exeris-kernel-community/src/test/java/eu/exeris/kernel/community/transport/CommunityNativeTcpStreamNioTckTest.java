@@ -23,6 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CommunityNativeTcpStreamNioTckTest extends AbstractTransportStreamTck {
 
     private String previousBackend;
+    // Small enough that a stream's writes reach the bound while the peer is held back.
+    private static final int WRITE_BOUND_BYTES = 64 * 1024;
+
     private MemoryAllocator allocator;
     private CommunityTransportTestHarness.Pair pair;
 
@@ -56,7 +59,7 @@ class CommunityNativeTcpStreamNioTckTest extends AbstractTransportStreamTck {
     @Override
     protected StreamPair createStreamPair() {
         pinNioBackend();
-        pair = CommunityTransportTestHarness.openLoopbackPair(allocator, false);
+        pair = CommunityTransportTestHarness.openLoopbackPair(allocator, false, 1, "127.0.0.1", 1024, WRITE_BOUND_BYTES);
         assertThat(((NativeTcpStream) pair.clientStream()).plainSocketBackendName())
                 .as("the client stream runs on the NIO fallback").isEqualTo("nio-fallback");
         assertThat(((NativeTcpStream) pair.serverStream()).plainSocketBackendName())
@@ -66,6 +69,11 @@ class CommunityNativeTcpStreamNioTckTest extends AbstractTransportStreamTck {
 
     @Override
     protected boolean expectsTrueReset() {
+        return true;
+    }
+
+    @Override
+    protected boolean supportsWriteBackpressure() {
         return true;
     }
 

@@ -222,7 +222,7 @@ final class CommunityWebSocketUpgrade {
     // Off-heap for the reason recorded on CommunityWebSocketEgress: TransportStream.write documents
     // an off-heap source, and a heap segment is rejected by the POSIX send() downcall and swallowed
     // into the NIO fallback rather than failing. The handshake response is written once per
-    // connection, so a scoped allocation is right here where the frame path reuses one buffer.
+    // connection, so a scoped allocation that is closed here is right for it.
     private static void writeAscii(TransportStream stream, String text, MemoryAllocator allocator) {
         byte[] bytes = text.getBytes(StandardCharsets.US_ASCII);
         try (LoanedBuffer outbound = allocator.allocateNetwork(bytes.length)) {

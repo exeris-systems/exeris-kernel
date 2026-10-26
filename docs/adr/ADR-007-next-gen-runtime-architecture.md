@@ -15,7 +15,7 @@ status: active
 | **Deciders**   | Arkadiusz Przychocki                                   |
 | **Date**       | 2025-12-11 (Updated: 2026-10-23)                       |
 | **Compliance** | [Strategic Pillar: No-Waste Compute](../whitepaper.md) |
-| **Amended**    | 2026-10-23 — a send to a vanished peer on §3 (EX-NET-4008); 2026-10-20 — initialization deadline on §5 (EX-BOOT-0003); 2026-10-07 — §5 Kernel Lifecycle and Process Termination (**ACCEPTED** 2026-10-08), see [Amendments](#amendments) |
+| **Amended**    | 2026-10-23 — the stream write contract on §3 (terminal wake, non-waiting `queueWrite`, `write` backpressure); 2026-10-23 — a send to a vanished peer on §3 (EX-NET-4008); 2026-10-20 — initialization deadline on §5 (EX-BOOT-0003); 2026-10-07 — §5 Kernel Lifecycle and Process Termination (**ACCEPTED** 2026-10-08), see [Amendments](#amendments) |
 
 ## Context and Problem Statement
 
@@ -70,6 +70,10 @@ We reject the concept of a "QUIC-only" kernel.
 - **A send to a vanished peer** reports the closed-stream signal for the peer (`EX-NET-4008`), with the
   transport failure as its cause, and a TLS `close_notify` ends writes in Community.
   _(Amended 2026-10-23: the send-to-a-vanished-peer clause — see Amendments.)_
+- **The stream write contract.** Every transition that ends a stream wakes the threads blocked in `read` or
+  `write` on it; `queueWrite` never waits for the peer and its release is the caller's credit; `write` parks
+  at `TransportConfig#maxQueuedWriteBytes()` and never on an event-loop thread.
+  _(Amended 2026-10-23: the stream write contract — see Amendments.)_
 
 ### 4. Memory Management (Loan Pattern)
 
@@ -329,6 +333,34 @@ thread, or the host's lifecycle thread. Two of those carry none of the kernel's 
   ends the stream; a TCP FIN stays a half-close and leaves writes working. The NIO fallback has no errno, so
   there a send that fails on the channel for any reason but a local close is read as the peer's end. Enterprise transports meet the same
   observable obligation through `AbstractTransportStreamTck`.
+
+- **2026-10-23 — §3 The stream write contract.** The original §3 text is kept; three obligations are added to
+  `TransportStream`, each pinned by `AbstractTransportStreamTck`.
+  1. **Terminal wake.** Every transition that ends a stream — `close()`, `reset(long)`, the parent connection's
+     `close()`, a send failure that ends it, the peer's reset, or a teardown by the transport — wakes every thread
+     blocked in `read` or `write` on it. A woken `read` returns end of stream while it can still report one and
+     otherwise throws the closed-stream signal; a woken `write` throws it. Whether the peer's end of its output
+     also ends writes stays transport semantics: in Community a TCP FIN is a half-close and leaves a blocked
+     writer waiting, while a TLS `close_notify` ends writes.
+  2. **`queueWrite` never waits for the peer.** It returns once the loan is in the stream's outbound order,
+     whatever the peer is reading. The one wait it may make is for the connection to finish being established,
+     such as a TLS handshake, bounded by the driver's deadline and reported as `EX-NET-4003`. The loan is
+     released once its bytes have left the stream's outbound queue, or when the stream ends, and not before, so
+     the release is the caller's backpressure signal: a caller that must not block, a writer holding a lock that
+     other senders wait on or an event loop, bounds the loans it has outstanding by their release. A transport
+     whose `queueWrite` sends synchronously, or copies the bytes and releases the loan early, no longer
+     conforms.
+  3. **`write` parks at the outbound bound.** A transport bounds the bytes a stream holds that its peer has not
+     taken, `TransportConfig#maxQueuedWriteBytes()` (ADR-071), and `write` blocks its caller while the bound is
+     reached, until enough drain or the stream ends. It never blocks while holding a monitor, and a transport
+     never blocks its own event-loop thread there: a call made on one queues past the bound. Bytes handed over
+     through `queueWrite` count against the bound and never wait on it. `TransportConfig.UNBOUNDED_QUEUED_WRITE_BYTES`
+     removes the blocking.
+
+  The first two were already the observable behaviour of the Community stream's terminal paths and of its
+  asynchronous flush; they are now contract, which an Enterprise transport meets through the TCK. The third was
+  documented as a blocking `write` and not honoured by Community, which queued the remainder a full socket
+  refused without limit.
 
 ## Engineering Protocol
 
