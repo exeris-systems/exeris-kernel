@@ -1413,6 +1413,8 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Status (v0.9):** **DELIVERED** in Sprint 2 — `docs/stability-matrix.md` published as a tracked, consumer-facing artifact: per-package maturity (`stable` / `preview` / `experimental`), since-version, anchor ADR, TCK coverage, and Enterprise-overlay status, plus the canonical semver policy and pre-1.0 / TRL-3 framing. `diagnostics` is the first explicitly-`stable` surface (ADR-033); `events` / `graph` / `security` / `crypto` held at `preview` (scheduled v0.9 contract work); `http` is `mixed` (engines + enricher `stable`, ADR-034 body-codec quadrant `preview`). All 13 `docs/subsystems/*.md` and 5 `docs/modules/*.md` carry a `## Stability` cross-reference; `CHANGELOG.md` links the matrix as the semver-policy source. Drift sweep clean (whitepaper / architecture / performance-contract enumerate no per-surface levels to sync).
 
+**Status (v0.13):** ADR-100 promotes `http` (the whole package), `security` with `security.identity`, `events`, `crypto`, `scheduling` and `storage.blob` to `stable`, joining transport, persistence, flow, memory and the foundation packages; `contract`, `graph`, `time` and `websocket` stay `preview` at 1.0. The compatibility gate fails a binary- or source-incompatible change to every `stable` package.
+
 ---
 
 ### Support Matrix Finalization
@@ -4287,7 +4289,7 @@ Community 1.0 requires:
 - **supply-chain integrity** — published artifacts carry CycloneDX SBOM + verifiable signature + provenance attestation; a "1.0 GA" on Maven Central cannot ship unsigned (see "Table-Stakes: Supply-Chain Integrity").
 - **automated SPI binary-compatibility gate** — revapi/japicmp baselined at the 1.0 SPI surface, enforcing the stability declaration in CI (see "Table-Stakes: SPI Binary-Compatibility Gate").
 - **a declared native-image / GraalVM stance** in the support matrix (`supported` / `explicitly-not-supported` / `post-1.0`) rather than silence.
-- **a narrowed, deep core** — the new v0.11/v0.12 SPIs (Blob, Job, Cache, WebSocket, ServiceResolver, coordination) are explicitly **post-1.0** *for the stable core*; three of them (`storage.blob`, `scheduling`, `websocket`) ship as `preview` surfaces, which promise nothing semver-binding and so do not widen what 1.0 must hold; 1.0 is unbreakable on `transport / http / security / persistence / flow / events` (+ `memory`) rather than shallow across fifteen surfaces.
+- **a narrowed, deep core** — the new v0.11/v0.12 SPIs (Blob, Job, Cache, WebSocket, ServiceResolver, coordination) are explicitly **post-1.0** *for the stable core*; `websocket` ships as a `preview` surface, which promises nothing semver-binding and so does not widen what 1.0 must hold; `storage.blob` and `scheduling` are `stable` since 0.13 (ADR-100) and are part of the 1.0 freeze; 1.0 is unbreakable on `transport / http / security / persistence / flow / events / crypto / scheduling / storage.blob` (+ `memory`) rather than shallow across fifteen surfaces.
 
 ---
 

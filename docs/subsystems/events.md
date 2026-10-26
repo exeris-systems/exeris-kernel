@@ -635,8 +635,9 @@ carries.
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.events.*`) is classified **preview** in the
-[SPI Stability Matrix](../stability-matrix.md), which also records the 0.12 narrowing of
+This subsystem's SPI surface (`eu.exeris.kernel.spi.events.*`) is **stable** from 0.13.0 in the
+[SPI Stability Matrix](../stability-matrix.md) ([ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md),
+anchored by [ADR-101](../adr/ADR-101-events-spi-contract-anchor.md)), which also records the 0.12 narrowing of
 `EventBus.publishAndAwait` to buses that are not brokered. See the matrix for the semver policy and TCK
 coverage status.
 

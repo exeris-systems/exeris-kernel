@@ -543,7 +543,7 @@ Community implementation: `Argon2idPasswordEncoder` (Bouncy Castle Argon2id, PHC
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.security.*`) is classified **preview** in the
-[SPI Stability Matrix](../stability-matrix.md): JWKS rotation in v0.9 Sprint 4 changes the contract,
-and the `IdentityProvider` SPI arrives in v0.10. See the matrix for the semver policy and TCK
-coverage status.
+This subsystem's SPI surface (`eu.exeris.kernel.spi.security.*`) and `eu.exeris.kernel.spi.security.identity.*` are **stable** from 0.13.0 in the
+[SPI Stability Matrix](../stability-matrix.md) ([ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md)).
+`SecretProvider` is outside the surface; adding that seam later is additive. See the matrix for the
+semver policy and TCK coverage status.

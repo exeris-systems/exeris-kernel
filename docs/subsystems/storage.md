@@ -11,8 +11,8 @@ last-verified: 2026-09-08
 
 **Status:** SPI + two Community drivers shipped in v0.11 (ADR-056); the subsystem boots from 0.12,
 opt-in through `storage.blob.provider` — unset, storage is off and nothing is bound (see *Bootstrap
-and provider selection*). The SPI is a `preview` surface, outside the stable core the ROADMAP's
-narrowed-core decision holds 1.0 to, so 1.0 GA is not gated on it.
+and provider selection*). The SPI is a `stable` surface from 0.13.0 ([ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md)),
+inside the core that 1.0 freezes.
 
 **SPI package:** `eu.exeris.kernel.spi.storage.blob`
 **Drivers:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider`. Two bindings
@@ -390,12 +390,12 @@ appearing rather than on the argument being made.
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.storage.blob.*`) is classified **preview** since
-0.11.0 in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
+This subsystem's SPI surface (`eu.exeris.kernel.spi.storage.blob.*`) is **stable** from 0.13.0 (shipped in
+0.11.0) in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
 [ADR-056](../adr/ADR-056-blob-storage-provider-spi.md) and the contract tests are
 `AbstractBlobStorageTck`. See the matrix for the semver policy this label commits to.
 
 The `KernelProviders.BLOB_STORAGE_PROVIDER` / `BLOB_STORE` slots and the `storage.blob.*`
-configuration keys arrived in 0.12.0 and inherit that label: the SPI they bind is the one the matrix
-classifies, and a bootstrap path does not stabilise a surface.
+configuration keys arrived in 0.12.0 and carry the same label: the SPI they bind is the one the matrix
+classifies, and a bootstrap path neither adds to nor subtracts from it.
 

@@ -246,12 +246,9 @@ priorities, and dispatch-time re-validation of a captured identity.
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.scheduling.*`) is classified **preview** since
-0.11.0 in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
-[ADR-057](../adr/ADR-057-job-scheduler-spi.md) and the contract tests are
+This subsystem's SPI surface (`eu.exeris.kernel.spi.scheduling.*`) is **stable** from 0.13.0 (shipped in
+0.11.0) in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
+[ADR-057](../adr/ADR-057-job-scheduler-spi.md) (amendment A1 is additive), the promotion is
+[ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md), and the contract tests are
 `AbstractJobSchedulerTck`. See the matrix for the semver policy this label commits to.
-
-Every other subsystem doc under `docs/subsystems/` already carried this section, and this one did
-not, so a reader checking how far they could lean on `JobScheduler` had to find the matrix
-themselves — which is the gap, not the label.
 
