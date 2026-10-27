@@ -32,22 +32,16 @@ last-verified: 2026-09-08
 ## SPI surface status
 
 Summarizes [`stability-matrix.md`](./stability-matrix.md) — that document is the authority (with the
-`Abstract*Tck` evidence per surface) and its own per-surface `http` breakdown is exhaustive; this
+`Abstract*Tck` evidence per surface) and its own per-surface `http` breakdown carries the TCK detail; this
 table is a consumer-facing digest, not a 1:1 mirror of every row there.
 
 | Subsystem (`eu.exeris.kernel.spi.*`) | Status | Since |
 |:-------------------------------------|:-------|:------|
 | `memory`, `transport`, `bootstrap`, `context`, `persistence`, `flow`, `exceptions`, `telemetry`, `config`¹ | **stable** | 0.5.0 |
 | `diagnostics` | **stable** | 0.9.0 (ADR-033) |
-| `http` — `HttpServerEngine`/`HttpClientEngine`/`HttpExchange`/`HttpHandler`/`HttpProvider`, `HttpClientRequestEnricher` | **stable** | 0.5.0 / 0.8.0 |
-| `http` — `HttpRequestBodyEncoder`/`Decoder`, `HttpResponseBodyEncoder`/`Decoder` (ADR-034, ADR-036) | **preview** | 0.8.0 |
-| `http` — Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` (ADR-045) | **preview** | 0.10.0 |
-| `http` — Route authorization: `HttpRoutePolicy`, `RouteRequirement` (ADR-061, ADR-077) | **preview** | 0.11.0 |
-| `http` — `HttpStreamExchange`/`HttpStreamHandler`/`StreamEvent`, SSE server-push (ADR-043) | **preview** | 0.10.0 |
-| `security.identity` — `IdentityProvider`/`TokenValidator`/`VerifiedClaims` (ADR-040) | **preview** | 0.10.0 |
-| `events`, `graph`, `security`, `crypto` | **preview** | 0.5.0 |
-| `scheduling` — `JobScheduler` (ADR-057) | **preview** | 0.11.0 |
-| `storage.blob` — `BlobStorageProvider` (ADR-056) | **preview** | 0.11.0 |
+| `http`, `security` (with `security.identity`), `events`, `crypto`, `scheduling`, `storage.blob` | **stable** | stable from 0.13.0 (ADR-100); first shipped 0.5.0 – 0.11.0 |
+| `contract` — `ExecutionContract`/`WorkloadAdmission` (ADR-088, ADR-089) | **preview** | 0.13.0 |
+| `graph` | **preview** | 0.5.0 |
 | `time` — `TimeSource`/`Clock` seam (ADR-082) | **preview** | 0.12.0 |
 | `websocket` — `WebSocketProvider`/`WebSocketExchange`/`WebSocketHandshakeHandler` (ADR-084) | **preview** | 0.12.0 |
 | `util` | _internal_ | — |

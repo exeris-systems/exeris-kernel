@@ -681,10 +681,10 @@ skipped one.
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.crypto.*`) is classified **preview** in the
-[SPI Stability Matrix](../stability-matrix.md). The OpenSSL 3.0–4.x binding migration itself already
+This subsystem's SPI surface (`eu.exeris.kernel.spi.crypto.*`) is **stable** from 0.13.0 in the
+[SPI Stability Matrix](../stability-matrix.md) ([ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md)). The OpenSSL 3.0–4.x binding migration itself already
 landed (v0.9 Sprint 4b, per ADR-008's repository-state note: `SSL_CTX_new_ex`, `.so.4` candidates,
-version band widened to major 3–4, floor kept at 3.0.0 for FIPS-validated 3.1.2 builds); the
-preview classification instead reflects that a FIPS provider workstream remains deferred and
-unscheduled, so the binding/ABI surface may still move if and when that workstream lands. See the
-matrix for the semver policy and TCK coverage status.
+version band widened to major 3–4, floor kept at 3.0.0 for FIPS-validated 3.1.2 builds). A FIPS
+provider workstream remains deferred and unscheduled; if it lands, FIPS support (and a `SensitiveBuffer`
+type) arrives as an addition to the surface. See the matrix for the semver policy and TCK coverage
+status.

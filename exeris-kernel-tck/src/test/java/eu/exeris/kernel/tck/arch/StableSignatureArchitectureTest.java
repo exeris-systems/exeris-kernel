@@ -62,21 +62,6 @@ public class StableSignatureArchitectureTest {
             KERNEL_PROVIDERS + ".timeSource():eu.exeris.kernel.spi.time.TimeSource"
                     + " names eu.exeris.kernel.spi.time.TimeSource");
 
-    /**
-     * Packages that are {@code preview} today and that ADR-100 §1 promotes to {@code stable} in the
-     * single promotion commit (§5). A stable signature may name them only until that commit relabels
-     * them; the commit deletes the entry together with the relabel. {@code spi.graph},
-     * {@code spi.contract}, {@code spi.time} and {@code spi.websocket} stay {@code preview} at 1.0 and
-     * are deliberately absent: no stable signature may name them.
-     */
-    private static final Set<String> PROMOTED_BY_THE_PROMOTION_COMMIT = Set.of(
-            "eu.exeris.kernel.spi.security.",
-            "eu.exeris.kernel.spi.events.",
-            "eu.exeris.kernel.spi.crypto.",
-            "eu.exeris.kernel.spi.scheduling.",
-            "eu.exeris.kernel.spi.storage.",
-            "eu.exeris.kernel.spi.http.");
-
     @ArchTest
     static void stableSignaturesNameNoPreviewType(JavaClasses classes) {
         Map<String, String> labels = readLabels(repositoryRoot().resolve(CONF));
@@ -134,8 +119,7 @@ public class StableSignatureArchitectureTest {
         if (!"preview".equals(level) && !"experimental".equals(level)) {
             return;
         }
-        if (REMOVED_IN_FIRST_RELEASE_CANDIDATE.contains(signature + " names " + named.getName())
-                || PROMOTED_BY_THE_PROMOTION_COMMIT.stream().anyMatch(named.getName()::startsWith)) {
+        if (REMOVED_IN_FIRST_RELEASE_CANDIDATE.contains(signature + " names " + named.getName())) {
             return;
         }
         violations.add(owner.getName() + "#" + member + " names " + level + " type " + named.getName());

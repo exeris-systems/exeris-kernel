@@ -198,8 +198,11 @@ whose precondition has not landed keeps its `preview` row in that commit.
 - §3: the `javap -public` sweep over the promoted set reports no reference to a `preview` package,
   and the check added in §5 fails when one is reintroduced (shown by reverting one moved slot).
 - §5: `spi-api-diff --verify-surfaces` passes with no unlabelled class, and `--fail-on-stable`
-  against `v0.12.0` reports the promoted surfaces' changes since 0.12 as their last `preview`
-  changes, not as `stable` breaks.
+  against `v0.12.0`, run with the post-promotion labels, reports zero `stable` breaks: the gate
+  labels both sides with the current `stability-surfaces.conf`, so every change the promoted
+  surfaces took since 0.12 is held to the `stable` rule, and passes because each is additive in both
+  senses. *(Corrected 2026-10-26, see [Amendments](#amendments): the earlier wording described a
+  gate that labels by the baseline.)*
 - After the promotion commit, `docs/release/1.0-scope.md` lists no open Blocking row for the
   promotion.
 
@@ -225,3 +228,10 @@ whose precondition has not landed keeps its `preview` row in that commit.
   binds or reads the graph and time slots, and one of them binds them rather than only reading them.
   The decision is unchanged: the bridges stay deprecated for removal at the first 1.0 release candidate, and every
   consumer moves to the holders before it adopts that release candidate.
+- **2026-10-26 — §Verification's `--fail-on-stable` statement corrected.** The Verification section
+  said the gate reports the promoted surfaces' changes since 0.12 as their last `preview` changes.
+  `spi-api-diff.sh` applies the labels of the working tree's `stability-surfaces.conf` to both the
+  baseline and the head, and reads no label from the baseline ref, so it cannot report that. The
+  statement it does support is stricter: with the post-promotion labels, `--fail-on-stable` against
+  `v0.12.0` reports zero `stable` breaks, which holds the promoted surfaces' 0.13 changes to the
+  `stable` rule. The decision is unchanged and the gate is unchanged.

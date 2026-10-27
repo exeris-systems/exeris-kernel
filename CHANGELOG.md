@@ -68,6 +68,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **`…spi.http` (the whole package), `…spi.security` with `…security.identity`, `…spi.events`, `…spi.crypto`, `…spi.scheduling` and `…spi.storage.blob` are `stable` (ADR-100).** The SPI compatibility gate now fails a binary- or source-incompatible change to them, as it does for transport, persistence, flow and memory; they are semver-binding from 1.0. `…spi.contract`, `…spi.graph`, `…spi.time` and `…spi.websocket` stay `preview`. No signature changes; see `docs/stability-matrix.md`.
+
 - **The Community HTTP/2 writer hands every frame to the transport through `queueWrite`, so a slow peer no longer holds its lock.** Stream heads, end-of-stream frames, `RST_STREAM`, coalesced responses and the control frames (PING and SETTINGS acknowledgements, GOAWAY) were written with the blocking `write`; the bytes on the wire and their order are unchanged.
 - **The four stream JFR events carry the protocol's stream id, and the park event the window.**
   `StreamOpened`, `StreamClosed`, `StreamAbortiveTeardown` and `StreamBackpressurePark` gain
@@ -243,7 +245,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **`EventEngineStats.publishFailedTotal()` counts asynchronous publish failures on a brokered bus (ADR-101
   Ruling 2).** The new component is kept apart from `failedTotal`, which still counts handler errors only. The
   seven-argument constructor remains as a bridge that reports zero, so existing callers compile unchanged.
-  `…spi.events` is `preview`; the change is recorded in `docs/stability-matrix.md`.
+  The change is recorded in `docs/stability-matrix.md`.
 
 - **`HttpExchange` reports the client's transport address.** `remoteAddress()` and `remotePort()` return
   the immediate transport peer of the connection that carries the exchange, which is the proxy when one
