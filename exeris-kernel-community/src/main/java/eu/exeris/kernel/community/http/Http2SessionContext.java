@@ -7,6 +7,7 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.core.http.hpack.HpackDecoder;
 import eu.exeris.kernel.core.http.hpack.HpackDynamicTable;
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
+import eu.exeris.kernel.core.http.http2.Http2FlowController;
 import eu.exeris.kernel.core.http.http2.Http2FrameCodec;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2HeaderBlockAssembler;
@@ -33,6 +34,9 @@ import java.util.Map;
  *       tracks HEADERS / CONTINUATION continuation state.</li>
  *   <li>The per-stream request registry ({@link Http2RequestStreamState}).</li>
  *   <li>The {@code last-stream-id} pointer for GOAWAY framing.</li>
+ *   <li>The inbound flow-control state: the connection's receive window and the total of request-body
+ *       bytes held across the requests still arriving, which bounds the memory a peer can pin on one
+ *       connection.</li>
  * </ul>
  *
  * <p>Lifetime is one HTTP/2 connection; the processor wraps each session in a
@@ -61,6 +65,12 @@ import java.util.Map;
         "PMD.CloseResource"
 })
 final class Http2SessionContext implements AutoCloseable {
+
+    /**
+     * The receive window the server keeps open on the connection and on each request stream: the
+     * protocol default, because no {@code SETTINGS_INITIAL_WINDOW_SIZE} is advertised.
+     */
+    /* default */ static final int INBOUND_WINDOW_BYTES = Http2FlowController.DEFAULT_WINDOW_SIZE;
 
     private static final int HTTP2_MAX_DYNAMIC_TABLE_SIZE = 4096;
     private static final int HTTP2_SETTINGS_ENTRY_BYTES = 6;
@@ -92,6 +102,9 @@ final class Http2SessionContext implements AutoCloseable {
     private final Http2HeaderBlockAssembler assembler;
     private final Map<Integer, Http2RequestStreamState> requestStreams;
     private final int maxConcurrentStreams;
+    private final Http2FlowController connectionReceiveWindow =
+            new Http2FlowController(INBOUND_WINDOW_BYTES);
+    private long bufferedRequestBodyBytes;
     private boolean pendingEndStream;
     private int lastProcessedStreamId;
     /**
@@ -349,7 +362,54 @@ final class Http2SessionContext implements AutoCloseable {
                 request.streamId(),
                 new Http2RequestStreamState(request.streamId(), request));
         if (previous != null) {
+            bufferedRequestBodyBytes -= previous.bodyBytes();
             previous.close();
+        }
+    }
+
+    /**
+     * Charges {@code bytes} of a DATA frame, padding included, to the connection's receive window.
+     *
+     * @return {@code false} when the frame exceeds the window the server has granted, which is a
+     *         connection error (FLOW_CONTROL_ERROR)
+     */
+    /* default */ boolean consumeConnectionReceiveWindow(int bytes) {
+        return connectionReceiveWindow.consume(bytes);
+    }
+
+    /**
+     * Raises the connection's receive window back to {@link #INBOUND_WINDOW_BYTES} once it has fallen
+     * to half of it or less.
+     *
+     * @return the increment to advertise on stream 0, or {@code 0} when no credit is due
+     */
+    /* default */ int replenishConnectionReceiveWindow() {
+        long window = connectionReceiveWindow.windowSize();
+        if (window > INBOUND_WINDOW_BYTES / 2) {
+            return 0;
+        }
+        int increment = (int) (INBOUND_WINDOW_BYTES - window);
+        connectionReceiveWindow.increment(increment);
+        return increment;
+    }
+
+    /**
+     * Whether holding {@code fragmentBytes} more would take the request bodies buffered on this
+     * connection past {@code maxBodyBytes}; never true when the limit is unlimited ({@code < 0}).
+     */
+    /* default */ boolean exceedsRequestBodyBudget(long maxBodyBytes, int fragmentBytes) {
+        return maxBodyBytes >= 0 && bufferedRequestBodyBytes + fragmentBytes > maxBodyBytes;
+    }
+
+    /** Appends a DATA fragment to a request body and counts it against the connection's budget. */
+    /* default */ void appendRequestBody(Http2RequestStreamState requestStream,
+                                         MemoryAllocator allocator,
+                                         MemorySegment source,
+                                         long sourceOffset,
+                                         int length) {
+        requestStream.appendBody(allocator, source, sourceOffset, length);
+        if (length > 0) {
+            bufferedRequestBodyBytes += length;
         }
     }
 
@@ -358,12 +418,18 @@ final class Http2SessionContext implements AutoCloseable {
     }
 
     /* default */ Http2RequestStreamState takeRequestStream(int streamId) {
-        return requestStreams.remove(streamId);
+        Http2RequestStreamState taken = requestStreams.remove(streamId);
+        if (taken != null) {
+            // Read before the caller detaches the body, which zeroes the stream's count.
+            bufferedRequestBodyBytes -= taken.bodyBytes();
+        }
+        return taken;
     }
 
     /* default */ void resetRequestStream(int streamId) {
         Http2RequestStreamState removed = requestStreams.remove(streamId);
         if (removed != null) {
+            bufferedRequestBodyBytes -= removed.bodyBytes();
             removed.close();
         }
     }

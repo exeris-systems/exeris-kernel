@@ -372,6 +372,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   wakes its waiters: the failure is thrown to the writer when its own thread runs the drain, and otherwise
   the stream ends and the writer's next call reports the closed signal. It used to re-enter `close()` under
   the slot and lose the queued write silently.
+- **An HTTP/2 request body larger than 64 KiB completes.** The Community session returns stream and
+  connection credit as it consumes DATA, never beyond `http.maxRequestBodyBytes`, enforces its receive
+  windows (`FLOW_CONTROL_ERROR`), and refuses with `REFUSED_STREAM` a stream whose body would take the
+  bodies buffered on one connection past `http.maxRequestBodyBytes`.
 - **HTTP/2 respond-once responses honour the peer's connection and stream flow-control windows.** The
   session applies `WINDOW_UPDATE` and `SETTINGS_INITIAL_WINDOW_SIZE`; a body the windows cannot carry
   yet finishes on a task that waits for credit while the frame loop keeps reading, and every write to

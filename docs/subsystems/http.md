@@ -483,6 +483,18 @@ A response never exceeds the windows the peer has granted (RFC 9113 §6.9). The 
 - **DATA after the request ended.** DATA on a stream the writer still serves resets it with `STREAM_CLOSED` through the writer, which stops the task serving it; DATA on a stream the server does not know is refused with `REFUSED_STREAM`.
 - **Coverage:** `Http2ConnectionWriterTest` (every park and wake interleaving through the writer's test seam, each with a mutation of the matching production line that turns it red), `Http2ConnectionWriterAllocationTest` (the writer's window and reset methods allocate nothing while the lock is uncontended), `Http2FlowControlProcessorTest` (the frame loop over a scripted transport).
 
+### HTTP/2 inbound flow control (since 0.13)
+
+A request body larger than 64 KiB completes because the session returns receive credit as it consumes DATA (RFC 9113 §6.9, §6.9.1).
+
+- **Windows.** The connection has one receive window and each request stream under assembly has its own, both 65 535: the server advertises no `SETTINGS_INITIAL_WINDOW_SIZE` and sends no initial connection `WINDOW_UPDATE`, so the protocol default is the grant. Both are `Http2FlowController`s confined to the frame loop; the connection's lives in `Http2SessionContext`, a stream's in `Http2RequestStreamState`.
+- **Consumption point.** A DATA frame is charged for its whole payload, pad length and padding included, and credit goes back when the frame loop has taken the frame off the read buffer: appended to the request, or discarded because the stream is unknown, reset or refused. It does not go back when the bytes arrive on the socket or when a handler finishes. The loop buffers a body only up to the windows and `http.maxRequestBodyBytes`, so a slow handler cannot make a connection hold more.
+- **Half-window top-up, coalesced.** Credit is returned once a window has fallen to half of its size or less, up to the full size, so a peer is credited in batches and not once per frame. A frame that moves both windows returns both increments in one buffer and one write. A request's last DATA frame returns connection credit only, before the request is dispatched.
+- **Stream target.** A stream is offered at most 65 535 bytes of window, and no more than `http.maxRequestBodyBytes` still leaves room for, so credit never invites bytes the server would then refuse. With the limit unlimited (`-1`) the target is the full window.
+- **Per-connection budget.** The bodies held across every request still arriving on one connection may total at most `http.maxRequestBodyBytes` (unlimited when `-1`). A DATA frame that would take the total past it resets its stream with `RST_STREAM(REFUSED_STREAM)` and releases that stream's bytes; no configuration key is added. Without the budget a peer could pin the limit once per stream, up to the concurrent-stream cap.
+- **Errors.** A frame that exceeds the connection window is `GOAWAY(FLOW_CONTROL_ERROR)`. A frame that exceeds a stream's window is `RST_STREAM(FLOW_CONTROL_ERROR)` and the stream is discarded; the connection window was already charged and is refilled as for any consumed frame. A stream over `http.maxRequestBodyBytes` is `RST_STREAM(CANCEL)`.
+- **Coverage:** `Http2InboundFlowControlTest` (the frame loop over a scripted transport, against a peer that tracks the windows it was granted), `CommunityHttp2RequestBodyIntegrationTest` (1 MiB over TLS with ALPN `h2` and over cleartext prior knowledge on a real server, from a client that sends only what the windows allow).
+
 ### Developer-licence workload envelope (since 0.13, ADR-089)
 
 A kernel that runs under a developer-licence contract holds its HTTP traffic to the contract's

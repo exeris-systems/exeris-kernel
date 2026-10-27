@@ -289,10 +289,7 @@ final class CommunityHttp2SessionProcessor {
                 handleHttp2ContinuationFrame(connection, aggregate, payloadOffset, header);
                 yield true;
             }
-            case DATA -> {
-                handleHttp2DataFrame(connection, aggregate, payloadOffset, header);
-                yield true;
-            }
+            case DATA -> handleHttp2DataFrame(connection, aggregate, payloadOffset, header);
             case WINDOW_UPDATE -> handleWindowUpdateFrame(connection, aggregate, payloadOffset, header);
             case GOAWAY -> false;
             case RST_STREAM -> handleRstStreamFrame(connection, header);
@@ -447,24 +444,49 @@ final class CommunityHttp2SessionProcessor {
         decodeAndDispatchCompletedHeaderBlock(connection);
     }
 
-    private void handleHttp2DataFrame(Http2Connection connection,
-                                      LoanedBuffer aggregate,
-                                      long payloadOffset,
-                                      Http2FrameParser.FrameHeader header) {
+    /**
+     * Takes one DATA frame off the read buffer and returns the credit it carried (RFC 9113 §6.9).
+     * Credit goes back when the frame loop has consumed the frame — appended to the request, or
+     * discarded for a stream that is gone — and not when it arrived or when a handler finishes, so a
+     * slow handler cannot grow what the loop buffers beyond the windows and the configured body bound.
+     *
+     * @return {@code false} when the frame ended the connection
+     */
+    private boolean handleHttp2DataFrame(Http2Connection connection,
+                                         LoanedBuffer aggregate,
+                                         long payloadOffset,
+                                         Http2FrameParser.FrameHeader header) {
         Http2SessionContext session = connection.session();
         Http2ConnectionWriter writer = connection.writer();
-        if (header.streamId() <= 0) {
+        int streamId = header.streamId();
+        if (streamId <= 0) {
             throw new IllegalStateException("Invalid DATA stream");
         }
 
-        Http2RequestStreamState requestStream = session.requestStream(header.streamId());
+        // The whole payload is flow-controlled, the pad length and padding included.
+        int flowControlledBytes = header.length();
+        if (!session.consumeConnectionReceiveWindow(flowControlledBytes)) {
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, writer, session.lastProcessedStreamId(), Http2ErrorCode.FLOW_CONTROL_ERROR);
+            return false;
+        }
+
+        Http2RequestStreamState requestStream = session.requestStream(streamId);
         if (requestStream == null) {
             // DATA after the request ended: a stream the writer still serves is closed (RFC 9113
             // section 5.1) and its task stopped; a stream nobody knows is refused.
-            if (!writer.resetStream(header.streamId(), Http2ErrorCode.STREAM_CLOSED)) {
-                CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, header.streamId());
+            if (!writer.resetStream(streamId, Http2ErrorCode.STREAM_CLOSED)) {
+                CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, streamId);
             }
-            return;
+            replenishConnectionWindow(connection);
+            return true;
+        }
+        if (!requestStream.consumeReceiveWindow(flowControlledBytes)) {
+            CommunityHttp2ControlFrames.sendRstStream(
+                    allocator, writer, streamId, Http2ErrorCode.FLOW_CONTROL_ERROR);
+            session.resetRequestStream(streamId);
+            replenishConnectionWindow(connection);
+            return true;
         }
 
         CommunityHttp2FrameFragments.Fragment dataFragment =
@@ -472,23 +494,50 @@ final class CommunityHttp2SessionProcessor {
         int nextBodyBytes = requestStream.bodyBytes() + dataFragment.length();
         long maxBodyBytes = config.maxRequestBodyBytes();
         if (maxBodyBytes >= 0 && nextBodyBytes > maxBodyBytes) {
-            CommunityHttp2ControlFrames.sendRstStreamCancel(allocator, writer, header.streamId());
-            session.resetRequestStream(header.streamId());
-            return;
+            CommunityHttp2ControlFrames.sendRstStreamCancel(allocator, writer, streamId);
+            session.resetRequestStream(streamId);
+            replenishConnectionWindow(connection);
+            return true;
+        }
+        if (session.exceedsRequestBodyBudget(maxBodyBytes, dataFragment.length())) {
+            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, streamId);
+            session.resetRequestStream(streamId);
+            replenishConnectionWindow(connection);
+            return true;
         }
 
-        requestStream.appendBody(allocator, aggregate.segment(), dataFragment.offset(), dataFragment.length());
+        session.appendRequestBody(requestStream, allocator, aggregate.segment(),
+                dataFragment.offset(), dataFragment.length());
         if (!header.isEndStream()) {
-            return;
+            // The stream is offered no more than the body bound still leaves room for, so credit
+            // never invites bytes the server would then refuse.
+            long target = maxBodyBytes < 0
+                    ? Http2SessionContext.INBOUND_WINDOW_BYTES
+                    : Math.min(Http2SessionContext.INBOUND_WINDOW_BYTES, maxBodyBytes - requestStream.bodyBytes());
+            int streamIncrement = requestStream.replenishReceiveWindow(target);
+            int connectionIncrement = session.replenishConnectionReceiveWindow();
+            CommunityHttp2ControlFrames.sendWindowUpdates(
+                    allocator, writer, streamId, streamIncrement, connectionIncrement);
+            return true;
         }
 
-        Http2RequestStreamState finished = session.takeRequestStream(header.streamId());
+        Http2RequestStreamState finished = session.takeRequestStream(streamId);
         if (finished == null) {
-            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, header.streamId());
-            return;
+            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, streamId);
+            replenishConnectionWindow(connection);
+            return true;
         }
+        // Before dispatch: the response path may block on the peer's windows, and the credit is
+        // already earned.
+        replenishConnectionWindow(connection);
         dispatchHttp2Request(connection, finished.streamId(), finished.request(), finished.detachBody(),
                 finished.pendingSendWindowIncrement());
+        return true;
+    }
+
+    private void replenishConnectionWindow(Http2Connection connection) {
+        int increment = connection.session().replenishConnectionReceiveWindow();
+        CommunityHttp2ControlFrames.sendWindowUpdates(allocator, connection.writer(), 0, 0, increment);
     }
 
     private void decodeAndDispatchCompletedHeaderBlock(Http2Connection connection) {
