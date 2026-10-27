@@ -319,8 +319,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **The three HTTP/2 header limits are a TCK contract.** `AbstractHttp2HeaderLimitTck` judges
   `http.maxHeaderBlockSize`, `http.maxHeaderListSize` and `http.maxStringLiteralSize` on the wire: a
   request at each limit is served, one octet over is refused without reaching the handler, and the
-  server advertises `http.maxHeaderListSize` as `SETTINGS_MAX_HEADER_LIST_SIZE`. Community binds it
-  with `CommunityHttp2HeaderLimitTckTest`.
+  server advertises `http.maxHeaderListSize` as `SETTINGS_MAX_HEADER_LIST_SIZE`. A refusal of an
+  oversized field section or literal is a `431` on the stream, an `RST_STREAM` with an error code or a
+  `GOAWAY` with an error code, and a refusal that keeps the connection keeps the HPACK dynamic table in
+  step: a request that references entries the refused block added is served with them. A block that
+  does not decode is `GOAWAY(COMPRESSION_ERROR)`. Community binds it with
+  `CommunityHttp2HeaderLimitTckTest`.
 - **The native symbols a binding needs are a TCK contract.** `AbstractAbiSymbolResolutionTck` takes a
   manifest derived from the descriptor tables the loaders bind from, never hand-listed, and fails when a
   `REQUIRED` symbol does not resolve in the host library (every miss named in one failure), when an
@@ -441,10 +445,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   table-size update and discarding the fields, and the Community server answers the stream
   `431 Request Header Fields Too Large` (RFC 9113 §8.2.3, RFC 6585 §5). A block that fails to decode
   any other way is `GOAWAY(COMPRESSION_ERROR)` (RFC 9113 §4.3); it was a `400` on a connection left
-  open. `http.maxHeaderBlockSize` stays `GOAWAY(PROTOCOL_ERROR)`. A binding of
-  `AbstractHttp2HeaderLimitTck` must now answer `431` (or reset the stream, or send `GOAWAY`) for an
-  oversized field section or literal, where `400` was accepted, and must keep serving a request that
-  references entries added by a refused block.
+  open. `http.maxHeaderBlockSize` stays `GOAWAY(PROTOCOL_ERROR)`.
 
 ### Fixed — verification
 

@@ -5,7 +5,10 @@
 package eu.exeris.kernel.core.http.hpack;
 
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.memory.AllocationHint;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.memory.MemoryStats;
 import org.junit.jupiter.api.*;
 
 import java.lang.foreign.Arena;
@@ -601,14 +604,60 @@ class HpackDecoderTest {
                     .build();
 
             HpackDynamicTable table = new HpackDynamicTable(4096);
+            CountingAllocator counting = new CountingAllocator(allocator);
 
-            assertThatThrownBy(() -> new HpackDecoder(table, allocator, UNBOUNDED, 16)
+            assertThatThrownBy(() -> new HpackDecoder(table, counting, UNBOUNDED, 16)
                     .decode(segment(block), 0, block.length, (n, v, s) -> { }))
                     .isInstanceOf(HpackDecoder.HpackDecodingException.class)
                     .satisfies(SizeLimitRefusal::assertSizeLimit);
 
+            assertThat(counting.networkLoans()).as("the entry is decoded, so its scratch is loaned").isEqualTo(1);
             assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
             assertThat(contents(table)).containsExactly("x-after=a", "x-big=" + big);
+        }
+
+        @Test
+        @DisplayName("a non-indexed literal over the bound is passed over without being decoded")
+        void nonIndexedLiteralOverTheBoundIsNotDecoded() {
+            byte[] block = new BlockBuilder()
+                    .literalNoIndexHuffmanValue("x-big", "v".repeat(40))
+                    .literalIncremental("x-after", "a")
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            CountingAllocator counting = new CountingAllocator(allocator);
+
+            assertThatThrownBy(() -> new HpackDecoder(table, counting, UNBOUNDED, 16)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
+                    .hasMessageContaining("string literal");
+
+            assertThat(counting.networkLoans()).as("a skipped literal is never Huffman-decoded").isZero();
+            assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
+            assertThat(contents(table)).containsExactly("x-after=a");
+        }
+
+        @Test
+        @DisplayName("after an overrun, a later non-indexed literal within the bound is passed over without being decoded")
+        void nonIndexedLiteralAfterAnOverrunIsNotDecoded() {
+            byte[] block = new BlockBuilder()
+                    .literalNoIndex("x-pad", "p".repeat(200))
+                    .literalNoIndexHuffmanValue("x-late", "v".repeat(40))
+                    .literalIncremental("x-after", "a")
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            CountingAllocator counting = new CountingAllocator(allocator);
+
+            assertThatThrownBy(() -> new HpackDecoder(table, counting, 100, UNBOUNDED)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
+                    .hasMessageContaining("header list size");
+
+            assertThat(counting.networkLoans()).as("a literal after an overrun is never Huffman-decoded").isZero();
+            assertThat(contents(table)).containsExactly("x-after=a");
         }
 
         @Test
@@ -774,6 +823,52 @@ class HpackDecoderTest {
         return seg;
     }
 
+    /** Counts the network buffers the decoder loans for scratch space. */
+    private static final class CountingAllocator implements MemoryAllocator {
+
+        private final MemoryAllocator delegate;
+        private int networkLoans;
+
+        CountingAllocator(MemoryAllocator delegate) {
+            this.delegate = delegate;
+        }
+
+        int networkLoans() {
+            return networkLoans;
+        }
+
+        @Override
+        public LoanedBuffer allocate(AllocationHint hint) {
+            return delegate.allocate(hint);
+        }
+
+        @Override
+        public LoanedBuffer allocateNetwork(int estimatedBytes) {
+            networkLoans++;
+            return delegate.allocateNetwork(estimatedBytes);
+        }
+
+        @Override
+        public LoanedBuffer allocateCarrierSlab(int carrierIndex) {
+            return delegate.allocateCarrierSlab(carrierIndex);
+        }
+
+        @Override
+        public LoanedBuffer allocateInfrastructure(long sizeBytes) {
+            return delegate.allocateInfrastructure(sizeBytes);
+        }
+
+        @Override
+        public MemoryStats stats() {
+            return delegate.stats();
+        }
+
+        @Override
+        public void close() {
+            delegate.close();
+        }
+    }
+
     /** Builds an HPACK block, encoding string lengths and integers with their full prefix rules. */
     private static final class BlockBuilder {
 
@@ -806,17 +901,28 @@ class HpackDecoderTest {
         BlockBuilder literalIncrementalHuffmanValue(String name, String value) {
             out.write(0x40);
             string(name);
+            huffmanString(value);
+            return this;
+        }
+
+        BlockBuilder literalNoIndexHuffmanValue(String name, String value) {
+            out.write(0x00);
+            string(name);
+            huffmanString(value);
+            return this;
+        }
+
+        byte[] build() {
+            return out.toByteArray();
+        }
+
+        private void huffmanString(String value) {
             byte[] raw = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
             MemorySegment input = segment(raw);
             MemorySegment output = testArena.allocate(raw.length * 2L + 8);
             long length = eu.exeris.kernel.core.http.hpack.huffman.Huffman.encode(input.asSlice(0, raw.length), output);
             integer(0x80, 7, (int) length);
             out.writeBytes(output.asSlice(0, length).toArray(ValueLayout.JAVA_BYTE));
-            return this;
-        }
-
-        byte[] build() {
-            return out.toByteArray();
         }
 
         private void string(String text) {

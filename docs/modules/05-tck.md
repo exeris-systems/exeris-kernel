@@ -125,7 +125,9 @@ ClientHello probe, so no case depends on the provider's own server.
 `maxHeaderBlockSize`, `maxHeaderListSize`, `maxStringLiteralSize` — from a raw socket speaking cleartext
 HTTP/2 with prior knowledge. For each key a request at the limit is served and a request one octet over
 it is refused without reaching the handler, and the server advertises `maxHeaderListSize` as
-`SETTINGS_MAX_HEADER_LIST_SIZE`. The Community server binds it (`CommunityHttp2HeaderLimitTckTest`).
+`SETTINGS_MAX_HEADER_LIST_SIZE`. A refusal is a `431` on the stream, a reset or a `GOAWAY`; the HPACK
+dynamic table survives a refusal that keeps the connection, and a malformed block is
+`GOAWAY(COMPRESSION_ERROR)`. The Community server binds it (`CommunityHttp2HeaderLimitTckTest`).
 
 ### Current Core Binding Coverage (HTTP)
 
