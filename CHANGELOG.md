@@ -312,6 +312,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added — verification
 
+- **The shared-scope matrix is bound on `uuid` keys.** `CommunityPersistenceSharedScopeUuidIT` runs
+  `AbstractSharedScopeAccessMatrixTck` against live PostgreSQL with `uuid` owner and scope columns, bound
+  through `bindUuid`. The `uuid` form of the reference policy is published beside the `TEXT` one: the
+  tag check has no `COALESCE` (`NULL` is the only private tag) and the tenant arm is the unguarded cast.
+  The `TEXT` tag check cannot be installed on such a column; `CREATE POLICY` refuses it with `22P02`.
 - **The three HTTP/2 header limits are a TCK contract.** `AbstractHttp2HeaderLimitTck` judges
   `http.maxHeaderBlockSize`, `http.maxHeaderListSize` and `http.maxStringLiteralSize` on the wire: a
   request at each limit is served, one octet over is refused without reaching the handler, and the

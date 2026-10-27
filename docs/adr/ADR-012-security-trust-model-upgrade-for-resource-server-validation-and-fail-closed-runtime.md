@@ -20,6 +20,7 @@ status: active
 | **Amended**    | 2026-10-23 — §4c.2/§9/§10: records how the 0.13 implementation of the tag-pinning write check resolves the points §4c.2 left to it — the matrix carries nine tag cells with direction controls, the Community binding uses a nullable tag column, and a move from a scope the request does not hold into the one it publishes is admitted and not a conformance cell |
 | **Amended**    | 2026-10-23 — §4c.4/§10: records how the 0.13 implementation of the bypass-role check resolves the points §4c.4 left to it — the check runs when the RLS interceptor is registered, dedicated pools are refused at their first request, a probe that cannot run is refused whatever the key says, and the suite is abstract (see Amendments) |
 | **Amended**    | 2026-10-26 — §4c.3/§9/§10: records how the 0.13 implementation of the raising tenant arm resolves the points §4c.3 left to it — the matrix and the isolation-leak suite carry the absent-tenant cells with direction controls, the matrix gains the template method `tenantlessOwner` with a throwing default, three Community integration tests install `exeris_required_setting`, a tenant-less read of an empty table was measured not to raise, and per-statement evaluation of the function stays unmeasured (see Amendments) |
+| **Amended**    | 2026-10-27 — §4c.2/§4c.3/§10: publishes the `uuid` forms of the reference policy (the tag check on a `uuid` tag column, the unguarded tenant cast) and records that a `uuid`-keyed Community binding passes the matrix (see Amendments) |
 | **Driven By**  | ADR-007, performance contract, subsystem contracts security/transport/persistence      |
 | **Compliance** | [Strategic Pillar: Secure Fail-Closed Resource-Server Trust](../whitepaper.md)        |
 
@@ -307,6 +308,7 @@ and with `''`, accepted.
 _(Amended 2026-10-23: the matrix carries nine tag cells with direction controls, the Community binding
 uses a nullable tag column, and a move from a scope the request does not hold into the published one is
 admitted and not a conformance cell — see Amendments.)_
+_(Amended 2026-10-27: on a `uuid` tag column the check is written without `COALESCE(…, '')`, which such a column cannot hold — see Amendments.)_
 
 ### 4c.3 What an absent session key yields
 
@@ -384,6 +386,7 @@ _(Amended 2026-10-26: the absent-tenant cells are in `AbstractSharedScopeAccessM
 `PersistenceIsolationLeakTck`, the matrix gains the template method `tenantlessOwner`, the function
 text is published in `docs/subsystems/persistence.md`, and a read of a table with no rows does not raise —
 see Amendments.)_
+_(Amended 2026-10-27: the unguarded `uuid` cast is exercised by a Community binding of the matrix — see Amendments.)_
 
 ### 4c.4 Boot check on a role that bypasses row-level security (#581)
 
@@ -529,7 +532,7 @@ Limits, stated so the check is not read as more than it is:
 - **Implemented now (§4c.3, 0.13):** the raise-on-absent-tenant reference policy: the tenant arm in the
   `RlsConnectionInterceptor` javadoc and `docs/subsystems/persistence.md` with the text of
   `exeris_required_setting`, the absent-tenant cells of `AbstractSharedScopeAccessMatrixTck` and
-  `PersistenceIsolationLeakTck`, and the Community bindings installing the function (see Amendments).
+  `PersistenceIsolationLeakTck`, and the Community bindings installing the function (see Amendments); `CommunityPersistenceSharedScopeUuidIT` binds the `uuid` forms of both arms.
   Nothing in §4c is planned any more; the SPI javadoc correction named under §11 stays planned for 0.13.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.
@@ -728,3 +731,45 @@ the implementation. The implementation resolves these points:
 Four status lines were brought to repository state with this entry: the header Amended row, the §4c
 opening marker, the §4c.3 lead-in, which read "planned for 0.13", and §10, which lists §4c.3 under
 "Implemented now" instead of "Planned for 0.13". The ruling itself is unchanged.
+
+### 2026-10-27 — §4c.2/§4c.3: the `uuid` forms of the reference policy, bound
+
+The reference policy was published for `TEXT` keys. A deployment keyed on `uuid` owner and scope columns
+cannot install it as written, so this entry publishes the form it does install and binds it to the matrix:
+
+```sql
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON table_name
+  USING (tenant_id = current_setting('exeris.tenant_id', true)::uuid)
+  WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)::uuid
+              AND (shared_scope IS NULL
+                   OR shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid));
+
+CREATE POLICY shared_scope_read ON table_name FOR SELECT
+  USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid);
+```
+
+- **The `TEXT` tag check does not transfer.** `COALESCE(shared_scope, '') IN ('', ...)` on a `uuid` column
+  was measured: PostgreSQL 16 refuses the statement at `CREATE POLICY`, not at the first write, with
+  SQLSTATE `22P02` and `ERROR: invalid input syntax for type uuid: ""`. The `''` literal is cast to
+  `uuid` while the policy expression is built. On a `uuid` column `NULL` is the only private tag, so the
+  check is `shared_scope IS NULL OR shared_scope = <published scope>::uuid`: a published scope admits
+  `NULL` and itself, a cleared scope admits `NULL` only, and un-sharing to `NULL` is admitted, the same
+  semantics as the `TEXT` form.
+- **The guard sits on the scope, not on the tenant.** The read arm and the tag check cast the scope after
+  `NULLIF(..., '')`, because an absent scope is the legitimate private request. The tenant arm is the
+  unguarded cast, so `''` raises `22P02` as §4c.3 rules.
+- **On a `uuid` owner column the write cell does not distinguish the guarded tenant arm, and need not.**
+  With `NULLIF` on the tenant, a tenant-less write evaluates the check to `NULL` and fails with `42501`,
+  still `EX-PERS-5003`, and the column cannot hold the empty owner a plain text comparison would admit.
+  The tenant-less read cell does distinguish it: a guarded arm returns an empty result instead of raising.
+  The matrix is unchanged.
+- **A published scope that is not a uuid fails closed.** The cast raises `22P02` for every row the policy
+  evaluates.
+- **Bound by `CommunityPersistenceSharedScopeUuidIT`**, which runs the whole matrix on `uuid` keys through
+  `bindUuid`, with one binding-local case asserting the tenant-less read's cause carries `22P02`.
+
+The 2026-10-26 entry's statement that no Community test binds a `uuid` tenant column describes the
+repository before this entry. The rulings are unchanged.

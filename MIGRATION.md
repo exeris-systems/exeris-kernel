@@ -94,10 +94,21 @@ The kernel ships no DDL, so nothing changes until you change the policy.
                  AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
    ```
 
+   On a `uuid` tag column, use this `WITH CHECK` instead. The `TEXT` clause above does not apply: it
+   casts `''` to `uuid` and `CREATE POLICY` / `ALTER POLICY` fails with SQLSTATE `22P02`
+   (`invalid input syntax for type uuid: ""`).
+
+   ```sql
+   ALTER POLICY tenant_isolation ON table_name
+     WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)::uuid
+                 AND (shared_scope IS NULL
+                      OR shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid));
+   ```
+
 2. **Expect the new failure.** An insert or update that tags a row with a scope the request does not
    publish, or that leaves a scope tag in place from a request lacking that scope, fails with
-   `EX-PERS-5003` (SQLSTATE `42501`). To stop sharing such a row, re-tag it to `''` (or `NULL` where the
-   column allows it), which the policy admits.
+   `EX-PERS-5003` (SQLSTATE `42501`), on a `uuid` tag column as on `TEXT`. To stop sharing such a row, re-tag
+   it to `''` (or `NULL` where the column allows it; `NULL` only on `uuid`), which the policy admits.
 3. **Bind the matrix TCK.** An implementation of `AbstractSharedScopeAccessMatrixTck` overrides the new
    `retagScope(StorageContext, String, String)`, which sets a row's tag (`null` for none) and returns the
    affected row count or throws `PersistenceProviderException`. The default throws

@@ -29,6 +29,16 @@ final class RlsReferencePolicy {
     /** The tenant arm on a {@code TEXT} tenant column, for {@code USING} and {@code WITH CHECK}. */
     static final String TENANT_ARM = "tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))";
 
+    /** The tenant arm on a {@code uuid} tenant column: an unguarded cast, so an empty key raises {@code 22P02}. */
+    static final String TENANT_ARM_UUID = "tenant_id = current_setting('exeris.tenant_id', true)::uuid";
+
+    /** The tag check on a {@code uuid} tag column, for {@code WITH CHECK}: {@code NULL} is the only private tag. */
+    static final String SCOPE_CHECK_UUID =
+            "(shared_scope IS NULL OR shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid)";
+
+    /** The additive {@code FOR SELECT} read arm on a {@code uuid} tag column. */
+    static final String SCOPE_READ_UUID = "shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid";
+
     private RlsReferencePolicy() {
         // constants only
     }

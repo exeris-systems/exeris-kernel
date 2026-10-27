@@ -70,14 +70,25 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * {@code DELETE} see the owner policy alone. {@code NULLIF} makes a cleared scope ({@code ''}) match no
  * row, including rows whose own tag is empty.
  *
+ * <p><b>On a {@code uuid} tag column the check is written without {@code COALESCE}.</b> The column cannot
+ * hold {@code ''}, so {@code NULL} is the only tenant-private tag and the check is
+ * {@code shared_scope IS NULL OR shared_scope = <published scope>::uuid}, the published scope being
+ * {@code NULLIF(current_setting('exeris.shared_scope', true), '')}.
+ * The read arm casts the same way, {@code ::uuid} after the {@code NULLIF}, and the tenant arm is the
+ * unguarded {@code current_setting('exeris.tenant_id', true)::uuid}, which raises on {@code ''}. The
+ * {@code TEXT} clause {@code COALESCE(shared_scope, '') IN ('', ...)} cannot be installed on such a column:
+ * the empty literal is cast to {@code uuid} when the policy is created, and PostgreSQL refuses the
+ * statement. The text of both forms is in {@code docs/subsystems/persistence.md}.
+ *
  * <p><b>{@code FORCE} is not optional, and leaving it out fails open.</b> PostgreSQL exempts a table's
  * owner from that table's own policies unless the table is forced. A deployment whose application
  * connects as the role owning its tables — the default in every quick-start — therefore gets a policy
  * that is enabled, listed in {@code pg_policies}, and never applied: no error, no warning, other
- * tenants' rows in every read. The three integration tests that hold this contract
+ * tenants' rows in every read. The four integration tests that hold this contract
  * ({@code CommunityPersistenceTenantIsolationIT}, {@code CommunityPersistenceSharedScopeIT},
- * {@code CommunityPersistenceIsolationLeakTckIT}) all issue both statements <em>and</em> connect as a
- * non-owner role, so what they verify is the property a forced table has.
+ * {@code CommunityPersistenceSharedScopeUuidIT}, {@code CommunityPersistenceIsolationLeakTckIT}) all
+ * issue both statements <em>and</em> connect as a non-owner role, so what they verify is the property a
+ * forced table has.
  *
  * <p><b>An absent tenant raises.</b> The interceptor publishes {@code exeris.tenant_id} as {@code ''}
  * for a context that declares no tenant and refuses nothing at the persistence boundary: tenant-less
