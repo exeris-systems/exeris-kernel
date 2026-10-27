@@ -231,6 +231,38 @@ and the keep-tag case; the kernel ships no such trigger, and the matrix TCK pins
 The tenant arm shown is the `TEXT` form, and it calls the function the next subsection defines. Update
 `tenant_isolation` on an existing deployment with `ALTER POLICY` (see `MIGRATION.md`).
 
+#### On `uuid` columns
+
+A `uuid` owner and a `uuid` tag column take this form of the same two policies:
+
+```sql
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON table_name
+  USING (tenant_id = current_setting('exeris.tenant_id', true)::uuid)
+  WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)::uuid
+              AND (shared_scope IS NULL
+                   OR shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid));
+
+CREATE POLICY shared_scope_read ON table_name FOR SELECT
+  USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid);
+```
+
+- **`NULL` is the only private tag.** A `uuid` column cannot hold `''`, so the check has no `COALESCE`.
+  A published scope `S` admits a row tagged `NULL` or `S`; a request that published no scope admits
+  `NULL` only; re-tagging to `NULL` is admitted, so un-sharing works as on `TEXT`.
+- **The `TEXT` tag check does not transfer.** Installing `COALESCE(shared_scope, '') IN ('', ...)` on a
+  `uuid` column fails at `CREATE POLICY`, before any write: PostgreSQL casts the `''` literal to `uuid`
+  and answers SQLSTATE `22P02`, `invalid input syntax for type uuid: ""` (measured on PostgreSQL 16).
+- **The tenant arm is the unguarded cast.** `''` is not a uuid, so a tenant-less context raises `22P02`,
+  reported as `EX-PERS-5003`, with no helper function. Guarding it with `NULLIF(..., '')` makes a
+  tenant-less read return an empty result, which the matrix refuses; a tenant-less write is refused
+  either way, because the guarded arm yields `NULL` and the check fails with `42501`.
+- **A published scope that is not a uuid fails closed.** Every row the policy evaluates raises `22P02`.
+- **Bound by** `CommunityPersistenceSharedScopeUuidIT`, which runs `AbstractSharedScopeAccessMatrixTck`
+  on `uuid` keys and binds them with `PersistenceStatement.bindUuid`, without a SQL cast.
+
 ### An absent tenant raises (ADR-012 §4c.3, since 0.13)
 
 The kernel publishes `exeris.tenant_id` as `''` for a context that declares no tenant
