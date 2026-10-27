@@ -195,7 +195,13 @@ final class CommunityHttp2SessionProcessor {
         Http2DecodedRequest request = new Http2DecodedRequest(
                 1, readResult.method(), readResult.path(), headers, readResult.method() != null);
         Http2RequestStreamState upgradeRequest = new Http2RequestStreamState(1, request);
-        upgradeRequest.appendBody(allocator, aggregate.segment(), readResult.bodyStart(), readResult.bodyLength());
+        try {
+            upgradeRequest.appendBody(allocator, aggregate.segment(), readResult.bodyStart(), readResult.bodyLength());
+        } catch (RuntimeException copyFailure) {
+            // Nothing owns the state until the session holds it, so a failed copy releases it here.
+            upgradeRequest.close();
+            throw copyFailure;
+        }
         return upgradeRequest;
     }
 

@@ -134,8 +134,8 @@ class Http2UpgradePrefaceTest {
     }
 
     @Test
-    @DisplayName("no preface after the 101 is GOAWAY(PROTOCOL_ERROR) and the handler is never called")
-    void noPrefaceIsAProtocolErrorAndTheHandlerIsNeverCalled() {
+    @DisplayName("a SETTINGS frame in place of the preface is GOAWAY(PROTOCOL_ERROR) and the handler is never called")
+    void settingsInPlaceOfThePrefaceIsAProtocolErrorAndTheHandlerIsNeverCalled() {
         connect();
         transport.feed(Http2Frames.concat(
                 UPGRADE_REQUEST, Http2Frames.emptySettings(), Http2Frames.headers(3, get("/demo"), true)));
@@ -161,6 +161,25 @@ class Http2UpgradePrefaceTest {
         processThread.join(BOUND);
 
         assertGoAway(goAway, 0, Http2ErrorCode.PROTOCOL_ERROR);
+        assertThat(calls).isEmpty();
+        assertThat(allocator.outstanding()).as("the request body held for stream 1 is closed").isZero();
+    }
+
+    @Test
+    @DisplayName("end of stream part-way through the preface is GOAWAY(NO_ERROR), and the held body is released")
+    void endOfStreamPartWayThroughThePrefaceIsANoErrorGoAwayAndTheHeldBodyIsReleased() throws InterruptedException {
+        connect();
+        byte[] partialPreface = Arrays.copyOf(Http2Frames.PREFACE, 10);
+        transport.feed(Http2Frames.concat(
+                ascii("POST /upload HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n"
+                        + "Content-Length: 5\r\n\r\nhello"),
+                partialPreface));
+        transport.feedEof();
+
+        Frame goAway = transport.awaitFrame(f -> f.type() == GOAWAY, BOUND);
+        processThread.join(BOUND);
+
+        assertGoAway(goAway, 0, Http2ErrorCode.NO_ERROR);
         assertThat(calls).isEmpty();
         assertThat(allocator.outstanding()).as("the request body held for stream 1 is closed").isZero();
     }
