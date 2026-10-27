@@ -73,6 +73,11 @@ class CommunityHttp2cStreamExchangeTckTest extends AbstractHttpStreamExchangeTck
     }
 
     @Override
+    protected int egressCreditWindowBytes() {
+        return 16 * 1024;
+    }
+
+    @Override
     protected boolean supportsAuthExpiryProbe() {
         return true;
     }

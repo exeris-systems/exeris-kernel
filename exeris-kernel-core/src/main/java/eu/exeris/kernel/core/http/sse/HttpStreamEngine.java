@@ -43,7 +43,8 @@ import java.util.concurrent.locks.LockSupport;
  *
  * <h2>Backpressure — park the VT, never an on-heap queue (obligation 4)</h2>
  * <p>The engine maintains a bounded <em>credit window</em>: at most {@code creditWindow} bytes may
- * be outstanding (queued to the transport but not yet released). {@link #emit(StreamEvent)} parks the
+ * be outstanding (queued to the transport but not yet released), except that a single event larger
+ * than the window is admitted when nothing is outstanding. {@link #emit(StreamEvent)} parks the
  * calling virtual thread when the next event would exceed the window, and resumes when the transport
  * releases an in-flight buffer (via {@link LoanedBuffer#addCloseAction}). No event is ever buffered to
  * an unbounded heap queue.
@@ -267,7 +268,10 @@ public final class HttpStreamEngine implements HttpStreamExchange {
     // -------------------------------------------------------------------------
 
     private void awaitCredit(int frameBytes) {
-        if (outstandingBytes.get() + frameBytes <= creditWindow) {
+        // The window bounds the bytes queued, not the size of one event: an event larger than the
+        // window is admitted once nothing else is queued, so it cannot wait for credit that never comes.
+        long outstanding = outstandingBytes.get();
+        if (outstanding == 0L || outstanding + frameBytes <= creditWindow) {
             return;
         }
         // Single-phase commit BEFORE parking — the blocking park must never sit between
@@ -282,7 +286,7 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         // deliberate, simpler trade-off.
         parkedEmitter.set(Thread.currentThread());
         try {
-            while (outstandingBytes.get() + frameBytes > creditWindow) {
+            while (exceedsWindow(frameBytes)) {
                 if (closed.get()) {
                     throw recordSignal(StreamClosedException.peerDisconnect(eventsEmitted.get()));
                 }
@@ -292,6 +296,11 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         } finally {
             parkedEmitter.set(null);
         }
+    }
+
+    private boolean exceedsWindow(int frameBytes) {
+        long outstanding = outstandingBytes.get();
+        return outstanding > 0L && outstanding + frameBytes > creditWindow;
     }
 
     private void transferFrame(StreamEvent event, int frameBytes) {

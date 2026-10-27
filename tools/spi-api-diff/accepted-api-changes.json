@@ -286,5 +286,11 @@
     "since": "0.13",
     "adr": "ADR-012",
     "justification": "TCK contract: PersistenceIsolationLeakTck gains two cases asserting that a read and a write from a context that declares no tenant, through the existing readSentinelRows and writeSentinelRow template methods, fail with PersistenceProviderException (EX-PERS-5003), each followed by the same operation under a tenant, which must succeed. A binding whose policy returns an empty result or admits a row owned by the empty tenant fails them until its tenant arm raises on an absent key. No template method is added. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.http.AbstractHttpStreamExchangeTck#egressCreditWindowBytes()",
+    "since": "0.13",
+    "adr": "ADR-043",
+    "justification": "TCK contract: AbstractHttpStreamExchangeTck gains the Backpressure case emitOfAnEventLargerThanTheCreditWindowCompletes, which emits one event whose encoded length is one byte past the binding's egress credit window and requires the event to arrive intact, followed by the end of the stream, without the emitter parking. The case sizes the event through the new hook egressCreditWindowBytes(), which defaults to 65536; a binding that runs a smaller window overrides it, and one that runs a larger window than the default still passes, because the event it builds then fits. An existing binding whose emit waits for credit that cannot return fails the case until it admits an event larger than the window when nothing is outstanding. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
   }
 ]
