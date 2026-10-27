@@ -189,9 +189,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **`EX-PERS-5009`, `PersistenceProviderException.rlsBypassRole`, `persistence.rlsAllowBypassRole` and the `eu.exeris.kernel.persistence.RlsBypassRole` JFR event (ADR-012 §4c.4).** The code and its factory are SPI (stable `spi.persistence` exceptions, additive); the event lives in Core so any binding can emit it. `AbstractRlsBypassRoleCheckTck` is the suite a binding that installs a row-level-security interceptor binds. A dedicated pool whose role bypasses is refused at its first request. `PersistenceEngine#registerInterceptor` documents the refusal.
 - **`transport.maxQueuedWriteBytes` bounds a stream's outbound queue (ADR-071, ADR-007).** The key fills `TransportConfig#maxQueuedWriteBytes()` at the transport subsystem and at the HTTP and WebSocket listeners. `-1` removes the bound; `0` and other negatives are refused at startup. `AbstractTransportStreamTck` gains `QueueWriteDoesNotWait`, which binds every transport, and `WriteBackpressure`, behind the hook `supportsWriteBackpressure()` (default `false`). A `write` that parks emits `TransportWriteParkEvent` (`eu.exeris.kernel.core.transport.WriteBackpressurePark`) once, before its first park.
 - **Stream routes are resolved and served over HTTP/2.** A request for a stream route that arrives over TLS
-  with ALPN `h2` or a prior-knowledge preface now reaches its stream handler instead of the respond-once
-  handler. The `h2c` upgrade path does not yet consume the client connection preface that follows `101`, so a
-  compliant client that upgrades is answered with `GOAWAY(PROTOCOL_ERROR)`. The head is a `HEADERS` frame, each event one or more `DATA` frames, a graceful close
+  with ALPN `h2`, a prior-knowledge preface or an `h2c` upgrade now reaches its stream handler instead of the
+  respond-once handler. The head is a `HEADERS` frame, each event one or more `DATA` frames, a graceful close
   an empty `DATA` frame with `END_STREAM`, and an authorization that expires mid-stream resets the stream with `RST_STREAM(CANCEL)`; `emit` parks on the
   smaller of the stream's and the connection's flow-control window and on a per-stream bound of
   `exeris.http.stream.creditWindowBytes` bytes queued to the transport. Each stream runs on a thread of its
@@ -387,6 +386,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   yet finishes on a task that waits for credit while the frame loop keeps reading, and every write to
   the connection goes through one writer. A response larger than 65 535 bytes to a client that keeps
   the default window is no longer sent past it.
+- **An `h2c` upgrade consumes the client connection preface and answers the upgrade request on stream 1; a
+  compliant client (`curl --http2`, `nghttp -u`) no longer receives `GOAWAY(PROTOCOL_ERROR)`.**
+- **Inbound HTTP/2 frames are validated against the server's own `SETTINGS_MAX_FRAME_SIZE`; a peer's value no
+  longer raises or lowers the inbound limit, an oversized frame is `GOAWAY(FRAME_SIZE_ERROR)`, and an
+  out-of-range value is `GOAWAY(PROTOCOL_ERROR)`.**
 - **`findShortestPath(UUID, UUID)` no longer reports not-found for a pair it never searched; it refuses (see Changed).**
 - **The SQL/PGQ graph backend's `deleteNode` removes the node's connected edges (#468).** One statement
   deletes, from every registered edge table whose descriptor names the label on the source or target

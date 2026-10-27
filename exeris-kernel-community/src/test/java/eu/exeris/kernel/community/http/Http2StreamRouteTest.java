@@ -494,12 +494,17 @@ class Http2StreamRouteTest {
         connection.feed(Http2Frames.concat(
                 ("GET /upgrade HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive, Upgrade\r\n"
                         + "Upgrade: h2c\r\n\r\n").getBytes(StandardCharsets.US_ASCII),
+                Http2Frames.PREFACE,
                 Http2Frames.emptySettings(),
                 Http2Frames.headers(3, get("/stream"), true)));
 
         transport.awaitFrame(f -> f.type() == DATA && f.streamId() == 3 && f.isEndStream(), BOUND);
 
         assertThat(transport.upgradeHead()).startsWith("HTTP/1.1 101 Switching Protocols");
+        List<Frame> upgradeStream = framesOn(1);
+        assertThat(upgradeStream).as("the upgrade request is answered on stream 1").hasSize(1);
+        assertThat(upgradeStream.getFirst().type()).isEqualTo(HEADERS);
+        assertThat(upgradeStream.getFirst().isEndStream()).isTrue();
         List<Frame> onStream = framesOn(3);
         assertThat(decode(onStream.getFirst())).contains(Map.entry(":status", "200"),
                 Map.entry("content-type", "text/event-stream; charset=utf-8"));

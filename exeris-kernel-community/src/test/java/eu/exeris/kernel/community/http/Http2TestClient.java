@@ -53,7 +53,10 @@ final class Http2TestClient implements AutoCloseable {
     enum Start {
         /** The connection preface is the first thing written, on stream 1. */
         PRIOR_KNOWLEDGE,
-        /** An HTTP/1.1 request with {@code Upgrade: h2c} comes first, and the request is stream 3. */
+        /**
+         * An HTTP/1.1 request with {@code Upgrade: h2c} comes first; the preface follows the {@code 101},
+         * as RFC 9113 section 3.4 requires, and the request is stream 3.
+         */
         H2C_UPGRADE
     }
 
@@ -94,7 +97,7 @@ final class Http2TestClient implements AutoCloseable {
     private volatile int resetCode = -1;
     private volatile boolean goAway;
     private volatile List<Map.Entry<String, String>> head;
-    private volatile String upgradeHead;
+    private String upgradeHead;
     private final AtomicLong ungranted = new AtomicLong();
     private int cursor;
     private Thread reader;
@@ -184,26 +187,26 @@ final class Http2TestClient implements AutoCloseable {
             if (start == Start.H2C_UPGRADE) {
                 out.write(("GET /upgrade HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive, Upgrade\r\n"
                         + "Upgrade: h2c\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
-            } else {
-                out.write(PREFACE);
+                out.flush();
+                socket.setSoTimeout((int) OBSERVE_TIMEOUT_MILLIS);
+                client.upgradeHead = readUpgradeHead(socket.getInputStream());
+                socket.setSoTimeout(0);
             }
+            out.write(PREFACE);
             writeFrame(out, TYPE_SETTINGS, 0, 0, settingsPayload(initialWindow));
             writeFrame(out, TYPE_HEADERS, FLAG_END_STREAM | FLAG_END_HEADERS, streamId,
                     requestBlock(scheme, path));
             out.flush();
         }
         client.reader = Thread.ofPlatform().daemon(true).name("h2-test-client")
-                .start(() -> client.readLoop(start == Start.H2C_UPGRADE));
+                .start(client::readLoop);
         return client;
     }
 
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private void readLoop(boolean skipUpgradeHead) {
+    private void readLoop() {
         try {
             DataInputStream in = new DataInputStream(socket.getInputStream());
-            if (skipUpgradeHead) {
-                upgradeHead = readUpgradeHead(in);
-            }
             OutputStream out = socket.getOutputStream();
             while (!stopped.get()) {
                 int lengthAndType = in.readInt();
@@ -222,7 +225,7 @@ final class Http2TestClient implements AutoCloseable {
         }
     }
 
-    private static String readUpgradeHead(DataInputStream in) throws IOException {
+    private static String readUpgradeHead(InputStream in) throws IOException {
         StringBuilder text = new StringBuilder();
         while (!text.toString().endsWith("\r\n\r\n")) {
             int next = in.read();

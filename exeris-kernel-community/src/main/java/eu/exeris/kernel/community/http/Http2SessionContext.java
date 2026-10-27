@@ -28,8 +28,8 @@ import java.util.Map;
  * <ul>
  *   <li>The per-connection HPACK decoder (RFC 7541) and its dynamic table. The
  *       encoder belongs to {@link Http2ConnectionWriter}, which uses it under its lock.</li>
- *   <li>The frame codec ({@link Http2FrameCodec}) with peer-advertised
- *       {@code SETTINGS_MAX_FRAME_SIZE}.</li>
+ *   <li>The frame codec ({@link Http2FrameCodec}), which enforces the server's own advertised
+ *       {@code SETTINGS_MAX_FRAME_SIZE} on inbound frames; a peer's value never changes it.</li>
  *   <li>The header-block assembler ({@link Http2HeaderBlockAssembler}) that
  *       tracks HEADERS / CONTINUATION continuation state.</li>
  *   <li>The per-stream request registry ({@link Http2RequestStreamState}).</li>
@@ -57,11 +57,13 @@ import java.util.Map;
 // Retained suppressions:
 // - TooManyMethods: session state requires accessors for assembler + codec + per-stream registry.
 // - CyclomaticComplexity: applyPeerSettings dispatcher + decodePendingRequest path drive total CC=41.
+// - NullAssignment: handing the held upgrade request over is a move; nothing else may close it afterwards.
 // - CloseResource: Http2RequestStreamState ownership transfers on put/remove; LoanedBuffer transfers
 //   via response.body() pipeline.
 @SuppressWarnings({
         "PMD.TooManyMethods",
         "PMD.CyclomaticComplexity",
+        "PMD.NullAssignment",
         "PMD.CloseResource"
 })
 final class Http2SessionContext implements AutoCloseable {
@@ -75,7 +77,6 @@ final class Http2SessionContext implements AutoCloseable {
     private static final int HTTP2_MAX_DYNAMIC_TABLE_SIZE = 4096;
     private static final int HTTP2_SETTINGS_ENTRY_BYTES = 6;
     private static final int HTTP2_SETTINGS_HEADER_TABLE_SIZE = 0x01;
-    private static final int HTTP2_SETTINGS_MAX_FRAME_SIZE = 0x05;
     private static final String UPGRADE_TOKEN = "upgrade";
 
     /**
@@ -118,6 +119,11 @@ final class Http2SessionContext implements AutoCloseable {
      * (CVE-2023-44487 rapid-reset accounting). See {@link #HTTP2_RAPID_RESET_BUDGET}.
      */
     private int rapidResetCount;
+    /**
+     * The request of an {@code h2c} upgrade, held as stream 1 until the peer's first SETTINGS frame
+     * has been applied and acknowledged; {@code null} when no upgrade request is waiting.
+     */
+    private Http2RequestStreamState pendingUpgrade;
 
     private Http2SessionContext(HpackDecoder decoder,
                                 Http2FrameCodec codec,
@@ -145,7 +151,10 @@ final class Http2SessionContext implements AutoCloseable {
         HpackDynamicTable decodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
         HpackDecoder decoder = new HpackDecoder(
                 decodeTable, allocator, config.maxHeaderListSize(), config.maxStringLiteralSize());
-        Http2FrameCodec codec = new Http2FrameCodec();
+        // The inbound frame limit is the SETTINGS_MAX_FRAME_SIZE the server advertises, and the server
+        // advertises none, so it is the protocol default (RFC 9113 section 6.5.2). Raising this must go
+        // together with advertising the same value in CommunityHttp2ControlFrames#sendServerSettings.
+        Http2FrameCodec codec = new Http2FrameCodec(Http2FrameCodec.DEFAULT_MAX_FRAME_SIZE);
         Http2HeaderBlockAssembler assembler =
                 new Http2HeaderBlockAssembler(allocator, config.maxHeaderBlockSize());
         return new Http2SessionContext(decoder, codec, assembler);
@@ -158,13 +167,16 @@ final class Http2SessionContext implements AutoCloseable {
     /**
      * Parses peer-advertised SETTINGS entries from the frame payload and applies them in order:
      * HEADER_TABLE_SIZE (0x01) resizes the HPACK encoder's table, INITIAL_WINDOW_SIZE (0x04) moves
-     * the send window of every open response stream, and MAX_FRAME_SIZE (0x05) clamps the frame
-     * codec's maximum frame size to the codec-enforced bounds. All other settings are accepted but
-     * ignored. Throws when the payload length is not a multiple of
+     * the send window of every open response stream, and MAX_FRAME_SIZE (0x05) is validated against
+     * the protocol bounds and otherwise not stored: it limits the frames the peer receives, which the
+     * writer keeps within every legal value, and never the frames this server accepts. All other
+     * settings are accepted but ignored. Throws when the payload length is not a multiple of
      * {@value #HTTP2_SETTINGS_ENTRY_BYTES}.
      *
      * @return {@link Http2ErrorCode#FLOW_CONTROL_ERROR} when an initial window size exceeds the
-     *         maximum or moves a stream window past it, else {@link Http2ErrorCode#NO_ERROR}; the
+     *         maximum or moves a stream window past it, {@link Http2ErrorCode#PROTOCOL_ERROR} when a
+     *         maximum frame size lies outside [{@value Http2FrameCodec#MIN_MAX_FRAME_SIZE},
+     *         {@value Http2FrameCodec#MAX_MAX_FRAME_SIZE}], else {@link Http2ErrorCode#NO_ERROR}; the
      *         caller ends the connection on an error
      */
     /* default */ Http2ErrorCode applyPeerSettings(LoanedBuffer aggregate,
@@ -193,10 +205,10 @@ final class Http2SessionContext implements AutoCloseable {
                 if (result != Http2ErrorCode.NO_ERROR) {
                     return result;
                 }
-            } else if (settingId == HTTP2_SETTINGS_MAX_FRAME_SIZE
-                    && settingValue >= Http2FrameCodec.MIN_MAX_FRAME_SIZE
-                    && settingValue <= Http2FrameCodec.MAX_MAX_FRAME_SIZE) {
-                codec.setMaxFrameSize((int) settingValue);
+            } else if (settingId == Http2Settings.ID_MAX_FRAME_SIZE
+                    && (settingValue < Http2FrameCodec.MIN_MAX_FRAME_SIZE
+                    || settingValue > Http2FrameCodec.MAX_MAX_FRAME_SIZE)) {
+                return Http2ErrorCode.PROTOCOL_ERROR;
             }
         }
         return Http2ErrorCode.NO_ERROR;
@@ -466,6 +478,28 @@ final class Http2SessionContext implements AutoCloseable {
         return HTTP2_RAPID_RESET_BUDGET;
     }
 
+    /**
+     * Holds the request of an {@code h2c} upgrade as stream 1 until {@link #takePendingUpgrade()}.
+     * Stream 1 is the client's first stream, so a later HEADERS frame on it is refused as an id that
+     * does not advance. The session owns the request, and its body, until it is taken.
+     */
+    /* default */ void holdPendingUpgrade(Http2RequestStreamState upgradeRequest) {
+        pendingUpgrade = upgradeRequest;
+        lastClientStreamId = upgradeRequest.streamId();
+    }
+
+    /** Whether an {@code h2c} upgrade request is still waiting for the peer's first SETTINGS frame. */
+    /* default */ boolean hasPendingUpgrade() {
+        return pendingUpgrade != null;
+    }
+
+    /** Hands the held {@code h2c} upgrade request, and ownership of its body, to the caller. */
+    /* default */ Http2RequestStreamState takePendingUpgrade() {
+        Http2RequestStreamState upgradeRequest = pendingUpgrade;
+        pendingUpgrade = null;
+        return upgradeRequest;
+    }
+
     /* default */ void clearPendingIfStreamMatches(int streamId) {
         if (assembler.currentStreamId() == streamId) {
             assembler.reset();
@@ -501,5 +535,8 @@ final class Http2SessionContext implements AutoCloseable {
             requestStream.close();
         }
         requestStreams.clear();
+        if (pendingUpgrade != null) {
+            pendingUpgrade.close();
+        }
     }
 }

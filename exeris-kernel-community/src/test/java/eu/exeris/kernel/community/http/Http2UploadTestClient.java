@@ -16,6 +16,7 @@ import javax.net.ssl.SSLSocket;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
@@ -26,8 +27,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A minimal HTTP/2 client that uploads one request body on stream 1 and reads the response, sending
- * only what the server's flow-control windows allow.
+ * A minimal HTTP/2 client that uploads one request body and reads the response, sending only what the
+ * server's flow-control windows allow. The body goes on stream 1, or on stream 3 after an {@code h2c}
+ * upgrade, where stream 1 carries the upgrade request.
  *
  * <p>It tracks the connection window and the stream window from the server's WINDOW_UPDATE frames, never
  * sends a DATA frame larger than either, and when either is zero it waits on a monitor — woken by the
@@ -45,7 +47,8 @@ final class Http2UploadTestClient implements AutoCloseable {
     private static final long CONNECT_TIMEOUT_MILLIS = 5_000L;
     private static final int INITIAL_WINDOW = 65_535;
     private static final int MAX_FRAME = 16_384;
-    private static final int STREAM_ID = 1;
+    private static final int FIRST_CLIENT_STREAM = 1;
+    private static final int STREAM_AFTER_UPGRADE = 3;
     private static final int TYPE_DATA = 0x0;
     private static final int TYPE_HEADERS = 0x1;
     private static final int TYPE_RST_STREAM = 0x3;
@@ -67,6 +70,7 @@ final class Http2UploadTestClient implements AutoCloseable {
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
 
     private final Socket socket;
+    private final int streamId;
     private final Object writeLock = new Object();
     private final Object monitor = new Object();
     private final HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), ALLOCATOR, 65_536, 65_536);
@@ -81,8 +85,9 @@ final class Http2UploadTestClient implements AutoCloseable {
     private boolean goAway;
     private Thread reader;
 
-    private Http2UploadTestClient(Socket socket) {
+    private Http2UploadTestClient(Socket socket, int streamId) {
         this.socket = socket;
+        this.streamId = streamId;
     }
 
     /**
@@ -97,10 +102,56 @@ final class Http2UploadTestClient implements AutoCloseable {
             Socket socket = new Socket();
             socket.connect(new InetSocketAddress("127.0.0.1", port), (int) CONNECT_TIMEOUT_MILLIS);
             socket.setTcpNoDelay(true);
-            return begin(socket, path, "http");
+            return begin(socket, path, "http", FIRST_CLIENT_STREAM);
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to connect the HTTP/2 upload client", ex);
         }
+    }
+
+    /**
+     * Connects in cleartext, upgrades with {@code Upgrade: h2c} on a bodiless {@code GET path}, reads the
+     * {@code 101}, and then opens the request stream on stream 3, as a client that upgrades does.
+     *
+     * @param port the server's port on the loopback
+     * @param path the path of both the upgrade request and the upload
+     * @return a client that is already reading
+     */
+    static Http2UploadTestClient connectUpgrade(int port, String path) {
+        try {
+            Socket socket = new Socket();
+            socket.connect(new InetSocketAddress("127.0.0.1", port), (int) CONNECT_TIMEOUT_MILLIS);
+            socket.setTcpNoDelay(true);
+            socket.setSoTimeout((int) WAIT_MILLIS);
+            OutputStream out = socket.getOutputStream();
+            out.write(("GET " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\n"
+                    + "Upgrade: h2c\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            String head = readResponseHead(socket);
+            if (!head.startsWith("HTTP/1.1 101")) {
+                socket.close();
+                throw new IllegalStateException("the server did not switch protocols: " + head);
+            }
+            socket.setSoTimeout(0);
+            return begin(socket, path, "http", STREAM_AFTER_UPGRADE);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to connect the h2c upgrade upload client", ex);
+        }
+    }
+
+    /** Reads byte by byte up to the blank line, so no HTTP/2 byte after the head is consumed. */
+    private static String readResponseHead(Socket socket) throws IOException {
+        ByteArrayOutputStream head = new ByteArrayOutputStream();
+        InputStream in = socket.getInputStream();
+        int matched = 0;
+        while (matched < 4) {
+            int next = in.read();
+            if (next < 0) {
+                throw new IOException("the connection ended inside the response head");
+            }
+            head.write(next);
+            matched = next == "\r\n\r\n".charAt(matched) ? matched + 1 : (next == '\r' ? 1 : 0);
+        }
+        return head.toString(StandardCharsets.US_ASCII);
     }
 
     /**
@@ -125,19 +176,20 @@ final class Http2UploadTestClient implements AutoCloseable {
                 throw new IllegalStateException("the server did not select h2 through ALPN: "
                         + socket.getApplicationProtocol());
             }
-            return begin(socket, path, "https");
+            return begin(socket, path, "https", FIRST_CLIENT_STREAM);
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to connect the HTTP/2 upload TLS client", ex);
         }
     }
 
-    private static Http2UploadTestClient begin(Socket socket, String path, String scheme) throws IOException {
-        Http2UploadTestClient client = new Http2UploadTestClient(socket);
+    private static Http2UploadTestClient begin(Socket socket, String path, String scheme, int streamId)
+            throws IOException {
+        Http2UploadTestClient client = new Http2UploadTestClient(socket, streamId);
         OutputStream out = socket.getOutputStream();
         synchronized (client.writeLock) {
             out.write(PREFACE);
             writeFrame(out, TYPE_SETTINGS, 0, 0, new byte[0]);
-            writeFrame(out, TYPE_HEADERS, FLAG_END_HEADERS, STREAM_ID, requestBlock(scheme, path));
+            writeFrame(out, TYPE_HEADERS, FLAG_END_HEADERS, streamId, requestBlock(scheme, path));
             out.flush();
         }
         client.reader = Thread.ofPlatform().daemon(true).name("h2-upload-client")
@@ -161,7 +213,7 @@ final class Http2UploadTestClient implements AutoCloseable {
                 byte[] chunk = new byte[length];
                 System.arraycopy(body, sent, chunk, 0, length);
                 sent += length;
-                write(out, TYPE_DATA, sent == body.length ? FLAG_END_STREAM : 0, STREAM_ID, chunk);
+                write(out, TYPE_DATA, sent == body.length ? FLAG_END_STREAM : 0, streamId, chunk);
             }
         } catch (IOException ex) {
             throw new AssertionError("the connection failed after " + sent + " of " + body.length
@@ -256,12 +308,12 @@ final class Http2UploadTestClient implements AutoCloseable {
                 int length = lengthAndType >>> 8;
                 int type = lengthAndType & 0xFF;
                 int flags = in.readUnsignedByte();
-                int streamId = in.readInt() & 0x7FFF_FFFF;
+                int frameStreamId = in.readInt() & 0x7FFF_FFFF;
                 byte[] payload = in.readNBytes(length);
                 if (payload.length != length) {
                     return;
                 }
-                handle(out, type, flags, streamId, payload);
+                handle(out, type, flags, frameStreamId, payload);
             }
         } catch (IOException | RuntimeException _) {
             // Disconnect or close: the waiters see connectionEnded.
@@ -273,7 +325,7 @@ final class Http2UploadTestClient implements AutoCloseable {
         }
     }
 
-    private void handle(OutputStream out, int type, int flags, int streamId, byte[] payload) throws IOException {
+    private void handle(OutputStream out, int type, int flags, int frameStreamId, byte[] payload) throws IOException {
         if (type == TYPE_SETTINGS && (flags & FLAG_ACK) == 0) {
             write(out, TYPE_SETTINGS, FLAG_ACK, 0, new byte[0]);
         } else if (type == TYPE_PING && (flags & FLAG_ACK) == 0) {
@@ -287,30 +339,37 @@ final class Http2UploadTestClient implements AutoCloseable {
             int increment = ((payload[0] & 0x7F) << 24) | ((payload[1] & 0xFF) << 16)
                     | ((payload[2] & 0xFF) << 8) | (payload[3] & 0xFF);
             synchronized (monitor) {
-                if (streamId == 0) {
+                if (frameStreamId == 0) {
                     connectionWindow += increment;
-                } else if (streamId == STREAM_ID) {
+                } else if (frameStreamId == streamId) {
                     streamWindow += increment;
                 }
                 monitor.notifyAll();
             }
-        } else if (type == TYPE_RST_STREAM && streamId == STREAM_ID) {
+        } else if (type == TYPE_RST_STREAM && frameStreamId == streamId) {
             synchronized (monitor) {
                 resetCode = ((payload[0] & 0xFF) << 24) | ((payload[1] & 0xFF) << 16)
                         | ((payload[2] & 0xFF) << 8) | (payload[3] & 0xFF);
                 monitor.notifyAll();
             }
-        } else if (type == TYPE_HEADERS && streamId == STREAM_ID) {
-            onHeaders(payload);
-        } else if (type == TYPE_DATA && streamId == STREAM_ID) {
+        } else if (type == TYPE_HEADERS) {
+            onHeaders(frameStreamId, payload);
+        } else if (type == TYPE_DATA && frameStreamId == streamId) {
             onData(out, flags, payload);
         }
     }
 
-    private void onHeaders(byte[] payload) {
+    /**
+     * Decodes every header block, whichever stream it is on: the HPACK dynamic table is per connection,
+     * so skipping one block leaves the table behind the server's and a later block misdecodes.
+     */
+    private void onHeaders(int frameStreamId, byte[] payload) {
         List<Map.Entry<String, String>> fields = new ArrayList<>();
         decoder.decode(MemorySegment.ofArray(payload), 0, payload.length,
                 (name, value, sensitive) -> fields.add(Map.entry(name, value)));
+        if (frameStreamId != streamId) {
+            return;
+        }
         synchronized (monitor) {
             for (Map.Entry<String, String> field : fields) {
                 if (":status".equals(field.getKey())) {
@@ -330,7 +389,7 @@ final class Http2UploadTestClient implements AutoCloseable {
             }
         }
         if (payload.length > 0) {
-            write(out, TYPE_WINDOW_UPDATE, 0, STREAM_ID, int32(payload.length));
+            write(out, TYPE_WINDOW_UPDATE, 0, streamId, int32(payload.length));
             write(out, TYPE_WINDOW_UPDATE, 0, 0, int32(payload.length));
         }
     }
@@ -354,9 +413,9 @@ final class Http2UploadTestClient implements AutoCloseable {
 
     // ------------------------------------------------------------------ wire
 
-    private void write(OutputStream out, int type, int flags, int streamId, byte[] payload) throws IOException {
+    private void write(OutputStream out, int type, int flags, int frameStreamId, byte[] payload) throws IOException {
         synchronized (writeLock) {
-            writeFrame(out, type, flags, streamId, payload);
+            writeFrame(out, type, flags, frameStreamId, payload);
             out.flush();
         }
     }

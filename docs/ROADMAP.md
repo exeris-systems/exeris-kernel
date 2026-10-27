@@ -937,7 +937,7 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 
 **Merge Gate:** Lifecycle and shutdown/drain behavior validated by regression/integration tests.
 
-**Status (v0.8):** **PARTIAL** — RFC 7540 §5.1.1/§5.1.2 stream-identifier admission landed in Sprint 5 (HTTP-112, `Http2SessionContextAdmissionTest`) and the h2c upgrade path was fixed (see next entry). Deeper GOAWAY/drain ownership and concurrency-control hardening remain ongoing.
+**Status (v0.8):** **PARTIAL** — RFC 7540 §5.1.1/§5.1.2 stream-identifier admission landed in Sprint 5 (HTTP-112, `Http2SessionContextAdmissionTest`) and the h2c upgrade path is the next entry. Deeper GOAWAY/drain ownership and concurrency-control hardening remain ongoing.
 
 ---
 
@@ -953,6 +953,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Owner:** HTTP / Transport subsystem.
 
+**Status (v0.13):** **DELIVERED, with one item decided against.** The session consumes the 24-byte preface after `101` (a mismatch is `GOAWAY(PROTOCOL_ERROR)` with last-stream-id 0), requires the client's SETTINGS frame first, and answers the upgrade request on stream 1 once that SETTINGS frame is applied; a later HEADERS on stream 1 is a protocol error. The `HTTP2-Settings` header is not applied: the client's real SETTINGS frame is in force before stream 1 is dispatched, so nothing depends on it, and requiring it would refuse clients served today. The TCK item is open as #757; `Http2UpgradePrefaceTest` pins the Community engine.
+
 **Resolution:** Three coordinated changes landing as a single PR:
 
 1. **Detector — extract `HTTP2-Settings`.** Extend `CommunityHttpH2cUpgradeDetector.isH2cUpgradeIntent` (or a sibling extractor method) to capture the `HTTP2-Settings` header value when the upgrade intent is detected; thread the base64url-decoded payload and the parsed originating `HttpRequest` through `handleHttp1UpgradeToH2c` into `CommunityHttp2SessionProcessor.handleUpgrade`.
@@ -961,7 +963,7 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** `curl --http2 http://localhost:<port>/...` against a `CommunityHttpServerEngine` returns the expected response (no `GOAWAY error=1`); h2c upgrade TCK scenarios green (positive + adversarial); HTTP/2 prior-knowledge tests remain green (no regression on the unaffected path); stream identifier accounting per RFC 7540 §5.1.1 verified via TCK assertion that stream 3 sent by the client immediately after upgrade is accepted while stream 2 is rejected with `PROTOCOL_ERROR`.
 
-**Status (v0.8):** **DELIVERED** in Sprint 6 (HTTP-137) — `CommunityHttpH2cUpgradeDetector` extracts `HTTP2-Settings`; the processor consumes the connection preface, applies peer SETTINGS, and synthesises the original request as stream 1 per RFC 7540 §3.2. Cleartext `curl --http2` no longer fails with `GOAWAY error=1`; prior-knowledge / ALPN paths unaffected.
+**Status (v0.8):** **NOT DELIVERED.** On the 0.8 line the detector matched the upgrade intent only: `HTTP2-Settings` was not extracted, the processor did not consume the connection preface, and the original request was not answered on stream 1, so cleartext `curl --http2` still ended in `GOAWAY error=1`. Prior-knowledge and ALPN paths were unaffected. The v0.13 status above records what is delivered.
 
 ---
 
