@@ -26,6 +26,12 @@ import java.nio.charset.StandardCharsets;
  * <p>Not thread-safe. Each HTTP/2 connection must use its own decoder instance
  * (RFC 7541 §2.2 — encoding and decoding contexts are independent).
  *
+ * <h2>Strings</h2>
+ * <p>Names and values are decoded one char per octet (ISO-8859-1). A field value is a
+ * sequence of octets and obs-text is opaque data (RFC 9110 §5.5), so the decoder neither
+ * interprets nor replaces any octet, and a field reaches the listener as the HTTP/1.1 parser
+ * materialises it. {@code value.getBytes(ISO_8859_1)} returns the wire octets.
+ *
  * <h2>Memory</h2>
  * <p>Decoding operates on a caller-provided {@link MemorySegment}. Huffman
  * decoding uses a scratch {@link LoanedBuffer} obtained from the
@@ -54,10 +60,6 @@ public final class HpackDecoder {
     private static final String MSG_INVALID_INDEX = "HPACK: invalid index";
     private static final String MSG_HEADER_LIST_SIZE_EXCEEDS_LIMIT =
             "HPACK: header list size exceeds limit";
-
-    private static final int UTF8_1BYTE_MAX = 0x007F;
-    private static final int UTF8_2BYTE_MAX = 0x07FF;
-    private static final int UTF8_3BYTE_MAX = 0xFFFF;
 
     private final HpackDynamicTable dynamicTable;
     private final MemoryAllocator allocator;
@@ -92,8 +94,8 @@ public final class HpackDecoder {
          * Receives one header field, invoked once per field in the order the fields appear
          * in the header block.
          *
-         * @param name       header field name
-         * @param value      header field value
+         * @param name       header field name, one char per octet as received
+         * @param value      header field value, one char per octet as received
          * @param sensitive  {@code true} if the field was marked as never-indexed (§6.2.3)
          */
         void onHeader(String name, String value, boolean sensitive);
@@ -246,7 +248,7 @@ public final class HpackDecoder {
             dynamicTable.clear();
             return;
         }
-        dynamicTable.add(name, value);
+        dynamicTable.add(name, value, (long) name.length() + value.length());
         emit(name, value, false, listener);
     }
 
@@ -371,7 +373,7 @@ public final class HpackDecoder {
             byte[] bytes = new byte[strLen];
             MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, strStart,
                     bytes, 0, strLen);
-            value = new String(bytes, StandardCharsets.UTF_8);
+            value = new String(bytes, StandardCharsets.ISO_8859_1);
         }
 
         decodePos = strStart + strLen;
@@ -395,7 +397,7 @@ public final class HpackDecoder {
             byte[] bytes = new byte[decodedLen];
             MemorySegment.copy(decoded, ValueLayout.JAVA_BYTE, 0,
                     bytes, 0, decodedLen);
-            return new String(bytes, StandardCharsets.UTF_8);
+            return new String(bytes, StandardCharsets.ISO_8859_1);
         } catch (Huffman.HuffmanDecodingException cause) {
             throw new HpackDecodingException(
                     "HPACK: invalid Huffman-encoded string literal", cause);
@@ -433,7 +435,10 @@ public final class HpackDecoder {
         if (limitExceeded) {
             return;
         }
-        decodeHeaderListSize += utf8ByteLength(name) + utf8ByteLength(value) + 32;
+        // Every name and value here holds one char per wire octet: literals are decoded as
+        // ISO-8859-1 and static-table strings are ASCII. So a length is the octet count that
+        // RFC 7541 §4.1 sizes entries by and RFC 9113 §6.5.2 sizes the field section by.
+        decodeHeaderListSize += (long) name.length() + value.length() + 32;
         if (decodeHeaderListSize > maxHeaderListSize) {
             noteLimitExceeded(MSG_HEADER_LIST_SIZE_EXCEEDS_LIMIT, decodeHeaderListSize, maxHeaderListSize);
             return;
@@ -448,26 +453,6 @@ public final class HpackDecoder {
             limitObserved = observed;
             limitBound = bound;
         }
-    }
-
-    private static int utf8ByteLength(String str) {
-        int count = 0;
-        final int len = str.length();
-        int idx = 0;
-        while (idx < len) {
-            int codePoint = str.codePointAt(idx);
-            if (codePoint <= UTF8_1BYTE_MAX) {
-                count++;
-            } else if (codePoint <= UTF8_2BYTE_MAX) {
-                count += 2;
-            } else if (codePoint <= UTF8_3BYTE_MAX) {
-                count += 3;
-            } else {
-                count += 4;
-            }
-            idx += Character.charCount(codePoint);
-        }
-        return count;
     }
 
     /**

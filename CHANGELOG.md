@@ -69,6 +69,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **HTTP/2 header names and values reach handlers one char per octet (ISO-8859-1), as on HTTP/1.1,** where they were decoded as UTF-8 with an invalid sequence replaced by U+FFFD. A handler that expects UTF-8 in a non-ASCII value decodes `value.getBytes(StandardCharsets.ISO_8859_1)` as UTF-8.
+
 - **`…spi.http` (the whole package), `…spi.security` with `…security.identity`, `…spi.events`, `…spi.crypto`, `…spi.scheduling` and `…spi.storage.blob` are `stable` (ADR-100).** The SPI compatibility gate now fails a binary- or source-incompatible change to them, as it does for transport, persistence, flow and memory; they are semver-binding from 1.0. `…spi.contract`, `…spi.graph`, `…spi.time` and `…spi.websocket` stay `preview`. No signature changes; see `docs/stability-matrix.md`.
 
 - **The Community HTTP/2 writer hands every frame to the transport through `queueWrite`, so a slow peer no longer holds its lock.** Stream heads, end-of-stream frames, `RST_STREAM`, coalesced responses and the control frames (PING and SETTINGS acknowledgements, GOAWAY) were written with the blocking `write`; the bytes on the wire and their order are unchanged.
@@ -339,6 +341,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   exemption.
 
 ### Fixed
+
+- **HPACK sizes table entries and the field section by the octets on the wire.** The decoder measured an entry, and the field section, by re-encoding the decoded String as UTF-8. An obs-text octet that is not valid UTF-8 became U+FFFD and counted three octets where the client counted one. The server then evicted entries the client still held, and a later request referencing one failed as a COMPRESSION_ERROR, or a field section within http.maxHeaderListSize was refused. Sizes now come from the octets read. New AbstractHttp2HeaderLimitTck group ObsTextOctets.
 
 - **`spi-api-diff --history` labels each transition with the stability conf at its old ref, not the working tree's (tooling).** Regenerating the release history after a surface is promoted no longer reports that surface's earlier `preview` breaks as `stable` breaks; a single `--old/--new` run keeps judging by the current conf. `--self-test` pins the choice for each mode against a throwaway repository, and CI runs it.
 

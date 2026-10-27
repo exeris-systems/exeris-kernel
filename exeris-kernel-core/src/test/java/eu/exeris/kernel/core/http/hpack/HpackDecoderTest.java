@@ -14,6 +14,7 @@ import org.junit.jupiter.api.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -779,6 +780,169 @@ class HpackDecoderTest {
     }
 
     // =========================================================================
+    // Wire-octet sizing
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Entry and field-section sizes are the octets on the wire — RFC 7541 §4.1, RFC 9113 §6.5.2")
+    class WireOctetSizing {
+
+        private static final int UNBOUNDED = 1 << 20;
+        private static final byte[] OBS = {
+                (byte) 0xFF, (byte) 0x80, (byte) 0xC3, 0x28, (byte) 0xE2, (byte) 0x82, (byte) 0xC3, (byte) 0xA9, 0x7A};
+
+        private byte[] ff(int count) {
+            byte[] octets = new byte[count];
+            java.util.Arrays.fill(octets, (byte) 0xFF);
+            return octets;
+        }
+
+        private String latin1(byte[] octets) {
+            return new String(octets, StandardCharsets.ISO_8859_1);
+        }
+
+        private List<String> decodeAll(HpackDecoder decoder, byte[] block) {
+            List<String> delivered = new ArrayList<>();
+            decoder.decode(segment(block), 0, block.length, (n, v, s) -> delivered.add(n + "=" + v));
+            return delivered;
+        }
+
+        @Test
+        @DisplayName("a raw obs-text value is sized by its octets and reaches the table octet for octet")
+        void rawObsTextIncremental() {
+            byte[] block = new BlockBuilder()
+                    .literalIncremental("x-a", "1")
+                    .literalIncrementalOctets("x-obs", OBS)
+                    .build();
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+
+            decodeAll(new HpackDecoder(table, allocator, 65_536, 65_536), block);
+
+            assertThat(table.byteSize()).isEqualTo(36 + (5 + OBS.length + 32));
+            assertThat(table.getName(0)).isEqualTo("x-obs");
+            assertThat(table.getName(1)).isEqualTo("x-a");
+            assertThat(table.getValue(0).getBytes(StandardCharsets.ISO_8859_1)).isEqualTo(OBS);
+        }
+
+        @Test
+        @DisplayName("a Huffman obs-text value is sized by its octets, with one scratch loan")
+        void huffmanObsTextIncremental() {
+            byte[] block = new BlockBuilder()
+                    .literalIncremental("x-a", "1")
+                    .literalIncrementalHuffmanOctets("x-obs", OBS)
+                    .build();
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            CountingAllocator counting = new CountingAllocator(allocator);
+
+            decodeAll(new HpackDecoder(table, counting, 65_536, 65_536), block);
+
+            assertThat(counting.networkLoans()).isEqualTo(1);
+            assertThat(table.byteSize()).isEqualTo(36 + (5 + OBS.length + 32));
+            assertThat(table.getName(0)).isEqualTo("x-obs");
+            assertThat(table.getValue(0).getBytes(StandardCharsets.ISO_8859_1)).isEqualTo(OBS);
+        }
+
+        @Test
+        @DisplayName("a table of exactly the wire size holds both entries; one octet less holds only the newer")
+        void tableBoundaryFollowsTheWireOctets() {
+            byte[] insert = new BlockBuilder()
+                    .literalIncremental("x-a", "1")
+                    .literalIncrementalOctets("x-obs", ff(20))
+                    .build();
+            String obs = "\u00ff".repeat(20);
+
+            HpackDynamicTable holds = new HpackDynamicTable(93);
+            HpackDecoder holder = new HpackDecoder(holds, allocator, UNBOUNDED, UNBOUNDED);
+            decodeAll(holder, insert);
+            assertThat(decodeAll(holder, new BlockBuilder().indexed(63).indexed(62).build()))
+                    .containsExactly("x-a=1", "x-obs=" + obs);
+
+            HpackDynamicTable evicts = new HpackDynamicTable(92);
+            HpackDecoder evictor = new HpackDecoder(evicts, allocator, UNBOUNDED, UNBOUNDED);
+            decodeAll(evictor, insert);
+            assertThat(evicts.size()).isEqualTo(1);
+            assertThat(evicts.getName(0)).isEqualTo("x-obs");
+            byte[] stale = new BlockBuilder().indexed(63).build();
+            assertThatThrownBy(() -> decodeAll(evictor, stale))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertMalformed);
+        }
+
+        @Test
+        @DisplayName("a field section is sized by wire octets: at the limit it is delivered, one under it is refused")
+        void fieldSectionBoundFollowsTheWireOctets() {
+            byte[] block = new BlockBuilder().literalNoIndexOctets("x-obs", ff(10)).build();
+
+            assertThat(decodeAll(new HpackDecoder(new HpackDynamicTable(4096), allocator, 47, UNBOUNDED), block))
+                    .containsExactly("x-obs=" + "\u00ff".repeat(10));
+
+            assertThatThrownBy(() -> decodeAll(
+                    new HpackDecoder(new HpackDynamicTable(4096), allocator, 46, UNBOUNDED), block))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
+                    .hasMessageContaining("header list size");
+        }
+
+        @Test
+        @DisplayName("an indexed reference to an obs-text entry counts the wire octets against the next section")
+        void indexedReferenceCountsWireOctets() {
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 47, UNBOUNDED);
+
+            assertThat(decodeAll(decoder, new BlockBuilder().literalIncrementalOctets("x-obs", ff(10)).build()))
+                    .containsExactly("x-obs=" + "\u00ff".repeat(10));
+            assertThat(decodeAll(decoder, new BlockBuilder().indexed(62).build()))
+                    .containsExactly("x-obs=" + "\u00ff".repeat(10));
+        }
+
+        @Test
+        @DisplayName("an HTTP/2 value equals what the HTTP/1.1 parser materialises from the same octets")
+        void valueMatchesTheHttp1Parser() {
+            byte[] block = new BlockBuilder().literalNoIndexOctets("x-obs", OBS).build();
+            List<String> h2 = new ArrayList<>();
+            new HpackDecoder(new HpackDynamicTable(4096), allocator, UNBOUNDED, UNBOUNDED)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> h2.add(v));
+
+            java.io.ByteArrayOutputStream wire = new java.io.ByteArrayOutputStream();
+            wire.writeBytes("x-obs: ".getBytes(StandardCharsets.US_ASCII));
+            wire.writeBytes(OBS);
+            wire.writeBytes("\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+            byte[] h1Bytes = wire.toByteArray();
+            List<String> h1 = new ArrayList<>();
+            eu.exeris.kernel.core.http.http1.Http1RequestParser.parseHeaders(
+                    segment(h1Bytes), 0, h1Bytes.length, (n, v) -> h1.add(v));
+
+            assertThat(h2).hasSize(1);
+            assertThat(h1).hasSize(1);
+            assertThat(h2.get(0)).isEqualTo(h1.get(0)).isEqualTo(latin1(OBS));
+        }
+
+        @Test
+        @DisplayName("an indexed name with an obs-text value is sized by the octets of both")
+        void indexedNameObsTextValue() {
+            byte[] block = new BlockBuilder().literalIncrementalIndexedName(58, ff(10)).build();
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+
+            decodeAll(new HpackDecoder(table, allocator, UNBOUNDED, UNBOUNDED), block);
+
+            assertThat(table.byteSize()).isEqualTo(10 + 10 + 32);
+        }
+
+        @Test
+        @DisplayName("an obs-text name is sized by its octets, and an indexed reuse of it by the same")
+        void obsTextName() {
+            byte[] name = {'x', '-', (byte) 0xFF};
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, UNBOUNDED, UNBOUNDED);
+
+            decodeAll(decoder, new BlockBuilder().literalIncrementalOctetName(name, "a").build());
+            decodeAll(decoder, new BlockBuilder().literalIncrementalIndexedName(62, "b".getBytes(StandardCharsets.US_ASCII)).build());
+
+            assertThat(table.byteSize()).isEqualTo(36 + 36);
+            assertThat(table.getName(0).getBytes(StandardCharsets.ISO_8859_1)).isEqualTo(name);
+        }
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 
@@ -912,21 +1076,61 @@ class HpackDecoderTest {
             return this;
         }
 
+        BlockBuilder literalIncrementalOctets(String name, byte[] value) {
+            out.write(0x40);
+            string(name);
+            octets(value);
+            return this;
+        }
+
+        BlockBuilder literalIncrementalHuffmanOctets(String name, byte[] value) {
+            out.write(0x40);
+            string(name);
+            huffmanOctets(value);
+            return this;
+        }
+
+        BlockBuilder literalNoIndexOctets(String name, byte[] value) {
+            out.write(0x00);
+            string(name);
+            octets(value);
+            return this;
+        }
+
+        BlockBuilder literalIncrementalOctetName(byte[] name, String value) {
+            out.write(0x40);
+            octets(name);
+            string(value);
+            return this;
+        }
+
+        BlockBuilder literalIncrementalIndexedName(int nameIndex, byte[] value) {
+            integer(0x40, 6, nameIndex);
+            octets(value);
+            return this;
+        }
+
         byte[] build() {
             return out.toByteArray();
         }
 
         private void huffmanString(String value) {
-            byte[] raw = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            huffmanOctets(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+
+        private void huffmanOctets(byte[] raw) {
             MemorySegment input = segment(raw);
-            MemorySegment output = testArena.allocate(raw.length * 2L + 8);
+            MemorySegment output = testArena.allocate(raw.length * 4L + 8);
             long length = eu.exeris.kernel.core.http.hpack.huffman.Huffman.encode(input.asSlice(0, raw.length), output);
             integer(0x80, 7, (int) length);
             out.writeBytes(output.asSlice(0, length).toArray(ValueLayout.JAVA_BYTE));
         }
 
         private void string(String text) {
-            byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            octets(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+
+        private void octets(byte[] bytes) {
             integer(0x00, 7, bytes.length);
             out.writeBytes(bytes);
         }

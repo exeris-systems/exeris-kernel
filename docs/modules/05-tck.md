@@ -127,7 +127,7 @@ HTTP/2 with prior knowledge. For each key a request at the limit is served and a
 it is refused without reaching the handler, and the server advertises `maxHeaderListSize` as
 `SETTINGS_MAX_HEADER_LIST_SIZE`. A refusal is a `431` on the stream, a reset or a `GOAWAY`; the HPACK
 dynamic table survives a refusal that keeps the connection, and a malformed block is
-`GOAWAY(COMPRESSION_ERROR)`. The Community server binds it (`CommunityHttp2HeaderLimitTckTest`).
+`GOAWAY(COMPRESSION_ERROR)`. Obs-text octets in a value count one each, both against `maxHeaderListSize` and in the dynamic table, where a request referencing an entry older than an obs-text insertion must be served. The Community server binds it (`CommunityHttp2HeaderLimitTckTest`).
 
 ### Current Core Binding Coverage (HTTP)
 
