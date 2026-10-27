@@ -1,17 +1,41 @@
 [ {
-  "t" : 1793085306668,
+  "t" : 1793098628924,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSession$$Lambda.0x00000000992dd4c8",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 148704,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.graph.CommunityGraphSession.<init>(CommunityGraphSession.java:56)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1793098628924,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSession$$Lambda.0x00000000992dd4c8",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.graph.CommunityGraphSession.<init>(CommunityGraphSession.java:56)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1793098628929,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "[B",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 261560,
+  "size" : 261552,
   "sizeKind" : "sample_weight",
   "kind" : "array",
   "category" : "test_harness",
-  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:78)",
-  "stackId" : "stk_0001"
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1793085306668,
+  "t" : 1793098628929,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "[B",
   "thread" : "main",
@@ -20,6 +44,6 @@
   "sizeKind" : "tlab_size",
   "kind" : "array",
   "category" : "test_harness",
-  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:78)",
-  "stackId" : "stk_0001"
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
+  "stackId" : "stk_0002"
 } ]
