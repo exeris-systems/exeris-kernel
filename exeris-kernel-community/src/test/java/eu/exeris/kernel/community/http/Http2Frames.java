@@ -64,6 +64,17 @@ final class Http2Frames {
         return frame(Http2FrameType.DATA.code(), endStream ? 0x01 : 0, streamId, payload);
     }
 
+    /**
+     * A DATA frame carrying {@code payload} followed by {@code padLength} bytes of padding; the frame's
+     * flow-controlled length is {@code 1 + payload.length + padLength}.
+     */
+    static byte[] paddedData(int streamId, byte[] payload, int padLength, boolean endStream) {
+        byte[] padded = new byte[1 + payload.length + padLength];
+        padded[0] = (byte) padLength;
+        System.arraycopy(payload, 0, padded, 1, payload.length);
+        return frame(Http2FrameType.DATA.code(), 0x08 | (endStream ? 0x01 : 0), streamId, padded);
+    }
+
     static byte[] windowUpdate(int streamId, int increment) {
         return frame(Http2FrameType.WINDOW_UPDATE.code(), 0, streamId, int32(increment));
     }

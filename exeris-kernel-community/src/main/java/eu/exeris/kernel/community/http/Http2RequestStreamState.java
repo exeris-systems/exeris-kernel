@@ -43,6 +43,8 @@ import java.lang.foreign.MemorySegment;
     private boolean bodyDetached;
     private int bodyBytes;
     private long pendingSendWindowIncrement;
+    private final Http2FlowController receiveWindow =
+            new Http2FlowController(Http2FlowController.DEFAULT_WINDOW_SIZE);
 
     /* default */ Http2RequestStreamState(int streamId, Http2DecodedRequest request) {
         this.streamId = streamId;
@@ -85,6 +87,34 @@ import java.lang.foreign.MemorySegment;
         }
         pendingSendWindowIncrement += increment;
         return true;
+    }
+
+    /**
+     * Charges {@code bytes} of the peer's DATA frame, padding included, to this stream's receive
+     * window.
+     *
+     * @return {@code false} when the frame exceeds the window the server has granted, so the caller
+     *         resets the stream with FLOW_CONTROL_ERROR
+     */
+    /* default */ boolean consumeReceiveWindow(int bytes) {
+        return receiveWindow.consume(bytes);
+    }
+
+    /**
+     * Raises the receive window back to {@code target} once it has fallen to half of it or less, so a
+     * peer is credited in batches rather than once per frame.
+     *
+     * @param target the window the stream may be offered
+     * @return the increment to advertise, or {@code 0} when no credit is due
+     */
+    /* default */ int replenishReceiveWindow(long target) {
+        long window = receiveWindow.windowSize();
+        if (target <= window || window > target / 2) {
+            return 0;
+        }
+        int increment = (int) (target - window);
+        receiveWindow.increment(increment);
+        return increment;
     }
 
     /* default */ void appendBody(MemoryAllocator allocator,

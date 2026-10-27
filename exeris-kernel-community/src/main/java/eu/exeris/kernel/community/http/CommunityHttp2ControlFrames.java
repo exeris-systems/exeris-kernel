@@ -17,7 +17,7 @@ import java.lang.foreign.MemorySegment;
 /**
  * Package-private writers for HTTP/2 control frames issued by
  * {@link CommunityHttp2SessionProcessor}: SETTINGS, SETTINGS-ACK,
- * PING-ACK, RST_STREAM (REFUSED / CANCEL), and GOAWAY.
+ * PING-ACK, WINDOW_UPDATE, RST_STREAM (REFUSED / CANCEL), and GOAWAY.
  *
  * <p>Each writer follows the same shape — borrow a small network slab, encode
  * the frame via {@link Http2FrameEncoder}, write it through the connection's
@@ -75,6 +75,34 @@ final class CommunityHttp2ControlFrames {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
             long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, false,
                     Http2Settings.ID_MAX_HEADER_LIST_SIZE, maxHeaderListSize);
+            outbound.setSize(written);
+            writer.writeFrame(outbound, (int) written);
+        }
+    }
+
+    /**
+     * Returns receive credit to the peer in one write: a WINDOW_UPDATE for the stream and one for the
+     * connection, coalesced so that a frame that consumed both costs one queued buffer. An increment of
+     * zero omits that frame.
+     */
+    /* default */ static void sendWindowUpdates(MemoryAllocator allocator,
+                                                Http2ConnectionWriter writer,
+                                                int streamId,
+                                                int streamIncrement,
+                                                int connectionIncrement) {
+        if (streamIncrement <= 0 && connectionIncrement <= 0) {
+            return;
+        }
+        try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
+            long written = 0;
+            if (streamIncrement > 0) {
+                written += Http2FrameEncoder.writeWindowUpdate(
+                        outbound.segment(), written, streamId, streamIncrement);
+            }
+            if (connectionIncrement > 0) {
+                written += Http2FrameEncoder.writeWindowUpdate(
+                        outbound.segment(), written, 0, connectionIncrement);
+            }
             outbound.setSize(written);
             writer.writeFrame(outbound, (int) written);
         }
