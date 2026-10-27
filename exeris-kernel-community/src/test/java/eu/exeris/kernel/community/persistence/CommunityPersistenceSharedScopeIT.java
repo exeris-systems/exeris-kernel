@@ -15,9 +15,9 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -59,7 +59,7 @@ import java.util.Map;
 class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixTck {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
 
     private static final String APP_USER = "exeris_app";
     private static final String APP_PASSWORD = "exeris_app_pw";
@@ -166,7 +166,7 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
         }
     }
 
-    private static PersistenceEngine createEngine(PostgreSQLContainer<?> container) {
+    private static PersistenceEngine createEngine(PostgreSQLContainer container) {
         PersistenceConfig config = new PersistenceConfig(
                 container.getJdbcUrl(), APP_USER, APP_PASSWORD,
                 24, 2, 5_000L, 60_000L, 600_000L,
@@ -174,7 +174,7 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
         return new CommunityPersistenceProvider().createEngine(config);
     }
 
-    private static void bootstrapSchema(PostgreSQLContainer<?> container) {
+    private static void bootstrapSchema(PostgreSQLContainer container) {
         try (Connection conn = DriverManager.getConnection(
                 container.getJdbcUrl(), container.getUsername(), container.getPassword());
              Statement st = conn.createStatement()) {

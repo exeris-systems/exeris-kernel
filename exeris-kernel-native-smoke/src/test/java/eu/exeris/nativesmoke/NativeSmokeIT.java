@@ -6,10 +6,10 @@ package eu.exeris.nativesmoke;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.testcontainers.containers.Neo4jContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.neo4j.Neo4jContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -23,10 +23,10 @@ class NativeSmokeIT {
     private static final String NEO4J_PASSWORD = "smokeneo4jpass";
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
 
     @Container
-    static final Neo4jContainer<?> NEO4J = new Neo4jContainer<>("neo4j:5-community")
+    static final Neo4jContainer NEO4J = new Neo4jContainer("neo4j:5-community")
             .withAdminPassword(NEO4J_PASSWORD);
 
     @TempDir

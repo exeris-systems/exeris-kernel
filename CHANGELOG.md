@@ -174,6 +174,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   documented in `docs/subsystems/scheduling.md`. `AbstractJobSchedulerTck` gains a case asserting that a
   storage-only submission runs with no principal bound. No signature changes.
 
+- **`exeris-kernel-bom` manages Testcontainers 2.0.5, whose modules are named `testcontainers-*`.** A build that imports the BOM and depends on the 1.x names (`junit-jupiter`, `postgresql`, `kafka`, `neo4j`) no longer gets their version from it. The first imported BOM wins, so importing `exeris-kernel-bom` before an own 1.x BOM resolves core `testcontainers` 2.0.5 beside 1.x modules; rename to the 2.0 artifacts and the `org.testcontainers.<module>` classes.
+
 ### Deprecated
 
 - **`findShortestPath(UUID, UUID)` is deprecated for removal before the graph SPI is promoted.** Use `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` instead.
@@ -467,10 +469,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   with a negative control of its own.
 - **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on
   3.2.5.** Both are pinned once, in the root POM; the class sets were compared per execution and per
-  CI tag selection. Community and Community Kafka declare the JUnit Vintage engine: with `junit:junit` on
-  their test classpath (from Testcontainers 1.x) and no declared engine, Surefire 3.6 applies
-  `groups`/`excludedGroups` as JUnit 4 categories, so every tagged selection runs nothing and the
-  default execution runs every excluded tag (#577).
+  CI tag selection. The tests use Testcontainers 2.0.5, which does not depend on `junit:junit`, so no
+  module has JUnit 4 on its test classpath and none declares the Vintage engine; with `junit:junit`
+  present and no declared engine, Surefire 3.6 applies `groups`/`excludedGroups` as JUnit 4 categories,
+  so every tagged selection runs nothing and the default execution runs every excluded tag (#577).
 - **The `*Research` allocation harnesses are excluded by a tag, not only by their names.** The five
   in Core and Community carry `@Tag("research")` and run only through the `research` profile
   (`mvn -pl exeris-kernel-core,exeris-kernel-community -Presearch test-compile surefire:test`);

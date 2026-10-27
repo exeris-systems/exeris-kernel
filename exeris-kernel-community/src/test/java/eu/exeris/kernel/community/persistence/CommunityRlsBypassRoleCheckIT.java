@@ -22,9 +22,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -59,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CommunityRlsBypassRoleCheckIT extends AbstractRlsBypassRoleCheckTck {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
 
     private static final String PASSWORD = "role_pw";
     private static final String BYPASS_EVENT = "eu.exeris.kernel.persistence.RlsBypassRole";
