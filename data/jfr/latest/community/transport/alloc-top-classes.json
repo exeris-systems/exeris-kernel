@@ -2,16 +2,16 @@
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "kind" : "exeris",
   "category" : "production",
-  "count" : 4,
-  "events" : 4,
-  "samples" : 2,
-  "sample_weight_bytes" : 523000,
-  "tlab_refills" : 2,
-  "tlab_bytes" : 524288,
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261488,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
-    "exeris" : 4,
+    "exeris" : 2,
     "loom" : 0,
     "panama" : 0,
     "array" : 0,
@@ -19,13 +19,13 @@
     "other" : 0
   }
 }, {
-  "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
+  "class" : "[I",
   "kind" : "array",
   "category" : "production",
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 258312,
+  "sample_weight_bytes" : 259832,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -36,6 +36,26 @@
     "panama" : 0,
     "array" : 2,
     "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "kind" : "jdk",
+  "category" : "production",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261568,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 219640,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
     "other" : 0
   }
 }, {

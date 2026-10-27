@@ -1,29 +1,5 @@
 [ {
-  "t" : 1792999409627,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 258312,
-  "sizeKind" : "sample_weight",
-  "kind" : "array",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:128)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792999409627,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "array",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:128)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792999409638,
+  "t" : 1793085324671,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "thread" : "main",
@@ -33,9 +9,9 @@
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:928)",
-  "stackId" : "stk_0002"
+  "stackId" : "stk_0001"
 }, {
-  "t" : 1792999409638,
+  "t" : 1793085324671,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "thread" : "main",
@@ -45,9 +21,57 @@
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:928)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1793085324893,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[I",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 259832,
+  "sizeKind" : "sample_weight",
+  "kind" : "array",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:128)",
   "stackId" : "stk_0002"
 }, {
-  "t" : 1792999469789,
+  "t" : 1793085324893,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[I",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "array",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:128)",
+  "stackId" : "stk_0002"
+}, {
+  "t" : 1793085324899,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "jdk",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket.offerIfBelow(CommunityArenaShardPool$Bucket.java:267)",
+  "stackId" : "stk_0003"
+}, {
+  "t" : 1793085324899,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 219640,
+  "sizeKind" : "tlab_size",
+  "kind" : "jdk",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket.offerIfBelow(CommunityArenaShardPool$Bucket.java:267)",
+  "stackId" : "stk_0003"
+}, {
+  "t" : 1793085326359,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
@@ -57,9 +81,9 @@
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0003"
+  "stackId" : "stk_0004"
 }, {
-  "t" : 1792999469789,
+  "t" : 1793085326359,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
@@ -69,29 +93,5 @@
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0003"
-}, {
-  "t" : 1792999471040,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261512,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0003"
-}, {
-  "t" : 1792999471040,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0003"
+  "stackId" : "stk_0004"
 } ]
