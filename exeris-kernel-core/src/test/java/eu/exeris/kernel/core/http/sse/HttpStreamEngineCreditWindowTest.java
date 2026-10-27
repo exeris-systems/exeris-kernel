@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The credit window bounds the bytes queued, not the size of one event: an event larger than the window
- * is admitted once nothing else is outstanding, and an event that fits no better than before still parks
+ * is admitted once nothing else is outstanding, and an event that does not fit the remaining window parks
  * while anything is outstanding. The transport here is a fake that records each queued buffer and holds
  * it until the test releases it, so the test owns the moment credit returns.
  */
