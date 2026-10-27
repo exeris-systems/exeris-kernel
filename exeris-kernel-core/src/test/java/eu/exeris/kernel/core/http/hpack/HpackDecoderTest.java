@@ -917,6 +917,20 @@ class HpackDecoderTest {
         }
 
         @Test
+        @DisplayName("a valid UTF-8 value reaches the listener one char per octet, not decoded as UTF-8")
+        void validUtf8ValueIsDeliveredOctetForOctet() {
+            byte[] eAcute = {(byte) 0xC3, (byte) 0xA9};
+            byte[] block = new BlockBuilder().literalNoIndexOctets("x-text", eAcute).build();
+            List<String> values = new ArrayList<>();
+            new HpackDecoder(new HpackDynamicTable(4096), allocator, UNBOUNDED, UNBOUNDED)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> values.add(v));
+
+            assertThat(values).containsExactly("\u00C3\u00A9");
+            assertThat(new String(values.get(0).getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8))
+                    .isEqualTo("\u00E9");
+        }
+
+        @Test
         @DisplayName("an indexed name with an obs-text value is sized by the octets of both")
         void indexedNameObsTextValue() {
             byte[] block = new BlockBuilder().literalIncrementalIndexedName(58, ff(10)).build();
