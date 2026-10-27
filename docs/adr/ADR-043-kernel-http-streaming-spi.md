@@ -13,7 +13,7 @@ slug: adr/ADR-043
 | **Status**      | **ACCEPTED**                                                                                       |
 | **Deciders**    | Arkadiusz Przychocki                                                                               |
 | **Date**        | 2026-06-21                                                                                         |
-| **Revised**     | 2026-09-26 (A1), 2026-10-20 (A2), 2026-10-21 (A1 note)                                             |
+| **Revised**     | 2026-09-26 (A1), 2026-10-20 (A2), 2026-10-21 (A1 note), 2026-10-27 (A1 note)                       |
 | **Scope**       | `kernel/transport` (cross-repo obligations: `exeris-sdk`, `exeris-tooling`, `exeris-kernel-enterprise`) |
 | **Owning Repo** | `exeris-kernel`                                                                                    |
 | **Driven By**   | [RFC-2026-06-18](../rfc/RFC-2026-06-18-http-streaming-spi.md) (Kernel HTTP server-push / streaming SPI) |
@@ -129,6 +129,8 @@ that returns a handler it has wrapped gets that nesting from the driver as it st
   with ALPN `h2` and a prior-knowledge preface — and `emit` parks on the stream's and the
   connection's flow-control windows. The `h2c` upgrade path does not yet consume the client
   connection preface that follows `101`, so it is not a supported route to HTTP/2.)*
+  *(2026-10-27: the `h2c` upgrade path consumes the client connection preface after `101` and
+  answers the upgrade request on stream 1, so it is a third supported route to HTTP/2.)*
 - The Enterprise native streaming binding, still listed under *What is NOT in scope*, resolves
   through the same interface when it is built. Today the Enterprise HTTP engine serves respond-once
   routes only.

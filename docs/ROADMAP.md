@@ -937,7 +937,7 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 
 **Merge Gate:** Lifecycle and shutdown/drain behavior validated by regression/integration tests.
 
-**Status (v0.8):** **PARTIAL** — RFC 7540 §5.1.1/§5.1.2 stream-identifier admission landed in Sprint 5 (HTTP-112, `Http2SessionContextAdmissionTest`) and the h2c upgrade path was fixed (see next entry). Deeper GOAWAY/drain ownership and concurrency-control hardening remain ongoing.
+**Status (v0.8):** **PARTIAL** — RFC 7540 §5.1.1/§5.1.2 stream-identifier admission landed in Sprint 5 (HTTP-112, `Http2SessionContextAdmissionTest`) and the h2c upgrade path is the next entry. Deeper GOAWAY/drain ownership and concurrency-control hardening remain ongoing.
 
 ---
 
@@ -952,6 +952,8 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — it is invoked only after `CommunityHttpH2cUpgradeDetector.isHttp2PriorKnowledgePreface` has matched the 24-byte preface, so the preface bytes are naturally outside the frame-loop window when control transfers. ALPN-negotiated HTTPS HTTP/2 reaches the same prior-knowledge path and is also unaffected. Scope therefore narrows to cleartext h2c Upgrade only — `curl --http2`, k6, wrk2 against cleartext endpoints, and dev/loopback flows.
 
 **Owner:** HTTP / Transport subsystem.
+
+**Status (v0.13):** **DELIVERED, with one item decided against.** The session consumes the 24-byte preface after `101` (a mismatch is `GOAWAY(PROTOCOL_ERROR)` with last-stream-id 0), requires the client's SETTINGS frame first, and answers the upgrade request on stream 1 once that SETTINGS frame is applied; a later HEADERS on stream 1 is a protocol error. The `HTTP2-Settings` header is not applied: the client's real SETTINGS frame is in force before stream 1 is dispatched, so nothing depends on it, and requiring it would refuse clients served today. The TCK item is open as #757; `Http2UpgradePrefaceTest` pins the Community engine.
 
 **Resolution:** Three coordinated changes landing as a single PR:
 
