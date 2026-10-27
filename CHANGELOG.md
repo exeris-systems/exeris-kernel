@@ -68,6 +68,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   to a `HEAD` route; where the `GET` handler runs, the `GET` rule does. `HttpRouter.routeMethod`
   names the method of the route a request is dispatched to.
 
+- **A JWKS key labelled for another use or algorithm no longer verifies tokens (ADR-040 A1).** The Community OIDC validator installs a JWKS entry only when its `use` is absent or `sig`, its `alg` is absent or the one its key type verifies (RS256 for an RSA key, EdDSA for an Ed25519 key), and its `kid` appears once in the document. An RSA key declaring `RSA-OAEP` or `RS512`, a key with `use: enc`, and every entry of a repeated `kid` are skipped; before, `use` and `alg` were ignored and the last of two entries with one `kid` won, so a key published for encryption, or a second key sharing a signing key's `kid`, could verify tokens. A deployment whose JWKS carries such an entry for the key that signs its tokens now sees `EX-SEC-2002` until the issuer corrects the entry.
+
 ### Changed
 
 
@@ -310,6 +312,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `TransactionRetryPolicy.fromConfig`; a `maxAttempts` below `1` fails the boot. Enterprise binds
   the slot in its own persistence subsystem separately.
 
+- **The Community OIDC validator accepts EdDSA (Ed25519) tokens, with the algorithm pinned per key (ADR-040 A1).** A JWKS entry of type `OKP` on curve `Ed25519` is installed beside the RSA entries and verifies tokens whose header names `EdDSA` (or `Ed25519`); an RSA entry still verifies only RS256. The key decides the algorithm: a header that names another algorithm than its key's is denied with `EX-SEC-2002` before any signature is checked, whichever key the `kid` selects. Ed25519 is verified by the JDK's default provider, so no dependency is added. A JWKS that already publishes an Ed25519 key, which the validator ignored, now has it honoured, and an issuer that signs access tokens with Ed25519 needs no change to its tokens. `ES*`, `PS*` and `Ed448` stay unsupported, and the set is not configurable.
+
 ### Added — verification
 
 - **The shared-scope matrix is bound on `uuid` keys.** `CommunityPersistenceSharedScopeUuidIT` runs
@@ -339,6 +343,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   where a skip is a gap, and a total. The OpenSSL-gated Community classes that no matrix step selected
   are now selected and floored, and the Core TCK bindings that skip by design have a floor instead of an
   exemption.
+
+- **The key's algorithm, not the header's, is a TCK contract.** `AbstractSecurityProviderTck.PerKeyAlgorithmPinContract` accepts an EdDSA token under its Ed25519 key's `kid` and denies an EdDSA token under an RSA key's `kid`, an RS256 token under an Ed25519 key's `kid`, an Ed25519-signed token whose header names RS256, and an RSA-signed token under an algorithm its key is not pinned to (RS512). The five hooks default to existing fixtures, so a binding that verifies no EdDSA token stays green; Community binds all five.
 
 ### Fixed
 

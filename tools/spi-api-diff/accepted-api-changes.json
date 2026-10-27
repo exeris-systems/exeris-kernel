@@ -310,5 +310,11 @@
     "since": "0.13",
     "adr": "ADR-043",
     "justification": "TCK contract: AbstractHttpStreamExchangeTck gains the Backpressure case emitOfAnEventLargerThanTheCreditWindowCompletes, which emits one event whose encoded length is one byte past the binding's egress credit window and requires the event to arrive intact, followed by the end of the stream, without the emitter parking. The case sizes the event through the new hook egressCreditWindowBytes(), which defaults to 65536; a binding that runs a smaller window overrides it, and one that runs a larger window than the default still passes, because the event it builds then fits. An existing binding whose emit waits for credit that cannot return fails the case until it admits an event larger than the window when nothing is outstanding. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.community.security.CommunityOidcIdentityProvider#overJwksEndpoint(java.net.URI, java.util.Map, eu.exeris.kernel.spi.security.identity.KeyRotationPolicy, java.time.Clock, java.lang.String, java.lang.String)",
+    "since": "0.13",
+    "adr": "ADR-040",
+    "justification": "Behaviour on the Community OIDC driver (ADR-040 Amendment A1): a fetched JWKS entry is installed only when its use is absent or sig, its alg is absent or the one its key type verifies (RS256 for an RSA key, EdDSA for an Ed25519 key), and its kid appears once in the document; each installed key verifies only that algorithm, and an Ed25519 key now verifies EdDSA tokens. Before 0.13 use and alg were ignored and the last of two entries with one kid won, so an RSA key declaring RSA-OAEP or RS512, a key with use enc, and a repeated kid verified RS256 tokens that are now denied with EX-SEC-2002. No signature changes: the static RSAPublicKey map constructors and the initialKeys parameter keep their types and pin each key to RS256. Community class, so this entry is a record for the release notes and is not read by the SPI compatibility gate."
   }
 ]
