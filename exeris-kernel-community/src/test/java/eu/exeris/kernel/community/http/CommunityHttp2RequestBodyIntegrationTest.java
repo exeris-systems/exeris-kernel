@@ -111,6 +111,22 @@ class CommunityHttp2RequestBodyIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("1 MiB after an h2c upgrade reaches the handler whole")
+    void aMebibyteAfterAnH2cUpgradeReachesTheHandlerWhole() {
+        byte[] body = body();
+        Started server = startServer(false);
+        try (Http2UploadTestClient client = Http2UploadTestClient.connectUpgrade(server.port(), "/echo")) {
+            client.upload(body);
+
+            assertThat(client.awaitResponseBody()).isEqualTo(summary(body));
+            assertThat(client.status()).isEqualTo("200");
+            assertThat(client.goAwayReceived()).isFalse();
+        } finally {
+            server.engine().close();
+        }
+    }
+
     private static byte[] body() {
         byte[] bytes = new byte[BODY_BYTES];
         for (int i = 0; i < bytes.length; i++) {
