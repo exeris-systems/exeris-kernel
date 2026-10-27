@@ -315,6 +315,93 @@ class NativeTcpStreamTlsBackpressureTest {
         }
     }
 
+    @Test
+    @DisplayName("a fatal status on the retry of a stalled write, run off the writer's thread, aborts and wakes the "
+            + "parked reader and the parked writer")
+    void fatalStatusOnTheRetryWakesTheParkedReaderAndWriter() throws Exception {
+        stream.close();
+        closeCalls.set(0);
+        stream = newStream(2 * PAYLOAD_BYTES);
+        openSsl.errorResult(CoreOpenSslLoader.SSL_ERROR_WANT_WRITE);
+        ReaderRun reader = new ReaderRun(stream);
+        reader.awaitParked();
+        NativeTcpStream target = stream;
+        AtomicReference<Throwable> writerOutcome = new AtomicReference<>();
+        Thread writer = Thread.ofVirtual().unstarted(() -> {
+            try (LoanedBuffer source = ALLOCATOR.allocateNetwork(4 * PAYLOAD_BYTES)) {
+                source.setSize(4 * PAYLOAD_BYTES);
+                target.write(source.segment(), 4 * PAYLOAD_BYTES);
+            } catch (Throwable failure) {
+                writerOutcome.set(failure);
+            }
+        });
+        writer.start();
+        awaitWaiting(writer);
+        assertThat(stream.hasPendingData()).as("the stalled write is queued").isTrue();
+        assertThat(stream.outboundQueuedBytesForTest()).as("the writer parks at the bound").isEqualTo(2 * PAYLOAD_BYTES);
+
+        // errno stays 0, so the status is a fatal send failure and not a peer reset.
+        openSsl.errorResult(CoreOpenSslLoader.SSL_ERROR_SYSCALL);
+        assertThatThrownBy(stream::flushPendingWrites)
+                .isInstanceOf(TransportException.class)
+                .isNotInstanceOf(TransportStreamClosedException.class);
+
+        assertThat(reader.outcome()).isInstanceOfSatisfying(TransportStreamClosedException.class,
+                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
+        writer.join(TimeUnit.SECONDS.toMillis(AWAIT_SECONDS));
+        assertThat(writer.isAlive()).as("the parked writer was released").isFalse();
+        assertThat(writerOutcome.get()).isInstanceOfSatisfying(TransportStreamClosedException.class,
+                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
+        assertThat(stream.hasPendingData()).as("the queue is gone, not stuck").isFalse();
+        assertThat(stream.outboundQueuedBytesForTest()).isZero();
+        assertThat(closeCalls).as("the stream finished closing once").hasValue(1);
+        Thread other = Thread.ofPlatform().unstarted(() -> { });
+        assertThat(stream.tryPinOutboundConsumerForTest(other)).as("the slot is free after the abort").isTrue();
+        stream.unpinOutboundConsumerForTest(other);
+    }
+
+    @Test
+    @DisplayName("a close while a write is stalled wakes the parked writer, which reports the closed stream")
+    void closeWhileStalledWakesTheParkedWriter() throws Exception {
+        stream.close();
+        closeCalls.set(0);
+        stream = newStream(2 * PAYLOAD_BYTES);
+        openSsl.errorResult(CoreOpenSslLoader.SSL_ERROR_WANT_WRITE);
+        NativeTcpStream target = stream;
+        AtomicReference<Throwable> writerOutcome = new AtomicReference<>();
+        Thread writer = Thread.ofVirtual().unstarted(() -> {
+            try (LoanedBuffer source = ALLOCATOR.allocateNetwork(4 * PAYLOAD_BYTES)) {
+                source.setSize(4 * PAYLOAD_BYTES);
+                target.write(source.segment(), 4 * PAYLOAD_BYTES);
+            } catch (Throwable failure) {
+                writerOutcome.set(failure);
+            }
+        });
+        writer.start();
+        awaitWaiting(writer);
+        assertThat(stream.outboundQueuedBytesForTest()).as("the writer parks at the bound").isEqualTo(2 * PAYLOAD_BYTES);
+
+        stream.close();
+
+        // The queue cannot drain while the socket stays full, so no release of queued bytes wakes the
+        // writer: only the terminal wake does.
+        writer.join(TimeUnit.SECONDS.toMillis(AWAIT_SECONDS));
+        assertThat(writer.isAlive()).as("the parked writer was released").isFalse();
+        assertThat(writerOutcome.get()).isInstanceOf(TransportStreamClosedException.class);
+        openSsl.acceptWrite().acceptWrite();
+        assertThat(stream.flushPendingWrites()).as("the best-effort drain empties the queue").isTrue();
+        assertThat(closeCalls).as("the drained close finishes once").hasValue(1);
+    }
+
+    private static void awaitWaiting(Thread thread) {
+        TimeSource time = TimeKernelProviders.timeSource();
+        long deadline = time.nanoTime() + TimeUnit.SECONDS.toNanos(AWAIT_SECONDS);
+        while (thread.getState() != Thread.State.WAITING && time.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        assertThat(thread.getState()).as("thread parked").isEqualTo(Thread.State.WAITING);
+    }
+
     private static LoanedBuffer payload() {
         LoanedBuffer buffer = ALLOCATOR.allocateNetwork(PAYLOAD_BYTES);
         buffer.setSize(PAYLOAD_BYTES);
@@ -322,12 +409,16 @@ class NativeTcpStreamTlsBackpressureTest {
     }
 
     private NativeTcpStream newStream() {
+        return newStream(TransportConfig.UNBOUNDED_QUEUED_WRITE_BYTES);
+    }
+
+    private NativeTcpStream newStream(int maxQueuedWriteBytes) {
         CommunityTlsEngine engine =
                 CommunityTlsEngineTestAccess.scriptedClient(openSsl, ALLOCATOR, TlsPeerIdentity.of("localhost"));
         NativeTcpConnection connection = new NativeTcpConnection(1L, "localhost", 443);
         NativeTcpStream created = new NativeTcpStream("test-engine", 1L, clientChannel, connection, ALLOCATOR,
                 engine, interestCalls::incrementAndGet, closeCalls::incrementAndGet, null,
-                NativeTcpStreamTlsBackpressureTest::noPause);
+                NativeTcpStreamTlsBackpressureTest::noPause, maxQueuedWriteBytes);
         connection.bindSingleStream(created);
         created.markTlsBoundFromCarrier();
         return created;

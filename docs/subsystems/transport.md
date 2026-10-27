@@ -608,6 +608,7 @@ address and length of each call; `CommunityHttp1TlsSlowReaderTest` sends a 4 MiB
 to a client that reads nothing until the stall, with an 8 KiB send buffer, and checks the body byte for
 byte; `CommunityHttp2TlsStreamExchangeTckTest` binds the stream exchange TCK over TLS with ALPN `h2` and fails its backpressure probe unless at least one TLS write stalled.
 The last two are in the `stream-loopback` group.
+`NativeTcpTlsSendBufferStallIntegrationTest` is not: it writes 16 MiB through a Community server to a JDK client that reads nothing until the stall, checks the SHA-256 of what arrives and that the stream stayed open, and runs in the default build and in the TLS matrix, so the stall is exercised against the real OpenSSL binding in CI.
 
 ## Error Codes
 
