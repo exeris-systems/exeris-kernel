@@ -20,10 +20,20 @@ import java.util.Objects;
  */
 /* default */ final class StaticJwksKeyResolver implements JwksKeyResolver {
 
-    private final Map<String, RSAPublicKey> keysByKid;
+    private final Map<String, JwsVerificationKey> keysByKid;
 
-    /* default */ StaticJwksKeyResolver(Map<String, RSAPublicKey> keysByKid) {
+    /* default */ StaticJwksKeyResolver(Map<String, JwsVerificationKey> keysByKid) {
         this.keysByKid = Map.copyOf(Objects.requireNonNull(keysByKid, "keysByKid must not be null"));
+    }
+
+    /**
+     * A resolver over RSA keys, each pinned to RS256.
+     *
+     * @param keysByKid {@code kid} to RSA public key
+     * @return a resolver that verifies those keys under RS256 only
+     */
+    /* default */ static StaticJwksKeyResolver ofRsa(Map<String, RSAPublicKey> keysByKid) {
+        return new StaticJwksKeyResolver(JwsVerificationKey.rs256All(keysByKid));
     }
 
     /**
@@ -33,7 +43,7 @@ import java.util.Objects;
      *           {@code kid} returns {@code null} rather than throwing.
      */
     @Override
-    public RSAPublicKey resolve(String kid) {
+    public JwsVerificationKey resolve(String kid) {
         return keysByKid.get(kid);
     }
 }

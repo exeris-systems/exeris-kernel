@@ -7,7 +7,6 @@ package eu.exeris.kernel.community.security;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 import eu.exeris.kernel.spi.security.identity.KeyRotationPolicy;
 
-import java.security.interfaces.RSAPublicKey;
 import java.time.Clock;
 import java.util.Map;
 import java.util.Objects;
@@ -58,7 +57,7 @@ import java.util.concurrent.atomic.AtomicReference;
     private final Object refreshLock = new Object();
     private final AtomicReference<Generations> generations;
 
-    /* default */ CommunityRotatingKeySet(Map<String, RSAPublicKey> initialKeys,
+    /* default */ CommunityRotatingKeySet(Map<String, JwsVerificationKey> initialKeys,
                                           KeySetSource source,
                                           KeyRotationPolicy policy,
                                           Clock clock) {
@@ -67,7 +66,7 @@ import java.util.concurrent.atomic.AtomicReference;
         Objects.requireNonNull(policy, "policy must not be null");
         this.staleBudgetMillis = policy.staleFetchBudget().toMillis();
         this.overlapMillis = policy.overlapWindow().toMillis();
-        Map<String, RSAPublicKey> current =
+        Map<String, JwsVerificationKey> current =
                 Map.copyOf(Objects.requireNonNull(initialKeys, "initialKeys must not be null"));
         // An empty initial generation holds no verification keys, so it is stamped at the epoch —
         // immediately stale. The first resolve() then triggers a JWKS refresh rather than denying
@@ -85,7 +84,7 @@ import java.util.concurrent.atomic.AtomicReference;
      *           {@link SecurityAuthenticationException} as {@code EX-SEC-2002}.
      */
     @Override
-    public RSAPublicKey resolve(String kid) {
+    public JwsVerificationKey resolve(String kid) {
         // Hot path: compare epoch-millis (no Instant/Duration allocation per request).
         Generations gens = generations.get();
 
@@ -93,12 +92,12 @@ import java.util.concurrent.atomic.AtomicReference;
             gens = attemptRefresh();
         }
 
-        RSAPublicKey current = gens.current().get(kid);
+        JwsVerificationKey current = gens.current().get(kid);
         if (current != null) {
             return current;
         }
 
-        RSAPublicKey previous = gens.previous() == null ? null : gens.previous().get(kid);
+        JwsVerificationKey previous = gens.previous() == null ? null : gens.previous().get(kid);
         if (previous != null) {
             if (withinOverlap(gens.previousInstalledAtMillis(), clock.millis())) {
                 return previous;
@@ -130,7 +129,7 @@ import java.util.concurrent.atomic.AtomicReference;
                 return gens;
             }
 
-            Map<String, RSAPublicKey> fresh;
+            Map<String, JwsVerificationKey> fresh;
             try {
                 fresh = source.load();
             } catch (KeySetRefreshException _) {
@@ -150,7 +149,7 @@ import java.util.concurrent.atomic.AtomicReference;
                 return generations.get();
             }
 
-            Map<String, RSAPublicKey> newCurrent = Map.copyOf(fresh);
+            Map<String, JwsVerificationKey> newCurrent = Map.copyOf(fresh);
             Generations rotated = new Generations(newCurrent, now, gens.current(), now);
             generations.compareAndSet(gens, rotated);
             CommunityJwksKeyRotationEvent.emit(
@@ -178,9 +177,9 @@ import java.util.concurrent.atomic.AtomicReference;
      * when {@code previous} is {@code null}). Swapped atomically — never mutated in place.
      */
     private record Generations(
-            Map<String, RSAPublicKey> current,
+            Map<String, JwsVerificationKey> current,
             long currentInstalledAtMillis,
-            Map<String, RSAPublicKey> previous,
+            Map<String, JwsVerificationKey> previous,
             long previousInstalledAtMillis) {
     }
 }
