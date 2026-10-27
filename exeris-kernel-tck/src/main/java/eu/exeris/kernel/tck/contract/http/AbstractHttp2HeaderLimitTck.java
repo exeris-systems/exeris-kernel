@@ -535,7 +535,7 @@ public abstract class AbstractHttp2HeaderLimitTck {
                         .isLessThan(FIRST_STREAM);
             }
             case CLOSED -> fail("%s: the server closed the connection without saying why — a refusal "
-                    + "must be a 400/431 response, an RST_STREAM or a GOAWAY with an error code", what);
+                    + "must be a 431 response, an RST_STREAM or a GOAWAY with an error code", what);
         }
         assertThat(servedPaths)
                 .as("%s is over the limit, so the handler must never run for it", what)
