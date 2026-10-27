@@ -1,3 +1,12 @@
+---
+title: "ADR-013: Distributed Saga State Distribution Model"
+type: adr
+slug: adr/ADR-013
+visibility: public
+owning-repo: exeris-kernel
+status: active
+---
+
 # ADR-013: Distributed Saga State Distribution Model
 
 | Attribute      | Value                                                                                  |
