@@ -311,6 +311,8 @@ class CoreFlowRuntimeTerminalFenceTest {
             assertThat(outcome).isEqualTo(ScheduleOutcome.TERMINAL);
             assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS)).isFalse();
             assertThat(runs.get()).isEqualTo(1);
+            assertThat(store.versions.load(ctx.instanceIdMost(), ctx.instanceIdLeast()))
+                    .hasValueSatisfying(row -> assertThat(row.state()).isEqualTo(FlowState.COMPLETED));
         }
     }
 

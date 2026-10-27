@@ -102,6 +102,7 @@ class CommunityJdbcCompletedSagaRestartTest {
     @DisplayName("a flow that parked and completed is not offered as parked, nor run again")
     void parkedThenCompletedIsNotResurrectedAfterRestart() throws InterruptedException {
         AtomicInteger executions = new AtomicInteger();
+        AtomicInteger parks = new AtomicInteger();
         CountDownLatch rerun = new CountDownLatch(1);
         Probe waitProbe = new Probe();
         Probe finishProbe = new Probe();
@@ -115,6 +116,9 @@ class CommunityJdbcCompletedSagaRestartTest {
             try (FlowEngine a = startedEngine(storeA)) {
                 def = a.plans().newDefinition("jdbc-parked-completed")
                         .step("await-callback", _ -> {
+                            if (parks.incrementAndGet() > 1) {
+                                rerun.countDown();
+                            }
                             waitProbe.record();
                             return FlowOutcome.PARK;
                         }, null)
@@ -149,8 +153,9 @@ class CommunityJdbcCompletedSagaRestartTest {
                 b.scheduler().schedule(plan, ctx);
 
                 assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
-                        .as("IDEMPOTENCY VIOLATION: the steps after the park ran again")
+                        .as("IDEMPOTENCY VIOLATION: the flow ran again after a restart")
                         .isFalse();
+                assertThat(parks.get()).as("the park step ran once, before the restart").isEqualTo(1);
                 assertThat(executions.get()).isEqualTo(1);
                 assertCompleted(storeB.load(ctx.instanceIdMost(), ctx.instanceIdLeast()));
             }

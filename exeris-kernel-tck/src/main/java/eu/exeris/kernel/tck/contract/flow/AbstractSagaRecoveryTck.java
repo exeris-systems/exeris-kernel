@@ -867,6 +867,7 @@ public abstract class AbstractSagaRecoveryTck {
         @DisplayName("A flow that parked and completed is not resurrected as parked after eviction")
         void parkedThenCompletedIsNotResurrectedAfterEviction() throws InterruptedException {
             AtomicInteger executions = new AtomicInteger();
+            AtomicInteger parks = new AtomicInteger();
             CountDownLatch rerun = new CountDownLatch(1);
             WorkerProbe waitProbe = new WorkerProbe();
             WorkerProbe finishProbe = new WorkerProbe();
@@ -874,6 +875,9 @@ public abstract class AbstractSagaRecoveryTck {
             try (FlowEngine bounded = startedBoundedEngine()) {
                 FlowDefinition def = bounded.plans().newDefinition("bounded-parked-completed")
                         .step("await-callback", _ -> {
+                            if (parks.incrementAndGet() > 1) {
+                                rerun.countDown();
+                            }
                             waitProbe.record();
                             return FlowOutcome.PARK;
                         }, null)
@@ -903,8 +907,9 @@ public abstract class AbstractSagaRecoveryTck {
                         .as("a finished instance MUST NOT be offered as parked")
                         .isEmpty();
                 assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
-                        .as("IDEMPOTENCY VIOLATION: the steps after the park ran again")
+                        .as("IDEMPOTENCY VIOLATION: the flow ran again after eviction")
                         .isFalse();
+                assertThat(parks.get()).as("the park step ran once, before the eviction").isEqualTo(1);
                 assertThat(executions.get()).isEqualTo(1);
             }
         }
@@ -1084,12 +1089,16 @@ public abstract class AbstractSagaRecoveryTck {
         @DisplayName("A flow that parked and completed is not offered as parked, nor run again, by a rebuilt engine")
         void parkedThenCompletedIsNotResurrectedAfterRestart() throws InterruptedException {
             AtomicInteger executions = new AtomicInteger();
+            AtomicInteger parks = new AtomicInteger();
             CountDownLatch rerun = new CountDownLatch(1);
             WorkerProbe waitProbe = new WorkerProbe();
             WorkerProbe finishProbe = new WorkerProbe();
 
             FlowDefinition def = engine.plans().newDefinition("restart-parked-completed")
                     .step("await-callback", _ -> {
+                        if (parks.incrementAndGet() > 1) {
+                            rerun.countDown();
+                        }
                         waitProbe.record();
                         return FlowOutcome.PARK;
                     }, null)
@@ -1123,9 +1132,11 @@ public abstract class AbstractSagaRecoveryTck {
             engine.scheduler().schedule(plan, ctx);
 
             assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
-                    .as("IDEMPOTENCY VIOLATION: the steps after the park ran again after a restart")
+                    .as("IDEMPOTENCY VIOLATION: the flow ran again after a restart")
                     .isFalse();
+            assertThat(parks.get()).as("the park step ran once, before the restart").isEqualTo(1);
             assertThat(executions.get()).isEqualTo(1);
+            assertCompletedRow(ctx);
         }
 
         private void assertCompletedRow(FlowContext ctx) {
