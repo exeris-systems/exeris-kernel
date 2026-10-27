@@ -1,3 +1,12 @@
+---
+title: "ADR-040: Identity Provider SPI — Pluggable Token Validation + `SecurityProvider` Dispatcher"
+type: adr
+slug: adr/ADR-040
+visibility: public
+owning-repo: exeris-kernel
+status: active
+---
+
 # ADR-040: Identity Provider SPI — Pluggable Token Validation + `SecurityProvider` Dispatcher
 
 | Attribute       | Value                                                                                          |
