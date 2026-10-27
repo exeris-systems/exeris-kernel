@@ -44,9 +44,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>In the multi-runtime restart model two {@link CoreFlowEngine} instances share one
  * {@link FlowSnapshotStore}. An abandoned generation-1 worker — still inside its step action
  * past {@code close()}'s bounded interrupt-and-join — must never land a {@code save(PARKED)}
- * AFTER a second engine has driven the same flow key to COMPLETED and reclaimed
- * ({@code complete()} -> {@code deleteSnapshot} -> {@code snapshotStore.delete}) the row.
- * Resurrecting that row breaks the unbounded-mode "deleted on complete()" invariant
+ * AFTER a second engine has driven the same flow key to COMPLETED and replaced the row with a
+ * {@code COMPLETED} snapshot. Overwriting that row would offer a finished saga as parked again
  * (docs/subsystems/flow.md).
  *
  * <p>The single-runtime start -> close -> start shape does NOT reproduce the stale write: the stale
@@ -57,9 +56,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * half of the fence catches it. Hence the two-engine / shared-store model below.
  *
  * <h2>Counter semantics</h2>
- * <p>{@code savesAfterReclaim} counts saves that land after engine-2 reclaimed the key.
- * Fence present ({@code !isActiveLifecycle}) -> 0 and the row stays absent. With an
- * {@code isStaleLifecycle} predicate in its place -> 1 and the row is resurrected.
+ * <p>{@code savesAfterCompletion} counts saves that land after engine-2 completed the key.
+ * Fence present ({@code !isActiveLifecycle}) -> 0 and the row stays {@code COMPLETED}. With an
+ * {@code isStaleLifecycle} predicate in its place -> 1 and the row is overwritten with a
+ * {@code PARKED} checkpoint.
  *
  * @since 0.9.0
  */
@@ -70,8 +70,8 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
 
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
-    @DisplayName("abandoned gen-1 worker cannot resurrect a row reclaimed by gen-2 (savesAfterReclaim == 0)")
-    void abandonedWorkerCannotResurrectReclaimedRow() throws InterruptedException {
+    @DisplayName("abandoned gen-1 worker cannot overwrite a row completed by gen-2 (savesAfterCompletion == 0)")
+    void abandonedWorkerCannotOverwriteCompletedRow() throws InterruptedException {
         CountingSnapshotStore store = new CountingSnapshotStore();
 
         // The shared flow key both engines operate on.
@@ -116,7 +116,7 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
                 .as("no checkpoint yet — gen-1 worker has not returned PARK")
                 .isFalse();
 
-        // Gen-2 on the SAME store drives the SAME key to COMPLETED -> reclaim (delete).
+        // Gen-2 on the SAME store drives the SAME key to COMPLETED, which replaces the row.
         AtomicInteger gen2Exec = new AtomicInteger();
         FlowEngine engine2 = newEngine(store, "gen-2");
         engine2.start();
@@ -131,13 +131,13 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
                 .as("gen-2 MUST drive the shared key to COMPLETED")
                 .isTrue();
         assertThat(gen2Exec.get()).as("gen-2 step ran once").isEqualTo(1);
-        assertThat(store.exists(ctx.instanceIdMost(), ctx.instanceIdLeast()))
-                .as("reclaim deleted the row in unbounded mode")
-                .isFalse();
+        assertThat(store.load(ctx.instanceIdMost(), ctx.instanceIdLeast()))
+                .as("gen-2's completion left a COMPLETED row")
+                .hasValueSatisfying(row -> assertThat(row.state()).isEqualTo(FlowState.COMPLETED));
 
-        // Open the reclaim fence and release the abandoned gen-1 worker. Any save it lands now
-        // is a post-reclaim save and must be blocked by the lifecycle write-fence.
-        store.markReclaimed();
+        // Open the completion fence and release the abandoned gen-1 worker. Any save it lands now
+        // is a post-completion save and must be blocked by the lifecycle write-fence.
+        store.markCompleted();
         releaseGen1.set(true);
 
         // The released worker resumes from its park-loop, returns PARK, and the runtime
@@ -150,19 +150,19 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
                 .as("released gen-1 worker VT MUST terminate after PARK return")
                 .isTrue();
 
-        int savesAfterReclaim = store.savesAfterReclaim();
-        boolean rowResurrected = store.exists(ctx.instanceIdMost(), ctx.instanceIdLeast());
+        int savesAfterCompletion = store.savesAfterCompletion();
+        Optional<FlowSnapshot> finalRow = store.load(ctx.instanceIdMost(), ctx.instanceIdLeast());
 
         engine2.close();
 
-        assertThat(savesAfterReclaim)
-                .as("FENCE VIOLATION: abandoned gen-1 worker landed %d save(s) after gen-2 reclaim — "
-                        + "resurrecting the reclaimed row. persistSnapshot MUST reject a closed runtime "
-                        + "(!isActiveLifecycle).", savesAfterReclaim)
+        assertThat(savesAfterCompletion)
+                .as("FENCE VIOLATION: abandoned gen-1 worker landed %d save(s) after gen-2 completed — "
+                        + "overwriting the COMPLETED row. persistSnapshot MUST reject a closed runtime "
+                        + "(!isActiveLifecycle).", savesAfterCompletion)
                 .isZero();
-        assertThat(rowResurrected)
-                .as("reclaimed row MUST stay absent after the abandoned worker is released")
-                .isFalse();
+        assertThat(finalRow)
+                .as("the COMPLETED row MUST stay COMPLETED after the abandoned worker is released")
+                .hasValueSatisfying(row -> assertThat(row.state()).isEqualTo(FlowState.COMPLETED));
     }
 
     @Test
@@ -258,21 +258,21 @@ final class CoreFlowRuntimeStaleWriteFenceTest {
     }
 
     /**
-     * Shared in-memory store that counts {@code save} calls landing AFTER {@link #markReclaimed()}.
+     * Shared in-memory store that counts {@code save} calls landing AFTER {@link #markCompleted()}.
      */
     private static final class CountingSnapshotStore implements FlowSnapshotStore {
         private final ConcurrentMap<Key, FlowSnapshot> rows = new ConcurrentHashMap<>();
-        private final AtomicBoolean reclaimed = new AtomicBoolean(false);
-        private final AtomicInteger savesAfterReclaim = new AtomicInteger();
+        private final AtomicBoolean completed = new AtomicBoolean(false);
+        private final AtomicInteger savesAfterCompletion = new AtomicInteger();
 
-        void markReclaimed() { reclaimed.set(true); }
+        void markCompleted() { completed.set(true); }
 
-        int savesAfterReclaim() { return savesAfterReclaim.get(); }
+        int savesAfterCompletion() { return savesAfterCompletion.get(); }
 
         @Override
         public void save(FlowSnapshot snapshot) {
-            if (reclaimed.get()) {
-                savesAfterReclaim.incrementAndGet();
+            if (completed.get()) {
+                savesAfterCompletion.incrementAndGet();
             }
             rows.put(new Key(snapshot.instanceIdMost(), snapshot.instanceIdLeast()), snapshot);
         }

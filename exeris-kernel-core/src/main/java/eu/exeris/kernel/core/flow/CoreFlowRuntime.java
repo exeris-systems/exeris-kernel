@@ -249,7 +249,7 @@ final class CoreFlowRuntime { // NOPMD
      *           {@code shutdownFinalized} before this method returns keeps any straggler thread that
      *           outlives the join from changing these counters or the terminal-state catalog
      *           afterward, but a terminal finalization (a late {@code FAILED_ROLLEDBACK}, or a
-     *           {@code COMPLETED} snapshot delete or write) is deliberately exempt and may still be
+     *           {@code COMPLETED} snapshot write) is deliberately exempt and may still be
      *           persisted through the {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore} after
      *           this method returns — which is why {@link #nonDurableParkedFlows()} freezes its own count
      *           as of this call rather than recomputing it afterward.
@@ -432,8 +432,9 @@ final class CoreFlowRuntime { // NOPMD
 
     /**
      * Drops a terminal instance from the live index. A catalog miss with a terminal snapshot row
-     * means the in-memory entry was evicted under the bounded LRU, so the terminal state is cached
-     * again and subsequent resubmits short-circuit on the in-memory fast path.
+     * means the in-memory entry is no longer held in memory: evicted under a bound, or cleared by a
+     * restart. The terminal state is cached again, so subsequent resubmits short-circuit on the
+     * in-memory fast path.
      */
     private void retireTerminal(FlowKey key, RuntimeFlowInstance instance) {
         if (instance.isTerminal()) {
@@ -667,6 +668,12 @@ final class CoreFlowRuntime { // NOPMD
             }
             validator.validateSnapshotStepBounds(catalogPlan, persisted);
             return catalogPlan;
+        }
+        if (persisted.state().isTerminal()) {
+            // A terminal row is never resumed, so the caller's plan is not bound to it. Refusing a
+            // mismatched definition here would turn a redelivered Start for a finished instance into an
+            // exception that the event source redelivers again.
+            return directPlan;
         }
         if (!directPlan.definitionName().equals(persisted.definitionName())) {
             throw new FlowEngineException(
@@ -1230,7 +1237,6 @@ final class CoreFlowRuntime { // NOPMD
         if (!cleanupOnly && parkedInstances.remove(instance.key(), instance)) {
             parkedFlows.decrement();
         }
-        deleteSnapshot(instance, staleLifecycle);
     }
 
     private void releaseInstanceClaims(RuntimeFlowInstance instance, boolean staleLifecycle) {
@@ -1241,46 +1247,31 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     /**
-     * Replaces the instance's durable row with a {@code COMPLETED} snapshot when the terminal
-     * catalog is bounded. A bounded catalog forgets entries (and a restart forgets all of them), and
-     * the durable row is then the only thing that tells a resubmit the instance already finished.
+     * Replaces the instance's durable row with a {@code COMPLETED} snapshot whenever a snapshot
+     * store is bound. Memory forgets a finished instance (a bounded catalog on eviction, every
+     * catalog on {@link #close()}), so afterwards the durable row is the only thing that tells a
+     * resubmit or a redelivered Start the instance already finished.
      * The write precedes the live-index removal, so while it runs the live index still holds the
      * finishing instance; a bound small enough to evict during the write can still leave the
      * catalog without the entry, which is why a wake that meets the instance records its terminal
      * state before dropping it.
      *
      * <p>A failed write is absorbed and the completion stands, because the flow's work is done. What
-     * is lost is the proof that outlives an eviction: a flow that never parked then runs again from
-     * its first step after an eviction, and a flow that parked keeps its older {@code PARKED} row
-     * and is offered as parked again. {@link FlowSnapshotWriter} emits the persist-failed event for
-     * a store failure; a failure while building the snapshot is absorbed without one.
+     * is lost is the proof that outlives memory: a flow that never parked then runs again from
+     * its first step after an eviction or a restart, and a flow that parked keeps its older
+     * {@code PARKED} row and is offered as parked again. {@link FlowSnapshotWriter} emits the
+     * persist-failed event for a store failure; a failure while building the snapshot is absorbed
+     * without one.
      */
     private void retainCompletionProof(RuntimeFlowInstance instance, boolean staleLifecycle) {
-        if (staleLifecycle || snapshotStore == null || !terminalStateCatalog.isBounded()) {
+        if (staleLifecycle || snapshotStore == null) {
             return;
         }
         try {
             persistSnapshot(instance, FlowState.COMPLETED, instance.currentStep());
         } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException — best-effort proof write
-            // The completion stands; the proof that outlives an eviction is missing (see the method
+            // The completion stands; the proof that outlives memory is missing (see the method
             // javadoc for what that costs). An Error still propagates.
-        }
-    }
-
-    private void deleteSnapshot(RuntimeFlowInstance instance, boolean staleLifecycle) {
-        if (staleLifecycle || snapshotStore == null) {
-            return;
-        }
-        // In bounded-catalog mode the row written by retainCompletionProof is the proof of
-        // completion that outlives a catalog eviction, so it is kept; the kernel reclaims no
-        // terminal row, and retention belongs to whoever binds the store.
-        if (terminalStateCatalog.isBounded()) {
-            return;
-        }
-        try {
-            snapshotStore.delete(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
-        } catch (RuntimeException ignored) { //NOPMD AvoidCatchingGenericException — best-effort snapshot deletion
-            // Best-effort deletion — completion is already recorded; do not fail the flow.
         }
     }
 
@@ -1298,23 +1289,16 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return;
         }
-        // Lifecycle write-fence: a worker whose runtime is no longer active — closed/not-started or
-        // a retired generation — must not re-establish a NON-TERMINAL checkpoint in the shared
-        // snapshot store. In the multi-runtime restart model (a new CoreFlowRuntime rebuilt on the
-        // same store, as production restart and the saga-recovery TCK both do) an abandoned worker
-        // from the closed runtime can otherwise land a save(PARKED) AFTER the rebuilt runtime's
-        // complete()->deleteSnapshot() reclaim and resurrect the row, breaking the unbounded-mode
-        // "deleted on complete()" invariant (docs/subsystems/flow.md). isStaleLifecycle alone is
-        // insufficient: the abandoned worker's own generation counter is unchanged by the *other*
-        // runtime's start(), so the guard must also reject a closed/not-started runtime
-        // (started && !closed). Terminal finalizations are deliberately exempt: a late FAIL after
-        // close() MUST still persist FAILED_ROLLEDBACK on the same runtime (cleanup contract — see
-        // CoreFlowRuntimeTest.lateFailedExitAfterCloseStillReleasesClaimsAndFinalizesSnapshot), and
-        // a terminal state is not a resurrected checkpoint. The exemption is unconditional on the
-        // terminal state: in the two-runtime case a late gen-1 FAIL after gen-2's complete() reclaim
-        // may leave an orphaned FAILED_ROLLEDBACK row, but that is benign — gen-2's (and any later
-        // generation's) terminalStateCatalog records COMPLETED, so no re-execution follows.
-        // Sibling of the staleLifecycle/cleanupOnly guards on deleteSnapshot and finalizeFailedInstance.
+        // Lifecycle write-fence: a worker whose runtime is no longer active (closed or not started,
+        // or a retired generation) must not write a non-terminal checkpoint over the row a rebuilt
+        // runtime owns; over a COMPLETED row it would offer a finished saga as parked again. In the
+        // multi-runtime restart model (a new CoreFlowRuntime rebuilt on the same store) the
+        // abandoned worker's own generation counter is unchanged by the other runtime's start(), so
+        // isStaleLifecycle alone is not enough: the guard must also reject a closed or not-started
+        // runtime (started && !closed). Terminal finalizations are exempt: a late FAIL after
+        // close() must still persist FAILED_ROLLEDBACK on the same runtime (cleanup contract), and
+        // a late FAILED_ROLLEDBACK carries a stale version that a versioned store refuses while an
+        // unversioned store keeps a terminal row either way, so no re-execution follows.
         if (!isActiveLifecycle(instance) && !state.isTerminal()) {
             return;
         }
@@ -1402,20 +1386,21 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     /**
-     * In-memory idempotency fence for terminal flow instances.
+     * In-memory record of terminal flow instances.
      *
-     * <p>Two operating modes selected at construction by {@link FlowEngineConfig#terminalCatalogMaxSize()}:
+     * <p>Two operating modes selected at construction by {@link FlowEngineConfig#terminalCatalogMaxSize()};
+     * both bound memory only:
      * <ul>
      *   <li><b>{@code maxSize == 0} — unbounded.</b> Backed by {@link ConcurrentHashMap}; entries
-     *       accumulate for the lifetime of the engine. Backward-compatible with v0.6 behavior.</li>
+     *       accumulate until {@link CoreFlowRuntime#close()}.</li>
      *   <li><b>{@code maxSize  > 0} — bounded LRU.</b> Backed by {@link LinkedHashMap} with
-     *       access-order; the least-recently-accessed entry is evicted when the cap is reached.
-     *       Completion replaces the instance's durable row with a COMPLETED snapshot and snapshot
-     *       deletion is suppressed in this mode (see {@link #retainCompletionProof} and
-     *       {@link #deleteSnapshot}), so the {@link FlowSnapshotStore} holds the persistent
-     *       idempotency fence; heap stays bounded, storage does not, and its retention belongs to
-     *       the store's binder.</li>
+     *       access-order; the least-recently-accessed entry is evicted when the cap is reached.</li>
      * </ul>
+     *
+     * <p>The fence that holds after an eviction or a restart is the terminal row that
+     * {@link #retainCompletionProof} and {@link #finalizeFailedInstance} write whenever a snapshot
+     * store is bound. The engine reclaims no terminal row; retention belongs to whoever binds the
+     * store.
      *
      * <p>Lookups in bounded mode go through {@code synchronized} on a dedicated lock — the path is
      * cold (resubmit guard, called once per schedule attempt), so the lock cost is acceptable; a
@@ -1440,10 +1425,6 @@ final class CoreFlowRuntime { // NOPMD
                     }
                 };
             }
-        }
-
-        /* default */ boolean isBounded() {
-            return maxSize > 0;
         }
 
         /* default */ boolean isTerminal(FlowKey key) {

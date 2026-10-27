@@ -44,11 +44,12 @@ public sealed interface ChoreographyDecision
      * instance, so a changed definition reaches a parked instance only through a version migration
      * (ADR-064). Two limits apply:
      * <ul>
-     *   <li>With {@code FlowEngineConfig#terminalCatalogMaxSize()} at {@code 0} (the default) a
-     *       completed instance's durable row is deleted, so after an engine restart a redelivered
-     *       Start runs the flow again. The no-op holds across restarts only in bounded-catalog mode,
-     *       with a snapshot store configured, and until the binder deletes the row the engine
-     *       leaves for each finished instance.</li>
+     *   <li>A completed or failed instance is recognised as finished from memory for the life of
+     *       one engine, and across a restart only from the terminal row a bound snapshot store
+     *       holds. With a store bound, in either terminal-catalog mode, the engine leaves a row
+     *       for every finished instance and never deletes it. A redelivered Start is a no-op
+     *       until the binder's retention deletes that row, and after that the id runs again.
+     *       With persistence off, a Start redelivered after a restart runs the flow again.</li>
      *   <li>When the id exists only as a non-terminal durable row, Start resumes that row instead of
      *       treating it as a duplicate. Two engines that own the same instance are not fenced
      *       against each other.</li>

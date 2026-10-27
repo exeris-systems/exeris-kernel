@@ -42,16 +42,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * A completed flow stays completed once the bounded terminal catalog no longer remembers it.
+ * A completed flow stays completed once the terminal catalog no longer remembers it, bounded or not.
  *
- * <p>The in-memory catalog is the fence against a redelivered start. Under a bound it forgets the
- * least recently used entry, and a restart forgets all of them; what remains is the durable row.
- * The engine must therefore leave a row that says the instance finished, whatever the instance did
- * before it finished. Each case ends the previous run by joining the worker thread that executed the
+ * <p>The in-memory catalog only bounds memory. Under a bound it forgets the least recently used
+ * entry, and a restart forgets every entry whatever the bound; what remains is the durable row.
+ * The engine must therefore leave a row that says the instance finished in either mode, whatever the
+ * instance did before it finished, and that row absorbs a start even when its plan names another
+ * definition. Each case ends the previous run by joining the worker thread that executed the
  * last step, so a completion's store write has happened before the case looks at the store.
  */
-@DisplayName("Flow: a bounded terminal catalog does not reopen a finished instance")
-class CoreFlowRuntimeBoundedTerminalFenceTest {
+@DisplayName("Flow: a terminal catalog, bounded or not, does not reopen a finished instance")
+class CoreFlowRuntimeTerminalFenceTest {
 
     private static final long AWAIT_SECONDS = 5L;
     private static final long NEGATIVE_WAIT_MILLIS = 300L;
@@ -203,8 +204,8 @@ class CoreFlowRuntimeBoundedTerminalFenceTest {
 
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
-    @DisplayName("an unbounded catalog still reclaims the row and writes no terminal row")
-    void unboundedCatalogStillReclaimsTheRowAndWritesNoTerminalRow() throws InterruptedException {
+    @DisplayName("an unbounded completion also replaces the row with a completed snapshot")
+    void unboundedCompletionAlsoReplacesTheRowWithACompletedSnapshot() throws InterruptedException {
         SignallingStore store = new SignallingStore();
         AtomicInteger runs = new AtomicInteger();
         CountDownLatch rerun = new CountDownLatch(1);
@@ -224,12 +225,189 @@ class CoreFlowRuntimeBoundedTerminalFenceTest {
             engine.runtime().submitStart(parked, parkedCtx);
             store.awaitSave(FlowKey.from(parkedCtx), FlowState.PARKED);
             waitProbe.awaitExit();
+            long parkedVersion = store.versions
+                    .load(parkedCtx.instanceIdMost(), parkedCtx.instanceIdLeast()).orElseThrow().schemaVersion();
             engine.scheduler().wake(parkedCtx.instanceIdMost(), parkedCtx.instanceIdLeast());
             finishProbe.awaitExit();
 
-            assertThat(store.versions.load(neverCtx.instanceIdMost(), neverCtx.instanceIdLeast())).isEmpty();
-            assertThat(store.versions.load(parkedCtx.instanceIdMost(), parkedCtx.instanceIdLeast())).isEmpty();
-            assertThat(store.log).noneMatch(s -> s.state() == FlowState.COMPLETED);
+            Optional<FlowSnapshot> neverRow =
+                    store.versions.load(neverCtx.instanceIdMost(), neverCtx.instanceIdLeast());
+            assertThat(neverRow).isPresent();
+            assertThat(neverRow.get().state()).isEqualTo(FlowState.COMPLETED);
+            Optional<FlowSnapshot> parkedRow =
+                    store.versions.load(parkedCtx.instanceIdMost(), parkedCtx.instanceIdLeast());
+            assertThat(parkedRow).isPresent();
+            assertThat(parkedRow.get().state()).isEqualTo(FlowState.COMPLETED);
+            assertThat(parkedRow.get().schemaVersion()).isEqualTo(parkedVersion + 1);
+            assertThat(store.versions.conflicts()).isZero();
+            assertThat(store.deletes.get()).as("the engine never deletes a row").isZero();
+        }
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("a flow that never parked is absorbed as terminal by a restarted engine with an unbounded catalog")
+    void neverParkedCompletionIsAbsorbedAfterRestartWithAnUnboundedCatalog() throws InterruptedException {
+        SignallingStore store = new SignallingStore();
+        AtomicInteger runs = new AtomicInteger();
+        CountDownLatch rerun = new CountDownLatch(1);
+        StepProbe probe = new StepProbe();
+        FlowContext ctx = context("unbounded-restart-instance", "unbounded-restart-flow");
+
+        try (CoreFlowEngine first = startedEngine(store, UNBOUNDED, true)) {
+            FlowExecutionPlan plan = first.plans().compile(
+                    singleStep(first, "unbounded-restart-flow", runs, rerun, probe));
+            assertThat(first.runtime().submitStart(plan, ctx)).isEqualTo(ScheduleOutcome.STARTED);
+            probe.awaitExit();
+            assertThat(runs.get()).isEqualTo(1);
+        }
+
+        try (CoreFlowEngine second = startedEngine(store, UNBOUNDED, true)) {
+            FlowExecutionPlan plan = second.plans().compile(
+                    singleStep(second, "unbounded-restart-flow", runs, rerun, new StepProbe()));
+
+            ScheduleOutcome outcome = second.runtime().submitStart(plan, ctx);
+
+            assertThat(outcome).isEqualTo(ScheduleOutcome.TERMINAL);
+            assertThat(second.runtime().existingState(FlowKey.from(ctx), outcome)).isEqualTo("COMPLETED");
+            assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS)).isFalse();
+            assertThat(runs.get()).isEqualTo(1);
+            assertThat(second.stats().completedFlows()).isZero();
+        }
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("a flow that parked and completed is not resurrected by a restarted engine with an unbounded catalog")
+    void parkedThenCompletedIsNotResurrectedAfterRestartWithAnUnboundedCatalog() throws InterruptedException {
+        SignallingStore store = new SignallingStore();
+        AtomicInteger runs = new AtomicInteger();
+        CountDownLatch rerun = new CountDownLatch(1);
+        StepProbe waitProbe = new StepProbe();
+        StepProbe finishProbe = new StepProbe();
+        FlowContext ctx = context("unbounded-parked-restart-instance", "unbounded-parked-restart");
+        FlowKey key = FlowKey.from(ctx);
+
+        try (CoreFlowEngine first = startedEngine(store, UNBOUNDED, true)) {
+            FlowExecutionPlan plan = first.plans().compile(
+                    parkThenFinish(first, "unbounded-parked-restart", runs, rerun, waitProbe, finishProbe));
+            assertThat(first.runtime().submitStart(plan, ctx)).isEqualTo(ScheduleOutcome.STARTED);
+            store.awaitSave(key, FlowState.PARKED);
+            waitProbe.awaitExit();
+            first.scheduler().wake(ctx.instanceIdMost(), ctx.instanceIdLeast());
+            finishProbe.awaitExit();
+            assertThat(runs.get()).isEqualTo(1);
+        }
+
+        try (CoreFlowEngine second = startedEngine(store, UNBOUNDED, true)) {
+            FlowExecutionPlan plan = second.plans().compile(
+                    parkThenFinish(second, "unbounded-parked-restart", runs, rerun, new StepProbe(), new StepProbe()));
+
+            assertThat(second.scheduler().lookupParked(ctx.instanceIdMost(), ctx.instanceIdLeast())).isEmpty();
+            assertThatThrownBy(() -> second.scheduler().wake(ctx.instanceIdMost(), ctx.instanceIdLeast()))
+                    .matches(FlowEngineException::isNotParked);
+            ScheduleOutcome outcome = second.runtime().submitStart(plan, ctx);
+
+            assertThat(outcome).isEqualTo(ScheduleOutcome.TERMINAL);
+            assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS)).isFalse();
+            assertThat(runs.get()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("a fresh instance still runs on a restarted engine")
+    void aFreshInstanceStillRunsAfterRestart() throws InterruptedException {
+        SignallingStore store = new SignallingStore();
+        AtomicInteger runs = new AtomicInteger();
+        CountDownLatch rerun = new CountDownLatch(1);
+        StepProbe firstProbe = new StepProbe();
+
+        try (CoreFlowEngine first = startedEngine(store, UNBOUNDED, true)) {
+            FlowExecutionPlan plan = first.plans().compile(
+                    singleStep(first, "fresh-restart-flow", runs, rerun, firstProbe));
+            first.runtime().submitStart(plan, context("fresh-restart-old-instance", "fresh-restart-flow"));
+            firstProbe.awaitExit();
+        }
+
+        StepProbe freshProbe = new StepProbe();
+        try (CoreFlowEngine second = startedEngine(store, UNBOUNDED, true)) {
+            FlowExecutionPlan plan = second.plans().compile(
+                    singleStep(second, "fresh-restart-flow", runs, rerun, freshProbe));
+
+            ScheduleOutcome outcome = second.runtime().submitStart(
+                    plan, context("fresh-restart-new-instance", "fresh-restart-flow"));
+            freshProbe.awaitExit();
+
+            assertThat(outcome).isEqualTo(ScheduleOutcome.STARTED);
+            assertThat(runs.get()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("a terminal row absorbs a start whose plan names another definition")
+    void aTerminalRowAbsorbsAStartForAnotherDefinition() throws InterruptedException {
+        SignallingStore store = new SignallingStore();
+        AtomicInteger aRuns = new AtomicInteger();
+        AtomicInteger bRuns = new AtomicInteger();
+        CountDownLatch aRerun = new CountDownLatch(1);
+        CountDownLatch bRerun = new CountDownLatch(1);
+        StepProbe probe = new StepProbe();
+        FlowContext original = context("other-definition-instance", "fence-a");
+
+        try (CoreFlowEngine first = startedEngine(store, UNBOUNDED, true)) {
+            FlowExecutionPlan plan = first.plans().compile(singleStep(first, "fence-a", aRuns, aRerun, probe));
+            assertThat(first.runtime().submitStart(plan, original)).isEqualTo(ScheduleOutcome.STARTED);
+            probe.awaitExit();
+        }
+
+        try (CoreFlowEngine second = startedEngine(store, UNBOUNDED, true)) {
+            FlowExecutionPlan other = second.plans().compile(
+                    singleStep(second, "fence-b", bRuns, bRerun, new StepProbe()));
+            FlowContext sameIdOtherDefinition = new FlowContext() {
+                @Override
+                public long instanceIdMost() {
+                    return original.instanceIdMost();
+                }
+
+                @Override
+                public long instanceIdLeast() {
+                    return original.instanceIdLeast();
+                }
+
+                @Override
+                public String definitionName() {
+                    return "fence-b";
+                }
+
+                @Override
+                public int currentStep() {
+                    return 0;
+                }
+
+                @Override
+                public FlowState state() {
+                    return FlowState.CREATED;
+                }
+
+                @Override
+                public long timeoutNanos() {
+                    return Long.MAX_VALUE;
+                }
+            };
+
+            ScheduleOutcome outcome = second.runtime().submitStart(other, sameIdOtherDefinition);
+
+            assertThat(outcome).isEqualTo(ScheduleOutcome.TERMINAL);
+            assertThat(second.runtime().existingState(FlowKey.from(original), outcome)).isEqualTo("COMPLETED");
+            assertThat(bRerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS)).isFalse();
+            assertThat(bRuns.get()).isZero();
+            assertThat(store.versions.load(original.instanceIdMost(), original.instanceIdLeast()))
+                    .hasValueSatisfying(row -> {
+                        assertThat(row.state()).isEqualTo(FlowState.COMPLETED);
+                        assertThat(row.definitionName()).isEqualTo("fence-a");
+                    });
         }
     }
 
@@ -442,7 +620,7 @@ class CoreFlowRuntimeBoundedTerminalFenceTest {
     }
 
     private static CoreFlowEngine startedEngine(SignallingStore store, int catalogMax, boolean compensation) {
-        FlowEngineConfig d = FlowEngineConfig.defaults("CoreFlowRuntimeBoundedTerminalFenceTest");
+        FlowEngineConfig d = FlowEngineConfig.defaults("CoreFlowRuntimeTerminalFenceTest");
         FlowEngineConfig config = new FlowEngineConfig(
                 d.engineName(), d.maxConcurrentFlows(), d.timeoutDurationNanos(), d.maxSteps(),
                 d.maxTransitions(), d.maxExecutionPlans(), d.schedulerQueueCapacity(), d.partitionName(),
@@ -515,6 +693,7 @@ class CoreFlowRuntimeBoundedTerminalFenceTest {
 
         /* default */ final VersionEnforcingSnapshotStore versions = new VersionEnforcingSnapshotStore();
         /* default */ final List<FlowSnapshot> log = new CopyOnWriteArrayList<>();
+        /* default */ final AtomicInteger deletes = new AtomicInteger();
         private final LinkedBlockingQueue<FlowSnapshot> saved = new LinkedBlockingQueue<>();
 
         private final AtomicReference<CountDownLatch> completedEntered = new AtomicReference<>();
@@ -560,6 +739,7 @@ class CoreFlowRuntimeBoundedTerminalFenceTest {
 
         @Override
         public void delete(long instanceIdMost, long instanceIdLeast) {
+            deletes.incrementAndGet();
             versions.delete(instanceIdMost, instanceIdLeast);
         }
 

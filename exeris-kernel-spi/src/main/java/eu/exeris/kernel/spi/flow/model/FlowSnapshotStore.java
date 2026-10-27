@@ -88,21 +88,20 @@ public interface FlowSnapshotStore {
      * @param instanceIdLeast least-significant bits of the flow instance UUID
      * @return the stored snapshot, or {@link Optional#empty()} when this store holds none for that
      *         instance — which is an ordinary answer, not an error: the instance may belong to
-     *         another engine's catalogue, or have completed and had its row reclaimed
+     *         another engine's catalogue, or have finished and had its terminal row deleted by the
+     *         binder's retention
      */
     Optional<FlowSnapshot> load(long instanceIdMost, long instanceIdLeast);
 
     /**
-     * Reclaims the row for one flow instance, so a later restart does not rediscover a saga that has
-     * already finished.
+     * Removes the row for one flow instance; the binder's retention tool.
      *
      * @param instanceIdMost  most-significant bits of the flow instance UUID
      * @param instanceIdLeast least-significant bits of the flow instance UUID
-     * @apiNote The engine calls this on completion only while its terminal-state catalogue is
-     *          unbounded. Under a bounded catalogue the engine replaces the row with a
-     *          {@code COMPLETED} snapshot instead of deleting it. That row is the proof of
-     *          completion that survives an eviction or a restart. The engine never reclaims terminal
-     *          rows; the binder does, and deleting one lets that instance id run again.
+     * @apiNote The engine does not call this. On completion it replaces the row with a
+     *          {@code COMPLETED} snapshot whatever the terminal-catalog bound, and relies on terminal
+     *          rows as proof an instance finished; deleting one lets that id run again, so a
+     *          retention window must outlast the longest redelivery horizon.
      */
     void delete(long instanceIdMost, long instanceIdLeast);
 

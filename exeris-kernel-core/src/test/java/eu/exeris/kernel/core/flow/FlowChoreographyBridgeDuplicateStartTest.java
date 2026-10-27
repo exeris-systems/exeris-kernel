@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.core.flow;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.flow.ChoreographyDecision;
@@ -13,18 +14,21 @@ import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
+import eu.exeris.kernel.tck.contract.flow.VersionEnforcingSnapshotStore;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.time.Duration;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
 
@@ -158,6 +162,70 @@ class FlowChoreographyBridgeDuplicateStartTest {
             assertThat(runs).as("a completed flow must not run again").hasValue(1);
             assertThat(engine.stats().completedFlows()).isEqualTo(1L);
         }
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("a Start for an instance completed before an engine restart is absorbed, runs nothing, and says COMPLETED")
+    void completedBeforeRestartIsAbsorbed() throws Exception {
+        AtomicInteger runs = new AtomicInteger();
+        AtomicReference<Thread> worker = new AtomicReference<>();
+        CountDownLatch entered = new CountDownLatch(1);
+        VersionEnforcingSnapshotStore store = new VersionEnforcingSnapshotStore();
+        Queue<RecordedEvent> events = new ConcurrentLinkedQueue<>();
+        CountDownLatch ignored = new CountDownLatch(1);
+        FlowDefinition definition;
+
+        try (CoreFlowEngine first = persistentEngine(store)) {
+            definition = first.plans().newDefinition("duplicate-start-restart")
+                    .step("only", _ -> {
+                        runs.incrementAndGet();
+                        worker.set(Thread.currentThread());
+                        entered.countDown();
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .build();
+            bridgeFor(first, definition).handle(DESCRIPTOR, EventPayload.empty());
+            assertThat(entered.await(5, TimeUnit.SECONDS)).as("the first Start must run the flow").isTrue();
+            // The worker ends only after the run's bookkeeping, so joining it orders the store
+            // read after the COMPLETED write without polling.
+            assertThat(worker.get().join(Duration.ofSeconds(5))).as("the worker has ended").isTrue();
+        }
+
+        try (CoreFlowEngine second = persistentEngine(store);
+             RecordingStream rs = new RecordingStream()) {
+            rs.enable(IGNORED_EVENT);
+            rs.onEvent(IGNORED_EVENT, e -> {
+                events.add(e);
+                ignored.countDown();
+            });
+            CountDownLatch live = new CountDownLatch(1);
+            rs.onFlush(live::countDown);
+            rs.startAsync();
+            assertThat(live.await(10, TimeUnit.SECONDS)).as("the recording stream is live").isTrue();
+            FlowChoreographyBridge bridge = bridgeFor(second, definition);
+
+            assertThatCode(() -> bridge.handle(DESCRIPTOR, EventPayload.empty()))
+                    .as("a redelivered Start is absorbed, not refused")
+                    .doesNotThrowAnyException();
+
+            assertThat(ignored.await(10, TimeUnit.SECONDS)).as("the absorbed Start is reported").isTrue();
+            assertThat(events.peek().getString("existingState")).isEqualTo("COMPLETED");
+            assertThat(runs).as("a flow completed before the restart must not run again").hasValue(1);
+            assertThat(second.stats().completedFlows()).isZero();
+        }
+    }
+
+    private static CoreFlowEngine persistentEngine(VersionEnforcingSnapshotStore store) {
+        FlowEngineConfig d = FlowEngineConfig.defaults(ENGINE_NAME);
+        FlowEngineConfig config = new FlowEngineConfig(
+                d.engineName(), d.maxConcurrentFlows(), d.timeoutDurationNanos(), d.maxSteps(),
+                d.maxTransitions(), d.maxExecutionPlans(), d.schedulerQueueCapacity(), d.partitionName(),
+                d.partitionBytes(), true, d.compensationEnabled());
+        CoreFlowEngine engine = new CoreFlowEngine(
+                config, FlowEngineCapabilities.COMMUNITY.withProvider("test"));
+        ScopedValue.where(KernelProviders.FLOW_SNAPSHOT_STORE, store).run(engine::start);
+        return engine;
     }
 
     private static CoreFlowEngine startedEngine() {
