@@ -23,6 +23,7 @@
 #   spi-api-diff.sh --old <git-ref> --new <git-ref> [--out <dir>] [--fail-on-stable]
 #   spi-api-diff.sh --history <ref>[,<ref>...] [--out <dir>]
 #   spi-api-diff.sh --verify-surfaces [--new <git-ref>]
+#   spi-api-diff.sh --self-test
 #
 # Exit codes: 0 = compatible (or report-only), 1 = stable-surface break, 2 = usage/tooling error.
 
@@ -42,7 +43,7 @@ DETECTED_RELEASE="$(java -XshowSettings:properties -version 2>&1 \
   | awk -F'= ' '/java\.specification\.version/ {gsub(/ /,"",$2); print $2}')"
 RELEASE_FLAG="${SPI_API_DIFF_RELEASE:-${DETECTED_RELEASE:-25}}"
 
-OLD_REF=""; NEW_REF=""; OUT_DIR=""; FAIL_ON_STABLE=0; HISTORY=""; VERIFY_ONLY=0
+OLD_REF=""; NEW_REF=""; OUT_DIR=""; FAIL_ON_STABLE=0; HISTORY=""; VERIFY_ONLY=0; SELF_TEST=0
 
 die() { echo "spi-api-diff: $*" >&2; exit 2; }
 
@@ -54,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --history) HISTORY="${2:-}"; shift 2 ;;
     --fail-on-stable) FAIL_ON_STABLE=1; shift ;;
     --verify-surfaces) VERIFY_ONLY=1; shift ;;
+    --self-test) SELF_TEST=1; shift ;;
     -h|--help) awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -67,7 +69,7 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 [[ -f "$SURFACES_CONF" ]] || die "missing surface config: $SURFACES_CONF"
 
-read_surface() {
+read_surface() {  # <level> [<conf-file>]
   # Joins the continued lines of a `<level>=` entry into one comma-separated string.
   awk -v key="$1" '
     $0 ~ "^"key"=" { collecting = 1; sub("^"key"=", ""); }
@@ -81,15 +83,43 @@ read_surface() {
       next
     }
     END { print out }
-  ' "$SURFACES_CONF"
+  ' "${2:-$SURFACES_CONF}"
 }
 
-STABLE_INC="$(read_surface stable)"
-PREVIEW_INC="$(read_surface preview)"
-EXPERIMENTAL_INC="$(read_surface experimental)"
-INTERNAL_INC="$(read_surface internal)"
+load_surfaces() {  # <conf-file>
+  STABLE_INC="$(read_surface stable "$1")"
+  PREVIEW_INC="$(read_surface preview "$1")"
+  EXPERIMENTAL_INC="$(read_surface experimental "$1")"
+  INTERNAL_INC="$(read_surface internal "$1")"
+  [[ -n "$STABLE_INC" ]] || die "no 'stable' surfaces configured in $1"
+}
 
-[[ -n "$STABLE_INC" ]] || die "no 'stable' surfaces configured in $SURFACES_CONF"
+load_surfaces "$SURFACES_CONF"
+
+# History mode only: the conf a transition is judged by. A release history records what each
+# change was held to when it was made, so a transition is labelled by the conf at its OLD ref —
+# the surface as it stood while the change was made. Labelling by the current conf would turn
+# every past `preview` break into a `stable` break the moment a surface is promoted, and the
+# record would then deny a declaration that was kept. The NEW ref's conf is the wrong choice for
+# the same reason: a release that promotes a surface carries the promotion in its own conf, so
+# the changes that release made while the surface was still `preview` would be read as `stable`.
+# A ref that predates the conf file takes the earliest conf among the history's refs, then the
+# file's first version in HEAD's history if none has one; the working-tree conf only
+# when the file never existed there. The single-run mode never reaches this: it judges by the
+# working-tree conf on purpose, to hold every change since a baseline to the current labels.
+HISTORY_CONF_PATH="tools/spi-api-diff/stability-surfaces.conf"
+HISTORY_FALLBACK_CONF=""
+
+history_conf_for() {  # <ref> -> prints a conf file path
+  local ref="$1" dest
+  dest="$WORK_DIR/conf-$(echo "$ref" | tr '/' '_')"
+  if git -C "$REPO_ROOT" cat-file -e "$ref:$HISTORY_CONF_PATH" 2>/dev/null; then
+    git -C "$REPO_ROOT" show "$ref:$HISTORY_CONF_PATH" > "$dest"
+    echo "$dest"
+  else
+    echo "${HISTORY_FALLBACK_CONF:-$SURFACES_CONF}"
+  fi
+}
 
 # --- japicmp resolution ----------------------------------------------------
 
@@ -249,6 +279,7 @@ assert_jar() {  # <path> <ref>
 
 compare_refs() {  # <old-ref> <new-ref>
   local old_ref="$1" new_ref="$2"
+  [[ -z "$HISTORY" ]] || load_surfaces "$(history_conf_for "$old_ref")"
   local old_jar new_jar semver stable_out preview_out rc=0
   old_jar="$(build_ref "$old_ref")" || die "could not build SPI at $old_ref"
   new_jar="$(build_ref "$new_ref")" || die "could not build SPI at $new_ref"
@@ -346,6 +377,66 @@ compare_refs() {  # <old-ref> <new-ref>
   return $rc
 }
 
+# --- self-test ---------------------------------------------------------------
+
+# Which conf labels a transition is the one property of this script a wrong answer would not
+# announce: a mislabelled break still prints a well-formed report. So the selection is checked
+# against a throwaway repository whose surface `b` is `internal` in the conf file's first version,
+# `preview` in the next, and `stable` from the commit that promotes it, with a method of `b` removed
+# at every tagged step, the promotion included. Every conf a transition could be judged by gives a
+# different answer, so each case has exactly one: a history case reports the label of the conf it
+# must pick, and the single-run control reports the working tree's.
+self_test() {
+  local fx="$WORK_DIR/self-test" failed=0 line
+  local -a g=(git -C "$fx" -c user.name=self-test -c user.email=self-test@invalid
+              -c commit.gpgsign=false -c tag.gpgsign=false -c core.hooksPath=/dev/null)
+  local src="$fx/$SPI_PATH"
+  mkdir -p "$fx/tools/spi-api-diff" "$src/a" "$src/b"
+  cp "$0" "$fx/tools/spi-api-diff/spi-api-diff.sh"
+  "${g[@]}" init -q
+  pre_api() {  # <methods...>
+    { echo "package b; public class Pre {"
+      for m in "$@"; do echo "  public void $m() {}"; done
+      echo "}"; } > "$src/b/Pre.java"
+  }
+  label() {  # <commit-message> <tag>
+    "${g[@]}" add -A && "${g[@]}" commit -q -m "$1" && "${g[@]}" tag "$2"
+  }
+  echo "package a; public class Api { public void keep() {} }" > "$src/a/Api.java"
+  pre_api m n k;  label "no conf" t0
+  pre_api m n;    label "no conf, k removed" t0b
+  printf 'stable=a\ninternal=b\n' > "$fx/$HISTORY_CONF_PATH"
+  label "first conf, b internal" tc
+  printf 'stable=a\npreview=b\n' > "$fx/$HISTORY_CONF_PATH"
+  pre_api n;      label "b preview, m removed" t1
+  pre_api z;      label "n removed" t2
+  printf 'stable=a,b\npreview=\n' > "$fx/$HISTORY_CONF_PATH"
+  pre_api;        label "b promoted, z removed" t3
+
+  expect() {  # <case> <expected stable-breaks> <expected preview-breaks> <script args...>
+    local name="$1" want_s="$2" want_p="$3"; shift 3
+    line="$(bash "$fx/tools/spi-api-diff/spi-api-diff.sh" "$@" --out "$fx/out" 2>&1 | tail -1 || true)"
+    local got_s got_p
+    got_s="$(sed -n 's/.*stable-breaks=\([0-9]*\).*/\1/p' <<< "$line")"
+    got_p="$(sed -n 's/.*preview-breaks=\([0-9]*\).*/\1/p' <<< "$line")"
+    if [[ "$got_s" == "$want_s" && "$got_p" == "$want_p" ]]; then
+      echo "self-test: $name: stable-breaks=$got_s preview-breaks=$got_p"
+    else
+      echo "self-test: $name: expected stable-breaks=$want_s preview-breaks=$want_p, got: $line  <-- WRONG"
+      failed=1
+    fi
+  }
+  expect "history labels by the old ref's conf"         0 1 --history t1,t2
+  expect "history ignores the new ref's promotion"      0 1 --history t2,t3
+  expect "history before the conf takes the earliest"   0 1 --history t0b,t1
+  expect "history wholly before the conf takes HEAD's"  0 0 --history t0,t0b
+  expect "single run labels by the working tree"        1 0 --old t1 --new t2
+  echo "spi-api-diff self-test: $([[ $failed -eq 0 ]] && echo PASSED || echo FAILED)"
+  return $failed
+}
+
+if [[ $SELF_TEST -eq 1 ]]; then self_test; exit $?; fi
+
 # --- entry points ----------------------------------------------------------
 
 OVERALL=0
@@ -353,6 +444,19 @@ OVERALL=0
 if [[ -n "$HISTORY" ]]; then
   IFS=',' read -ra REFS <<< "$HISTORY"
   [[ ${#REFS[@]} -ge 2 ]] || die "--history needs at least two refs"
+  for r in "${REFS[@]}"; do
+    if git -C "$REPO_ROOT" cat-file -e "$r:$HISTORY_CONF_PATH" 2>/dev/null; then
+      HISTORY_FALLBACK_CONF="$(history_conf_for "$r")"; break
+    fi
+  done
+  if [[ -z "$HISTORY_FALLBACK_CONF" ]]; then
+    # None of the refs carries the conf: take the first version of the file in HEAD's history,
+    # not the working tree, so a range that predates the conf is still judged by the labels the
+    # project first declared rather than by today's.
+    first_conf_commit="$(git -C "$REPO_ROOT" log --reverse --diff-filter=A --format=%H \
+      HEAD -- "$HISTORY_CONF_PATH" | sed -n 1p)"
+    [[ -z "$first_conf_commit" ]] || HISTORY_FALLBACK_CONF="$(history_conf_for "$first_conf_commit")"
+  fi
   prev=""
   for r in "${REFS[@]}"; do
     if [[ -n "$prev" ]]; then compare_refs "$prev" "$r" || OVERALL=1; fi

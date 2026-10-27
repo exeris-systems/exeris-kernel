@@ -444,6 +444,11 @@ jobs:
         # fall out of both include lists below — neither gated nor reported.
         run: tools/spi-api-diff/spi-api-diff.sh --verify-surfaces
 
+      - name: History and single-run modes pick the stability conf they should
+        # A transition labelled by the wrong conf still prints a well-formed report, so the choice
+        # is asserted against a throwaway repository rather than trusted.
+        run: tools/spi-api-diff/spi-api-diff.sh --self-test
+
       - name: Diff SPI against the last released version
         run: |
           set -euo pipefail
