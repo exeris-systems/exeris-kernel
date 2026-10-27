@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
@@ -29,6 +30,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -90,9 +93,13 @@ final class CommunityHttp2SessionProcessor {
             System.getLogger(CommunityHttp2SessionProcessor.class.getName());
 
     private static final String CRLF = "\r\n";
+    private static final String HTTP2_SETTINGS_HEADER = "HTTP2-Settings";
     private static final long HTTP2_FRAME_LOOP_INVALID = -1L;
     private static final long HTTP2_FRAME_LOOP_STOP = -2L;
     private static final long HTTP2_FRAME_LOOP_COMPRESSION_ERROR = -3L;
+    private static final long HTTP2_FRAME_LOOP_FRAME_SIZE_ERROR = -4L;
+    private static final long CLIENT_PREFACE_MISMATCH = -1L;
+    private static final long CLIENT_PREFACE_END_OF_STREAM = -2L;
     private static final int WINDOW_UPDATE_PAYLOAD_BYTES = 4;
     private static final ValueLayout.OfInt BIG_ENDIAN_INT =
             ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
@@ -149,12 +156,75 @@ final class CommunityHttp2SessionProcessor {
                        ProcessingState state) {
         LoanedBuffer aggregate = state.aggregate();
         writeHttp11UpgradeResponse(stream);
-        long bufferedHttp2Bytes = CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
         try (Http2SessionContext session = Http2SessionContext.create(allocator, config);
              Http2Connection connection = openConnection(stream, handler, session)) {
+            // The body is copied out of the aggregate before the unread bytes are moved over it.
+            session.holdPendingUpgrade(upgradeRequestAsStreamOne(readResult, aggregate));
+            long bufferedHttp2Bytes =
+                    CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
             CommunityHttp2ControlFrames.sendServerSettings(
                     allocator, connection.writer(), config.maxHeaderListSize());
-            processBufferedHttp2Frames(connection, state, bufferedHttp2Bytes, 0);
+            long afterPreface = readClientPreface(connection, state, bufferedHttp2Bytes);
+            if (afterPreface == CLIENT_PREFACE_MISMATCH) {
+                CommunityHttp2ControlFrames.sendGoAway(
+                        allocator, connection.writer(), session.lastProcessedStreamId(),
+                        Http2ErrorCode.PROTOCOL_ERROR);
+                return;
+            }
+            if (afterPreface == CLIENT_PREFACE_END_OF_STREAM) {
+                CommunityHttp2ControlFrames.sendGoAwayNoError(allocator, connection.writer());
+                return;
+            }
+            processBufferedHttp2Frames(
+                    connection, state, afterPreface, CommunityHttpH2cUpgradeDetector.prefaceLength());
+        }
+    }
+
+    /**
+     * The upgrade request as the request on stream 1 (RFC 9113 section 3.4): the headers that have no
+     * HTTP/2 form, and the {@code HTTP2-Settings} header, which is not applied, are dropped.
+     */
+    private Http2RequestStreamState upgradeRequestAsStreamOne(ReadResult readResult, LoanedBuffer aggregate) {
+        List<HttpHeader> headers = new ArrayList<>(readResult.headers().size());
+        for (HttpHeader header : readResult.headers()) {
+            if (!Http2SessionContext.isConnectionSpecificHeader(header.name())
+                    && !HTTP2_SETTINGS_HEADER.equalsIgnoreCase(header.name())) {
+                headers.add(header);
+            }
+        }
+        Http2DecodedRequest request = new Http2DecodedRequest(
+                1, readResult.method(), readResult.path(), headers, readResult.method() != null);
+        Http2RequestStreamState upgradeRequest = new Http2RequestStreamState(1, request);
+        upgradeRequest.appendBody(allocator, aggregate.segment(), readResult.bodyStart(), readResult.bodyLength());
+        return upgradeRequest;
+    }
+
+    /**
+     * Reads the client connection preface that follows the {@code 101} (RFC 9113 section 3.4),
+     * starting with the bytes already buffered. The preface may arrive in several reads, so bytes are
+     * compared as they come and a wrong one is refused as soon as it is seen; a silent peer is left to
+     * the connection's idle timeout.
+     *
+     * @return the number of bytes buffered once the whole preface is there, or
+     *         {@link #CLIENT_PREFACE_MISMATCH} or {@link #CLIENT_PREFACE_END_OF_STREAM}
+     */
+    private long readClientPreface(Http2Connection connection, ProcessingState state, long bufferedBytes) {
+        long buffered = bufferedBytes;
+        while (true) {
+            if (!CommunityHttpH2cUpgradeDetector.isPrefaceOrPrefix(state.aggregate().segment(), buffered)) {
+                return CLIENT_PREFACE_MISMATCH;
+            }
+            if (buffered >= CommunityHttpH2cUpgradeDetector.prefaceLength()) {
+                return buffered;
+            }
+            int read = readHttp2Bytes(connection.transport(), state, buffered);
+            if (read < 0) {
+                return CLIENT_PREFACE_END_OF_STREAM;
+            }
+            if (read > 0) {
+                buffered += read;
+                state.aggregate().setSize(buffered);
+            }
         }
     }
 
@@ -196,15 +266,10 @@ final class CommunityHttp2SessionProcessor {
             if (offset == HTTP2_FRAME_LOOP_STOP) {
                 return;
             }
-            if (offset == HTTP2_FRAME_LOOP_INVALID) {
+            Http2ErrorCode failure = frameLoopFailure(offset);
+            if (failure != null) {
                 CommunityHttp2ControlFrames.sendGoAway(
-                        allocator, writer, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
-                return;
-            }
-
-            if (offset == HTTP2_FRAME_LOOP_COMPRESSION_ERROR) {
-                CommunityHttp2ControlFrames.sendGoAway(
-                        allocator, writer, session.lastProcessedStreamId(), Http2ErrorCode.COMPRESSION_ERROR);
+                        allocator, writer, session.lastProcessedStreamId(), failure);
                 return;
             }
 
@@ -230,6 +295,19 @@ final class CommunityHttp2SessionProcessor {
         }
     }
 
+    private static Http2ErrorCode frameLoopFailure(long frameLoopResult) {
+        if (frameLoopResult == HTTP2_FRAME_LOOP_INVALID) {
+            return Http2ErrorCode.PROTOCOL_ERROR;
+        }
+        if (frameLoopResult == HTTP2_FRAME_LOOP_COMPRESSION_ERROR) {
+            return Http2ErrorCode.COMPRESSION_ERROR;
+        }
+        if (frameLoopResult == HTTP2_FRAME_LOOP_FRAME_SIZE_ERROR) {
+            return Http2ErrorCode.FRAME_SIZE_ERROR;
+        }
+        return null;
+    }
+
     private long processAvailableHttp2Frames(Http2Connection connection,
                                              LoanedBuffer aggregate,
                                              long bufferedBytes,
@@ -239,7 +317,11 @@ final class CommunityHttp2SessionProcessor {
         while (bufferedBytes - offset >= Http2FrameParser.FRAME_HEADER_SIZE) {
             try {
                 Http2FrameParser.FrameHeader header =
-                        session.codec().parseAndValidate(aggregate.segment(), offset);
+                        Http2FrameParser.parseHeaderBigEndian(aggregate.segment(), offset);
+                // Refused on the header alone: the payload of a frame this large is never waited for.
+                if (header.length() > session.codec().maxFrameSize()) {
+                    return HTTP2_FRAME_LOOP_FRAME_SIZE_ERROR;
+                }
                 long frameLength = (long) Http2FrameParser.FRAME_HEADER_SIZE + header.length();
                 long frameEnd = offset + frameLength;
                 if (bufferedBytes < frameEnd) {
@@ -268,10 +350,19 @@ final class CommunityHttp2SessionProcessor {
                                      long payloadOffset,
                                      Http2FrameParser.FrameHeader header) {
         Http2FrameType frameType = header.frameType();
+        Http2ConnectionWriter writer = connection.writer();
+        // After an upgrade the client's first frame is its SETTINGS (RFC 9113 section 3.4), and the
+        // upgrade request is not served before that SETTINGS is applied.
+        if (connection.session().hasPendingUpgrade()
+                && (frameType != Http2FrameType.SETTINGS || header.isAck())) {
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, writer, connection.session().lastProcessedStreamId(),
+                    Http2ErrorCode.PROTOCOL_ERROR);
+            return false;
+        }
         if (frameType == null) {
             return true;
         }
-        Http2ConnectionWriter writer = connection.writer();
 
         return switch (frameType) {
             case SETTINGS -> handleSettingsFrame(connection, aggregate, payloadOffset, header);
@@ -317,7 +408,22 @@ final class CommunityHttp2SessionProcessor {
             return false;
         }
         CommunityHttp2ControlFrames.sendSettingsAck(allocator, writer);
+        Http2RequestStreamState upgradeRequest = session.takePendingUpgrade();
+        if (upgradeRequest != null) {
+            dispatchUpgradeRequest(connection, upgradeRequest);
+        }
         return true;
+    }
+
+    private void dispatchUpgradeRequest(Http2Connection connection, Http2RequestStreamState upgradeRequest) {
+        Http2DecodedRequest request = upgradeRequest.request();
+        connection.session().setLastProcessedStreamId(request.streamId());
+        if (!request.valid()) {
+            upgradeRequest.close();
+            writeHttp2NoBodyResponse(connection, request.streamId(), HttpStatus.BAD_REQUEST);
+            return;
+        }
+        dispatchHttp2Request(connection, request.streamId(), request, upgradeRequest.detachBody(), 0L);
     }
 
     private boolean handleRstStreamFrame(Http2Connection connection, Http2FrameParser.FrameHeader header) {
@@ -342,8 +448,8 @@ final class CommunityHttp2SessionProcessor {
 
     /**
      * Applies a WINDOW_UPDATE (RFC 9113 §6.9). A stream the server no longer tracks is ignored
-     * rather than treated as a connection error, because the h2c upgrade implicitly opens stream 1,
-     * which this session never serves and which a client may still credit. A stream whose request is
+     * rather than treated as a connection error, because a peer may still credit a stream the server
+     * has already finished. A stream whose request is
      * still arriving has its credit held until the response stream exists.
      *
      * @return {@code false} when the frame ended the connection

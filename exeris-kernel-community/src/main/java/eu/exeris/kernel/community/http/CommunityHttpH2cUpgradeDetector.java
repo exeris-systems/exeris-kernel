@@ -121,10 +121,23 @@ final class CommunityHttpH2cUpgradeDetector {
      * the request hot path.
      */
     /* default */ static boolean isHttp2PriorKnowledgePreface(MemorySegment segment, long totalBytes) {
-        if (totalBytes < HTTP2_PRIOR_KNOWLEDGE_PREFACE.length) {
-            return false;
-        }
-        for (int index = 0; index < HTTP2_PRIOR_KNOWLEDGE_PREFACE.length; index++) {
+        return totalBytes >= HTTP2_PRIOR_KNOWLEDGE_PREFACE.length && isPrefaceOrPrefix(segment, totalBytes);
+    }
+
+    /** The number of bytes in the HTTP/2 client connection preface. */
+    /* default */ static int prefaceLength() {
+        return HTTP2_PRIOR_KNOWLEDGE_PREFACE.length;
+    }
+
+    /**
+     * Returns {@code true} when the first {@code min(availableBytes, preface length)} bytes of
+     * {@code segment} equal the same-length prefix of the HTTP/2 connection preface, so a preface
+     * that arrives in several reads is accepted piece by piece and a wrong byte is refused as soon
+     * as it is seen.
+     */
+    /* default */ static boolean isPrefaceOrPrefix(MemorySegment segment, long availableBytes) {
+        long comparable = Math.min(availableBytes, HTTP2_PRIOR_KNOWLEDGE_PREFACE.length);
+        for (int index = 0; index < comparable; index++) {
             byte actual = segment.get(ValueLayout.JAVA_BYTE, index);
             if (actual != HTTP2_PRIOR_KNOWLEDGE_PREFACE[index]) {
                 return false;
