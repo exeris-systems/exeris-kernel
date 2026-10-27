@@ -150,15 +150,17 @@ final class CommunityJwksHttpKeySetSource implements KeySetSource, AutoCloseable
             if (kid == null || kid.isBlank()) {
                 continue;
             }
+            JwsVerificationKey key = verificationKeyOf(jwk);
+            if (key == null) {
+                continue;
+            }
             if (!seen.add(kid)) {
                 repeated.add(kid);
             }
-            JwsVerificationKey key = verificationKeyOf(jwk);
-            if (key != null) {
-                keysByKid.put(kid, key);
-            }
+            keysByKid.put(kid, key);
         }
-        // A kid published twice is ambiguous whichever entry would win, so no entry with it verifies.
+        // A kid that two installable keys publish is ambiguous whichever would win, so neither verifies.
+        // An entry that is never installed (another use, another algorithm) cannot make a kid ambiguous.
         keysByKid.keySet().removeAll(repeated);
         return keysByKid;
     }

@@ -207,6 +207,13 @@ class CommunityJwksHttpKeySetSourceTest {
     }
 
     @Test
+    @DisplayName("a signing key that shares its kid with an encryption key is installed")
+    void kidSharedWithAnEncryptionKeyStaysInstalled() throws Exception {
+        assertThat(load(rsaJwk("shared", null, KeyUse.ENCRYPTION), rsaJwk("shared", null, KeyUse.SIGNATURE)))
+                .containsOnlyKeys("shared");
+    }
+
+    @Test
     @DisplayName("a kid published twice by RSA keys is installed for neither copy")
     void duplicateKidWithinRsaDropped() throws Exception {
         assertThat(load(rsaJwk("dup", null, null), rsaJwk("dup", null, null), ed25519Jwk(OKP_KID, null, null)))

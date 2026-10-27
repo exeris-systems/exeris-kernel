@@ -216,7 +216,7 @@ key decides the algorithm, never the token:
 - **Some JWKS entries are not installed**, and the rest of the document still loads: an entry without a `kid`, with
   a `use` other than `sig`, of a key type or curve this validator does not verify (EC, `oct`, `X25519`, `X448`,
   `Ed448`), or declaring an `alg` that its key type does not verify (for example an RSA key declaring `RSA-OAEP`). A
-  `kid` published more than once is installed for none of its entries. A supported key whose material is invalid, an
+  `kid` that two installable entries publish is installed for neither; a skipped entry does not count. A supported key whose material is invalid, an
   Ed25519 `x` that is not 32 bytes for one, fails the load as `jwks-key-invalid`; a document with no installed key
   fails it as `jwks-no-usable-keys`.
 - **A map of `RSAPublicKey` values is RS256.** The constructors and the `initialKeys` of `overJwksEndpoint` take RSA

@@ -137,9 +137,10 @@ Outbound service-to-service propagation stays at **parsed-identity headers** —
 - **A1 — 2026-10-27 — the key pins the algorithm (§2.5).** The Community OIDC driver verifies two JWS algorithms,
   RS256 over an RSA key and EdDSA over an Ed25519 key, and each verification key carries the one algorithm it is
   installed for.
-  - **Accepted set.** A JWKS entry is installed when its `use` is absent or `sig`, its `kid` is present and appears once
-    in the document, and it is either an RSA key whose `alg` is absent or RS256, or an `OKP` key on `Ed25519` whose `alg`
-    is absent, `EdDSA` or `Ed25519`. Every other entry is skipped and the load continues; a supported key with invalid
+  - **Accepted set.** A JWKS entry is installed when its `use` is absent or `sig`, its `kid` is present, and it is either an
+    RSA key whose `alg` is absent or RS256, or an `OKP` key on `Ed25519` whose `alg` is absent, `EdDSA` or `Ed25519`.
+    Every other entry is skipped and the load continues. A `kid` that two such entries publish is installed for
+    neither; a skipped entry does not make a `kid` ambiguous; a supported key with invalid
     material fails the load. A header spelling the algorithm `Ed25519` is accepted as `EdDSA`.
   - **Per-key rule.** The pin is derived from the JWK's own description when the key is installed. A token header must
     equal the algorithm of the key its `kid` selects before any verifier runs, else the token is denied (`EX-SEC-2002`,
