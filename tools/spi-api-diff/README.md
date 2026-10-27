@@ -18,6 +18,9 @@ tools/spi-api-diff/spi-api-diff.sh --history v0.5.0,v0.6.0,v0.7.0,v0.7.1,v0.8.0,
 
 # every SPI class resolves to a maturity label?
 tools/spi-api-diff/spi-api-diff.sh --verify-surfaces
+
+# does each mode pick the conf it should? (throwaway repository, run in CI)
+tools/spi-api-diff/spi-api-diff.sh --self-test
 ```
 
 Which labels judge a comparison depends on the mode. A single `--old/--new` run reads the
@@ -29,6 +32,12 @@ not used: a release that promotes a surface carries the promotion in its own con
 the changes made while the surface was still `preview` as `stable` ones. A ref that predates the conf
 file (before v0.11.0) takes the earliest conf among the history's refs, or, when none of them has
 one, the file's first version in `HEAD`'s history.
+
+`--self-test` checks that choice. It builds a throwaway repository in which every conf a transition
+could be judged by — the old ref's, the new ref's, the earliest ref's, the file's first version, the
+working tree's — labels the same surface differently, removes a method of that surface at each step,
+and asserts the label each mode reports. A wrong choice still prints a well-formed report, so
+nothing else would show it.
 
 Reports land in `target/spi-api-diff/` unless `--out` says otherwise.
 Exit codes: `0` compatible (or report-only), `1` a `stable` surface broke, `2` usage/tooling error.
