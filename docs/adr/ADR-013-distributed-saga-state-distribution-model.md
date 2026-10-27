@@ -7,6 +7,7 @@
 | **Date**       | 2026-05-02                                                                             |
 | **Driven By**  | ADR-007 (next-gen runtime), ADR-008 (open-core), `docs/subsystems/flow.md`, `docs/subsystems/events.md`, ROADMAP DIST-301 |
 | **Compliance** | [Strategic Pillar: Distributed Saga Recovery](../whitepaper.md)                        |
+| **Amended**    | 2026-10-27 — a finished instance keeps its row; retention belongs to the binder (A1)   |
 
 ## 1) Context and Problem Statement
 - Single-node `FlowEngine` already supports PARK/WAKE recovery via `FlowSnapshotStore` (in-memory) and choreography wake via the in-memory parked-instance index.
@@ -79,3 +80,42 @@
 - Operators of distributed deployments adopt `JdbcFlowSnapshotStore` and the `exeris-kernel-community-kafka` module explicitly; absence of either keeps the system in single-node semantics.
 - Enterprise binding inherits the same SPI contract and the same TCK obligations; off-heap zero-copy snapshot writes and broker integrations remain Enterprise-internal but MUST honor the OCC discriminator and the parked-enumeration contract introduced in Sprint 3.
 - Future evolution toward streaming `EventStreamReader` / `EventStreamAppender` SPI types (Sprint 5 EVENT-203) is unblocked; this ADR does not foreclose adding those.
+
+## Amendments
+
+### A1 (2026-10-27, 0.13) — a finished instance keeps its row; retention belongs to the binder
+
+**Context.** §5 says the durable answer wins when the heap and the durable row disagree about a
+terminal state. The default configuration (`terminalCatalogMaxSize = 0`) deleted the `COMPLETED`
+row on completion and kept the terminal state only in memory, so after an engine restart there was
+no durable answer: a `Start` redelivered by an at-least-once source ran the saga again.
+
+**Decisions.**
+1. With a snapshot store bound, completion replaces the instance's row with a `COMPLETED` snapshot
+   in every terminal-catalog mode; a failed instance already leaves `FAILED_ROLLEDBACK`.
+   `terminalCatalogMaxSize` bounds the in-memory catalog only.
+2. The engine never calls `FlowSnapshotStore.delete`. Retention of terminal rows belongs to whoever
+   binds the store.
+3. A terminal row absorbs a `Start` whatever definition the supplied plan names. A terminal row is
+   never resumed, so the plan is not bound to it, and refusing a mismatched definition would turn a
+   redelivery into an exception the source redelivers again.
+4. The kernel adds no TTL eviction of terminal rows. §6's TTL governs execution deadlines, not row
+   retention.
+
+**Contract.** With no snapshot store, a redelivered `Start` is a no-op until `close()` (unbounded
+catalog) or until eviction (bounded catalog), and runs the flow again after a restart. With a store
+bound, in either mode, it is a no-op while the terminal row exists. The deduplication window is the
+binder's retention: a retention window has to outlast broker retention plus the worst consumer lag of
+anything that can send a `Start`, because deleting a terminal row lets its id run again. Two engines
+sharing one store are not fenced against each other by this amendment.
+
+**Consequences.** Storage grows by one row per finished instance until the binder deletes it; the
+JDBC purge is `DELETE FROM exeris_saga_state WHERE state IN ('COMPLETED','FAILED_ROLLEDBACK') AND
+last_update < ?`, and the heap store grows for the life of the process. A retained row makes a stale
+writer meet the §5 version check instead of inserting afresh, and it is the record a later
+inter-engine ownership fence would act on; that fence is not decided here.
+
+**TCK obligations.** `AbstractSagaRecoveryTck` gains `CompletedInstanceAcrossRestart` for the
+unbounded engine and `RestartUnderLoad` expects the `COMPLETED` row; a binding overrides
+`createBoundedEngine(int)`. `AbstractDistributedFlowSnapshotStoreTck` keeps checking that a store
+accepts and returns a terminal snapshot as written.

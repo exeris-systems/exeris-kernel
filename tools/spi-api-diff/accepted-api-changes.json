@@ -207,7 +207,25 @@
     "signature": "eu.exeris.kernel.spi.flow.model.FlowSnapshotStore#save(eu.exeris.kernel.spi.flow.model.FlowSnapshot)",
     "since": "0.13",
     "adr": "ADR-013",
-    "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the implementor obligation is stated. save must accept a snapshot in any FlowState, COMPLETED and FAILED_ROLLEDBACK included, and load must return it as written, because under a bounded terminal catalog the engine replaces an instance's row with a COMPLETED snapshot on completion and relies on it as the proof of completion after an eviction or a restart. A store that kept only PARKED rows, or filtered load by state, loses that proof; AbstractDistributedFlowSnapshotStoreTck now checks both. The stability matrix records it as a 0.13 behavioural note on spi.flow. The SPI compatibility gate diffs signatures only and does not read this entry."
+    "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the implementor obligation is stated. save must accept a snapshot in any FlowState, COMPLETED and FAILED_ROLLEDBACK included, and load must return it as written, because under any terminal-catalog bound the engine replaces an instance's row with a COMPLETED snapshot on completion and relies on it as the proof of completion after an eviction or a restart. A store that kept only PARKED rows, or filtered load by state, loses that proof; AbstractDistributedFlowSnapshotStoreTck now checks both. The stability matrix records it as a 0.13 behavioural note on spi.flow. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.flow.model.FlowSnapshotStore#delete(long, long)",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the caller of delete is. The engine no longer calls it on completion; it replaces the row with a COMPLETED snapshot whatever the terminal-catalog bound, and relies on terminal rows as proof an instance finished. delete is the binder's retention tool, and deleting a terminal row lets that instance id run again, so a retention window has to outlast the longest redelivery horizon. A store that already implements delete keeps compiling and behaves as before when the binder calls it. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.flow.FlowEngineConfig#terminalCatalogMaxSize()",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the stated meaning is narrower. terminalCatalogMaxSize bounds the in-memory terminal catalog only; with persistenceEnabled and a snapshot store bound the engine writes one durable terminal row per finished instance in either mode and never reclaims it, and that row, not the catalog, is the fence after an eviction or a restart. Before, the default unbounded mode deleted the row on completion. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.flow.AbstractSagaRecoveryTck",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "TCK contract: AbstractSagaRecoveryTck gains the nested case CompletedInstanceAcrossRestart, which asserts that a finished instance on the unbounded createEngine() is not run again, not offered as parked and not woken by an engine rebuilt on the same store, while a fresh instance still runs. RestartUnderLoad is inverted: the resumed fleet's rows end COMPLETED where they were expected to be reclaimed, so a binding whose engine deletes the row on completion now fails it. Source-compatible; no SPI class changes."
   },
   {
     "signature": "eu.exeris.kernel.spi.transport.TransportStream#write(java.lang.foreign.MemorySegment, int)",

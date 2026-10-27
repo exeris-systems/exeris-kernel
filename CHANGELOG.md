@@ -230,10 +230,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   ignored; `AbstractFlowChoreographyTck` pins each state for every binding. Each absorbed `Start` emits the new
   JFR event `eu.exeris.kernel.flow.ChoreographyStartIgnored` (`engineName`, `instanceIdMost`,
   `instanceIdLeast`, `existingState` naming the `FlowState`: `RUNNING`, `PARKED`, `COMPLETED` or
-  `FAILED_ROLLEDBACK`, or `TERMINAL` when the finished instance's state is no longer cached). Two limits are documented on `ChoreographyDecision.Start`: with the
-  default `terminalCatalogMaxSize` the no-op does not hold across an engine restart (bounded mode also needs a
-  snapshot store), and a non-terminal durable row is resumed rather than treated
-  as a duplicate, which raises no event.
+  `FAILED_ROLLEDBACK`, or `TERMINAL` when the finished instance's state is no longer cached). One limit is documented on `ChoreographyDecision.Start`: a non-terminal durable row is resumed rather than treated
+  as a duplicate, which raises no event. The no-op across a restart holds while the snapshot store keeps the terminal row.
 - **Core binds `OPENSSL_cleanse` and exposes it as `CoreOpenSslRuntime#cleanse(MemorySegment)`.** The
   facade zeroes a native segment through the C routine, skipping null and zero-length segments and
   refusing a heap segment. The
@@ -342,17 +340,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **A Community stream's `write` no longer grows its outbound queue without limit against a peer that stops reading (#556).** The backpressure `TransportStream#write` documented was never honoured: the remainder the socket refused was copied into the queue however slow the peer. The queue now holds at most the bound, and the writer parks until the peer has taken half of it or the stream ends.
 - **An SSE event larger than `http.stream.creditWindowBytes` no longer parks `emit` forever on HTTP/1.1; it is admitted once nothing is outstanding.** `AbstractHttpStreamExchangeTck` gains the case.
 - **A WebSocket `send` against a peer that stopped reading no longer stalls that connection's pongs and close echo.** The egress wrote every frame with `write` under its lock, so a data write parked at the outbound bound held the lock the frame loop needs to answer a ping or a close until the idle sweep closed the stream. Every frame now goes through `queueWrite` in its own pooled buffer; data frames wait for credit (the bytes the transport has not yet released, against `transport.maxQueuedWriteBytes`) without the lock, and control frames never wait.
-- **A completed flow is not run again, and does not come back as parked, after a bounded terminal catalog
-  evicts it or the engine restarts.** With `terminalCatalogMaxSize > 0` and a snapshot store bound,
-  completion now replaces the instance's row with a `COMPLETED` snapshot. A resubmit or a choreography
-  `Start` for that id is absorbed as terminal, `lookupParked` returns empty, and a wake is refused with
-  `NOT_PARKED`. Before this fix, a flow that never parked ran again from its first step, and one that had
-  parked came back as `PARKED` and ran its post-park steps again on the next wake; failed flows were
-  already fenced. Bounded mode now writes one row per completed instance and the kernel reclaims no
-  terminal row, so the binder owns their retention; deleting a row lets its id run again. The unbounded
-  default is unchanged. `FlowSnapshotStore` states that a store accepts and returns terminal snapshots,
-  which `AbstractDistributedFlowSnapshotStoreTck` now checks, and `AbstractSagaRecoveryTck` gains the
-  `createBoundedEngine(int)` obligation, whose default throws so that no binding skips it.
+- **A completed flow is not run again, and does not come back as parked, after a terminal catalog evicts it or the engine restarts.**
+  With a snapshot store bound, completion replaces the instance's row with a `COMPLETED` snapshot whatever
+  `terminalCatalogMaxSize` says. A resubmit or a choreography `Start` after an eviction or a restart is
+  absorbed as terminal, even with a plan for another definition, `lookupParked` returns empty, and a wake is
+  refused with `NOT_PARKED`. Before this fix the default unbounded catalog deleted the row on completion, so a
+  `Start` redelivered after a restart ran the saga again, and in bounded mode a flow that never parked ran
+  again from its first step and one that had parked came back as `PARKED`. The engine no longer calls
+  `FlowSnapshotStore.delete`; storage grows by one row per finished instance until the binder deletes it, and
+  deleting one lets that id run again. `FlowSnapshotStore` states that a store accepts and returns terminal
+  snapshots, which `AbstractDistributedFlowSnapshotStoreTck` now checks, and `AbstractSagaRecoveryTck` gains the
+  `createBoundedEngine(int)` obligation, whose default throws so that no binding skips it. `AbstractSagaRecoveryTck`
+  gains `CompletedInstanceAcrossRestart`, and `RestartUnderLoad` expects the `COMPLETED` row.
 
 - **A write after a TLS peer's `close_notify` no longer fails as `TlsHandshakeException` (`EX-NET-2001`) and is no longer logged as `Community HTTP stream handling failed`; a write stalled across `close_notify` ends the stream through the closed signal instead of an abortive dispatch-fault teardown (#686, #714).** The Community engine does not wrap after the peer's `close_notify`, so the stalled bytes are dropped with their loans released and the writer's next call reports `EX-NET-4008`. A session the peer ended right after the handshake is no longer mistaken for a handshake still in progress. TLS 1.3 half-close is not supported. The first failed socket call of a JVM reads its own errno: the first errno read of a JVM returned `ENOENT`, because initialising the reader overwrote the errno of the call, so the first `EAGAIN` on a send or a receive was not retryable and aborted, with `EX-NET-4002`, a connection that was only under backpressure. The readers are now initialised when `SyscallHandles` is constructed. Errno is still read in a second downcall, so activity of the JVM between the two can overwrite it.
 - **A thread blocked in `read` on a Community TCP stream is woken by every transition that ends the stream.**

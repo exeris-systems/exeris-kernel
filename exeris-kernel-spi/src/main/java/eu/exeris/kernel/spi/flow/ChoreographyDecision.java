@@ -42,7 +42,7 @@ public sealed interface ChoreographyDecision
      * second flow. A running instance is left running, a parked instance is left parked, and a
      * completed or failed instance is not run again. The supplied plan is ignored for an existing
      * instance, so a changed definition reaches a parked instance only through a version migration
-     * (ADR-064). Two limits apply:
+     * (ADR-064). For an instance id the engine does not hold in memory:
      * <ul>
      *   <li>A completed or failed instance is recognised as finished from memory for the life of
      *       one engine, and across a restart only from the terminal row a bound snapshot store
@@ -54,8 +54,8 @@ public sealed interface ChoreographyDecision
      *       treating it as a duplicate. Two engines that own the same instance are not fenced
      *       against each other.</li>
      * </ul>
-     * Neither limit is reported by the engine's absorbed-Start diagnostic: a resumed durable row
-     * starts a run, so no Start is absorbed and the event does not fire.
+     * The engine's absorbed-Start diagnostic does not report a resumed durable row: it starts a
+     * run, so no Start is absorbed and the event does not fire.
      *
      * @param plan            the compiled execution plan to run; must not be {@code null}
      * @param instanceIdMost  most-significant bits of the new instance UUID
