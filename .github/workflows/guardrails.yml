@@ -84,7 +84,7 @@ permissions:
 jobs:
   docs:
     if: ${{ github.event.action != 'closed' }}
-    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@bfa9b96ad8161c462062f85cd1afe8fa7bae62d2 # exeris-systems/.github@main
     with:
       # ramp, not strict: in ramp the gate fails only on files the pull request touches, so a pull
       # request is answerable for what it edits and not for a backlog it did not create. Flip to
@@ -96,10 +96,10 @@ jobs:
       section-check: false
   commits:
     if: ${{ github.event.action != 'closed' }}
-    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@bfa9b96ad8161c462062f85cd1afe8fa7bae62d2 # exeris-systems/.github@main
   pr-body:
     if: ${{ github.event.action != 'closed' }}
-    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@bfa9b96ad8161c462062f85cd1afe8fa7bae62d2 # exeris-systems/.github@main
   # The L2 review of ADR-085 §J.33, published under the organisation's identity by ADR-087 §B.
   #
   # `needs` puts it after the gates it complements and `l1-results` hands it their conclusions.
@@ -121,7 +121,7 @@ jobs:
   review:
     needs: [docs, commits, pr-body]
     if: ${{ always() && github.event.action != 'closed' }}
-    uses: exeris-systems/.github/.github/workflows/review.yml@210e9a398349e89729fe06a16b5d89461f18e533 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/review.yml@bfa9b96ad8161c462062f85cd1afe8fa7bae62d2 # exeris-systems/.github@main
     with:
       # The publish job is the required one. The produce job never is, because a review that
       # crashed has to reach the step that notices it produced nothing.
@@ -206,7 +206,7 @@ jobs:
   # rule can name, and it posts nothing to the pull request.
   judge:
     if: ${{ github.event.action == 'closed' }}
-    uses: exeris-systems/.github/.github/workflows/judge-review.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/judge-review.yml@bfa9b96ad8161c462062f85cd1afe8fa7bae62d2 # exeris-systems/.github@main
     secrets:
       exeris_bot_app_id: ${{ secrets.EXERIS_BOT_APP_ID }}
       exeris_bot_private_key: ${{ secrets.EXERIS_BOT_PRIVATE_KEY }}
