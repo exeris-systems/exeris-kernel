@@ -102,12 +102,12 @@
         <!-- Testcontainers Kafka 3.x for integration tests (only run with -Dgroups=integration) -->
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>kafka</artifactId>
+            <artifactId>testcontainers-kafka</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -119,22 +119,7 @@
         -->
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!--
-            The JUnit Vintage engine is declared so that Surefire selects by JUnit Platform tags.
-            Testcontainers 1.x puts junit:junit on this module's test classpath. When Surefire sees
-            junit:junit and no declared vintage engine, it adds the engine itself and applies
-            groups/excludedGroups as JUnit 4 categories, which no Jupiter test carries: a tagged
-            selection (-DincludedGroups=integration, the transport-pinning-recv and default-trust
-            executions) runs nothing, and the default execution runs every tag it excludes. With the
-            engine declared, the tag filters apply. This module has no JUnit 4 test, so the engine
-            discovers nothing. It goes when junit:junit leaves the test classpath.
-        -->
-        <dependency>
-            <groupId>org.junit.vintage</groupId>
-            <artifactId>junit-vintage-engine</artifactId>
+            <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

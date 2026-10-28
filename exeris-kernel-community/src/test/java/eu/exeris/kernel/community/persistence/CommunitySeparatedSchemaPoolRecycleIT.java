@@ -17,9 +17,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -66,7 +66,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CommunitySeparatedSchemaPoolRecycleIT {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
 
     private static final String APP_USER = "exeris_app";
     private static final String APP_PASSWORD = "exeris_app_pw";
@@ -168,7 +168,7 @@ class CommunitySeparatedSchemaPoolRecycleIT {
         });
     }
 
-    private static PersistenceEngine createSingleConnectionEngine(PostgreSQLContainer<?> container) {
+    private static PersistenceEngine createSingleConnectionEngine(PostgreSQLContainer container) {
         PersistenceConfig config = new PersistenceConfig(
                 container.getJdbcUrl(),
                 APP_USER,
@@ -187,7 +187,7 @@ class CommunitySeparatedSchemaPoolRecycleIT {
         return new CommunityPersistenceProvider().createEngine(config);
     }
 
-    private static void bootstrapSchemas(PostgreSQLContainer<?> container) {
+    private static void bootstrapSchemas(PostgreSQLContainer container) {
         try (Connection conn = DriverManager.getConnection(
                      container.getJdbcUrl(), container.getUsername(), container.getPassword());
              Statement st = conn.createStatement()) {

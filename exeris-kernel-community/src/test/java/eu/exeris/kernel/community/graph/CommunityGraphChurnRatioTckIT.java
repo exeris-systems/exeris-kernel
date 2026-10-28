@@ -10,9 +10,9 @@ import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.tck.contract.graph.GraphChurnRatioTck;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.neo4j.Neo4jContainer;
 
 import java.util.Map;
 import java.util.UUID;
@@ -50,7 +50,7 @@ class CommunityGraphChurnRatioTckIT extends GraphChurnRatioTck {
     private static final String ADMIN_PASSWORD = "testpass";
 
     @Container
-    static final Neo4jContainer<?> NEO4J = new Neo4jContainer<>("neo4j:5-community")
+    static final Neo4jContainer NEO4J = new Neo4jContainer("neo4j:5-community")
             .withAdminPassword(ADMIN_PASSWORD);
 
     private static final GraphEdgeDescriptor FOLLOWS =

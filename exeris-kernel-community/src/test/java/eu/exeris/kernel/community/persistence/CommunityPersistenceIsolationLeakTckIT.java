@@ -12,9 +12,9 @@ import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.tck.contract.persistence.PersistenceIsolationLeakTck;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -30,7 +30,7 @@ import java.util.Map;
 class CommunityPersistenceIsolationLeakTckIT extends PersistenceIsolationLeakTck {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
 
     private static final String APP_USER     = "exeris_app";
     private static final String APP_PASSWORD = "exeris_app_pw";
@@ -58,7 +58,7 @@ class CommunityPersistenceIsolationLeakTckIT extends PersistenceIsolationLeakTck
         return engine;
     }
 
-    private static void bootstrapSchema(PostgreSQLContainer<?> container) {
+    private static void bootstrapSchema(PostgreSQLContainer container) {
         try (Connection conn = DriverManager.getConnection(
                      container.getJdbcUrl(), container.getUsername(), container.getPassword());
              Statement st = conn.createStatement()) {

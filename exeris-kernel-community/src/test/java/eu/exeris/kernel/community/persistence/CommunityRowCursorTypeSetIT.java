@@ -9,9 +9,9 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.tck.contract.persistence.AbstractRowCursorTypeSetTck;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.Map;
 
@@ -35,7 +35,7 @@ import java.util.Map;
 class CommunityRowCursorTypeSetIT extends AbstractRowCursorTypeSetTck {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
 
     @Override
     protected PersistenceEngine createEngine() {
