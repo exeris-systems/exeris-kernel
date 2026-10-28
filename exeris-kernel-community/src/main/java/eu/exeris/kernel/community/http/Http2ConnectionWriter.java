@@ -1094,7 +1094,7 @@ final class Http2ConnectionWriter {
     @SuppressWarnings("PMD.CloseResource")
     private long encodeResponseHeaders(MemorySegment target, HttpResponse response) {
         long position = encoder.encodeHeader(
-                target, 0, ":status", Integer.toString(response.status().code()), false);
+                target, 0, HEADER_STATUS, Integer.toString(response.status().code()), false);
 
         boolean hasContentLength = false;
         for (HttpHeader header : response.headers()) {

@@ -47,7 +47,7 @@ class CoreOpenSslLoaderBindingGuardTest {
         assertThat(unbound).as("OpenSslDowncall rows the loader never binds").isEmpty();
 
         List<String> repeated = references.entrySet().stream()
-                .filter(e -> e.getValue() != PROBED_PER_LIBRARY.getOrDefault(e.getKey(), 1))
+                .filter(e -> e.getValue().intValue() != PROBED_PER_LIBRARY.getOrDefault(e.getKey(), 1).intValue())
                 .map(e -> e.getKey() + " x" + e.getValue()).toList();
         assertThat(repeated).as("OpenSslDowncall rows the loader binds more than once").isEmpty();
     }
