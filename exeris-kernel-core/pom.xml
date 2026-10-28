@@ -159,6 +159,13 @@
                         <exclude>**/*$*</exclude>
                         <exclude>**/StreamResolutionMissAllocationTest.java</exclude>
                     </excludes>
+                    <!--
+                        Only the research tag is excluded here. Core does not wire includedGroups or
+                        excludedGroups to properties, so a -DincludedGroups flag never narrows this
+                        module's selection to tagged tests; see the TLS matrix job in
+                        .github/workflows/maven.yml.
+                    -->
+                    <excludedGroups>research</excludedGroups>
                 </configuration>
             </plugin>
             <plugin>
@@ -178,18 +185,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <!--
-                Only the research tag is excluded here. Core does not wire includedGroups or
-                excludedGroups to properties, so a -DincludedGroups flag never narrows this module's
-                selection to tagged tests; see the TLS matrix job in .github/workflows/maven.yml.
-            -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <excludedGroups>research</excludedGroups>
-                </configuration>
             </plugin>
         </plugins>
     </build>
