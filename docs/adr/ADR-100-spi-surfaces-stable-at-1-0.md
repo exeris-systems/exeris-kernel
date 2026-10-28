@@ -11,13 +11,14 @@ status: active
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (2026-10-08)                                                                 |
+| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-10-26)                                                |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/spi`                                                                              |
 | **Owning Repo** | `exeris-kernel`                                                                           |
 | **Driven By**   | [RFC-2026-09-02](../rfc/RFC-2026-09-02-preview-spi-promotion.md), which this ADR closes; issue #610 |
 | **Compliance**  | [docs/stability-matrix.md](../stability-matrix.md), `tools/spi-api-diff/stability-surfaces.conf`, [ADR-065](ADR-065-spi-compatibility-gate.md) |
+| **Amended**     | 2026-10-21 — §3's consumer count; 2026-10-26 — §Verification's `--fail-on-stable` statement (see Amendments) |
 
 ## Context and Problem Statement
 

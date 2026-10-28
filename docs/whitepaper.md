@@ -4,7 +4,7 @@ type: explanation
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-10-07
+last-verified: 2026-09-05
 ---
 
 # Exeris Kernel: The Vision & Whitepaper

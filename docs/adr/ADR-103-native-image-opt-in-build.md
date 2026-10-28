@@ -11,13 +11,14 @@ slug: adr/ADR-103
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (2026-10-08)                                                                 |
+| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-10-16)                                                |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/runtime` — `exeris-kernel-spi`, `exeris-kernel-core`, `exeris-kernel-community`, `exeris-kernel-community-kafka`, `exeris-kernel-build-config` (the `@RequiresRole` processor) |
 | **Owning Repo** | `exeris-kernel`                                                                           |
 | **Driven By**   | v0.13 scope; the ROADMAP stance "Native-image / GraalVM" under *Scope Discipline & Declared Stances*, whose enablement half this ADR moves from post-1.0 to 0.13 |
 | **Compliance**  | [docs/performance-contract.md](../performance-contract.md) §2.2.1, [docs/support-matrix.md](../support-matrix.md) "Runtime image" |
+| **Amended**     | 2026-10-16 — Obligation 5 (where the processor writes its metadata) and Obligation 8 (the Windows library lookup); see Amendments |
 
 ## Context and Problem Statement
 
