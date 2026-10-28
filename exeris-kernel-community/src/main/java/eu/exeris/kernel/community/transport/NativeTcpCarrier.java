@@ -9,7 +9,9 @@ import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.crypto.tls.TlsFailureDetail;
 import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
+import eu.exeris.kernel.core.memory.MemoryMaintenanceTask;
 import eu.exeris.kernel.core.memory.ResourceArbiter;
+import eu.exeris.kernel.core.memory.WatermarkLevel;
 import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
@@ -112,6 +114,8 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private static final System.Logger LOG = System.getLogger(NativeTcpCarrier.class.getName());
 
+    /** How often a server-mode carrier re-samples its allocator for the level its admission arbiter reads. */
+    private static final long WATERMARK_REFRESH_INTERVAL_MS = 1_000L;
     private static final long ACCEPT_RETRY_BASE_MILLIS = 25L;
     private static final long ACCEPT_RETRY_MAX_MILLIS = 1_000L;
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
@@ -181,6 +185,12 @@ public final class NativeTcpCarrier implements TransportEngine {
     private volatile Thread acceptorThread;
     @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile PaqsScheduler paqs;
+    /** The manager the arbiter reads and the task that refreshes it; each {@link #start()} builds both afresh. */
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
+    private volatile WatermarkManager watermarkManager;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
+    private volatile MemoryMaintenanceTask watermarkRefresh;
+    private volatile long watermarkRefreshIntervalMs = WATERMARK_REFRESH_INTERVAL_MS;
     private final List<NativeTcpReactor> reactors = new ArrayList<>();
     private final AtomicInteger nextReactorIndex = new AtomicInteger(0);
 
@@ -300,6 +310,11 @@ public final class NativeTcpCarrier implements TransportEngine {
                 workloadAdmissionEnforced.set(admission.enforced());
                 initPaqs();
                 startServerRuntime();
+                // After the listener is up: a start that fails to bind leaves no refresh thread to clean up.
+                MemoryMaintenanceTask refresh = MemoryMaintenanceTask.watermarkRefreshOnly(
+                        watermarkManager, watermarkRefreshIntervalMs);
+                watermarkRefresh = refresh;
+                refresh.start();
             } else {
                 // CLIENT mode: there is no acceptor/PAQS, but outbound channels still need a reactor
                 // to drive non-blocking ingress and egress (TCK-064). Stand up the reactor loop(s)
@@ -307,6 +322,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 startClientRuntime();
             }
         } catch (RuntimeException ex) {
+            stopWatermarkRefresh();
             running.set(false);
             throw ex;
         }
@@ -339,8 +355,10 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
         if (!running.compareAndSet(true, false)) {
             // Not running — nothing to drain, and `draining` must not stay raised or the reactors of a
-            // subsequent start() would never be allowed to exit.
+            // subsequent start() would never be allowed to exit. An async failure clears `running`
+            // without passing Phase 3, so the refresh thread is released here too.
             draining.set(false);
+            stopWatermarkRefresh();
             return;
         }
 
@@ -391,7 +409,19 @@ public final class NativeTcpCarrier implements TransportEngine {
                 reactor.join(2_000L);
             }
 
+            // After the reactors: admission reads the level for as long as they can accept a stream.
+            stopWatermarkRefresh();
             closeSelectorAndChannels();
+        }
+    }
+
+    /** Stops and forgets the refresh task, if any; idempotent. The null records absence. */
+    @SuppressWarnings("PMD.NullAssignment")
+    private void stopWatermarkRefresh() {
+        MemoryMaintenanceTask refresh = watermarkRefresh;
+        watermarkRefresh = null;
+        if (refresh != null) {
+            refresh.stop();
         }
     }
 
@@ -638,6 +668,28 @@ public final class NativeTcpCarrier implements TransportEngine {
         return running.get();
     }
 
+    /** Test seam: the refresh interval; refused once running. */
+    /* default */ void watermarkRefreshIntervalMs(long intervalMs) {
+        if (running.get()) {
+            throw new IllegalStateException("Cannot change the watermark refresh interval after start()");
+        }
+        if (intervalMs <= 0) {
+            throw new IllegalArgumentException("intervalMs must be > 0");
+        }
+        this.watermarkRefreshIntervalMs = intervalMs;
+    }
+
+    /** The level the admission arbiter reads; {@code NORMAL} before the first server start. */
+    /* default */ WatermarkLevel watermarkLevel() {
+        WatermarkManager manager = watermarkManager;
+        return manager == null ? WatermarkLevel.NORMAL : manager.currentLevel();
+    }
+
+    /* default */ boolean watermarkRefreshRunning() {
+        MemoryMaintenanceTask refresh = watermarkRefresh;
+        return refresh != null && refresh.isRunning();
+    }
+
     /**
      * Whether the reactor loops should keep selecting.
      *
@@ -710,8 +762,13 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void initPaqs() {
-        WatermarkManager watermarkManager = new WatermarkManager(allocator);
-        ResourceArbiter arbiter = new ResourceArbiter(watermarkManager);
+        WatermarkManager manager = new WatermarkManager(allocator);
+        // The arbiter reads a cached level. Without a first sample here, an engine started under
+        // memory pressure would admit until the first periodic refresh.
+        manager.refresh();
+        // Built under the TimeSource bound by this start(), which times the arbiter's startup grace.
+        ResourceArbiter arbiter = new ResourceArbiter(manager);
+        this.watermarkManager = manager;
         AdmissionController admissionController =
                 new AdmissionController(arbiter, config.maxActiveStreams());
         StreamLoadShedder shedder = new StreamLoadShedder(engineName());

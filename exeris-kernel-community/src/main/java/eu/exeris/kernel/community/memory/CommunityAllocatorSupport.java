@@ -22,12 +22,6 @@ final class CommunityAllocatorSupport {
     }
 
     /* default */ static void validateSupportedConfig(MemoryProviderConfig config, int defaultNetworkThreshold) {
-        if (config.totalOffHeapBytes() != -1L) {
-            throw new IllegalArgumentException(
-                    "CommunityMemoryAllocator does not support fixed off-heap budgets; "
-                            + "use totalOffHeapBytes=-1, got: " + config.totalOffHeapBytes()
-            );
-        }
         if (config.networkOffHeapThreshold() != defaultNetworkThreshold) {
             throw new IllegalArgumentException(
                     "CommunityMemoryAllocator does not support custom networkOffHeapThreshold; "

@@ -9,12 +9,15 @@ import eu.exeris.kernel.spi.memory.LeakDetectionMode;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.tck.support.TckScope;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -464,6 +467,94 @@ class ResourceArbiterTest {
             WatermarkManager mgr = new WatermarkManager(stubAllocator(1_000_000, 1_000_000));
             mgr.refresh();
             assertThat(mgr.currentUtilizationPct()).isEqualTo(100);
+        }
+    }
+
+    // =========================================================================
+    // Grace period follows the bound TimeSource
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Grace period follows the TimeSource bound at construction")
+    @Timeout(60)
+    class GraceFollowsTimeSource {
+
+        private static final long GRACE_SECONDS = 30L;
+
+        /** A source the test moves by hand. */
+        private final class MovableSource implements TimeSource {
+            private final AtomicLong nowNs = new AtomicLong();
+
+            void atSeconds(long seconds) {
+                nowNs.set(TimeUnit.SECONDS.toNanos(seconds));
+            }
+
+            @Override
+            public long nanoTime() {
+                return nowNs.get();
+            }
+
+            @Override
+            public Instant wallTime() {
+                return Instant.EPOCH;
+            }
+        }
+
+        private WatermarkManager sheddingManager() {
+            WatermarkManager manager = new WatermarkManager(stubAllocator(990_000, 1_000_000));
+            manager.refresh();
+            assertThat(manager.currentLevel()).isEqualTo(WatermarkLevel.SHEDDING);
+            return manager;
+        }
+
+        private ResourceArbiter arbiterBuiltAtZero(MovableSource source) {
+            ResourceArbiter[] holder = new ResourceArbiter[1];
+            source.atSeconds(0);
+            ScopedValue.where(TimeKernelProviders.TIME_SOURCE, source)
+                    .run(() -> holder[0] = new ResourceArbiter(sheddingManager()));
+            return holder[0];
+        }
+
+        @Test
+        @DisplayName("inside the grace the arbiter allows; past it the arbiter sheds")
+        void movesWithTheSource() {
+            MovableSource source = new MovableSource();
+            ResourceArbiter arbiter = arbiterBuiltAtZero(source);
+
+            assertThat(arbiter.decide(ResourceArbiter.Context.TRANSPORT_IO)).isEqualTo(ResourceArbiter.Action.ALLOW);
+            assertThat(arbiter.isInGracePeriod()).isTrue();
+
+            source.atSeconds(GRACE_SECONDS - 1);
+            assertThat(arbiter.decide(ResourceArbiter.Context.TRANSPORT_IO)).isEqualTo(ResourceArbiter.Action.ALLOW);
+
+            source.atSeconds(GRACE_SECONDS + 1);
+            assertThat(arbiter.isInGracePeriod()).isFalse();
+            assertThat(arbiter.decide(ResourceArbiter.Context.TRANSPORT_IO))
+                    .isEqualTo(ResourceArbiter.Action.SHED_LOAD);
+        }
+
+        @Test
+        @DisplayName("once elapsed the grace stays elapsed when the source reads earlier")
+        void graceLatches() {
+            MovableSource source = new MovableSource();
+            ResourceArbiter arbiter = arbiterBuiltAtZero(source);
+            source.atSeconds(GRACE_SECONDS + 1);
+            assertThat(arbiter.decide(ResourceArbiter.Context.TRANSPORT_IO))
+                    .isEqualTo(ResourceArbiter.Action.SHED_LOAD);
+
+            source.atSeconds(0);
+
+            assertThat(arbiter.isInGracePeriod()).isFalse();
+            assertThat(arbiter.decide(ResourceArbiter.Context.TRANSPORT_IO))
+                    .isEqualTo(ResourceArbiter.Action.SHED_LOAD);
+        }
+
+        @Test
+        @DisplayName("built with no source bound, the grace is active right after construction")
+        void unboundSourceIsTheSystemClock() {
+            ResourceArbiter arbiter = new ResourceArbiter(sheddingManager());
+
+            assertThat(arbiter.isInGracePeriod()).isTrue();
         }
     }
 }

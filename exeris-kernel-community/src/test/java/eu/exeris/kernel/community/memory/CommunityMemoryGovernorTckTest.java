@@ -16,7 +16,8 @@ import org.junit.jupiter.api.DisplayName;
  * <p>Verifies that the governor signal exposed by {@link eu.exeris.kernel.spi.memory.MemoryStats}
  * is correct at all times — baseline (L1), under allocation load (L2), and after
  * {@code performMaintenance()} (L4). The fixed-budget L3 tests are skipped because
- * Community operates without a bounded off-heap budget ({@code totalBytes == -1}).
+ * this suite builds the allocator with no budget ({@code totalBytes == -1}); a budget is an opt-in
+ * pressure denominator, covered by the allocator's own tests.
  *
  * <p>This is the contract that the Core {@code WatermarkManager} and {@code ResourceArbiter}
  * rely on when making load-shedding decisions. A Community allocator that reports stale
