@@ -19,6 +19,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 ### Breaking
 
 - **A finished saga keeps its snapshot row whenever a snapshot store is bound, and the engine no longer deletes rows (behaviour, stable `spi.flow`, ADR-013 A1).** With the default `terminalCatalogMaxSize = 0`, completion used to delete the instance's row; it now leaves a `COMPLETED` row in every terminal-catalog mode, so `exeris_saga_state` (or any `FlowSnapshotStore`) grows by one row per finished instance until the binder purges it. No signature changes. A binder needs a retention job; see MIGRATION.
+- **HTTP/2 header names and values reach handlers one char per octet (ISO-8859-1), as on HTTP/1.1 (Core `HpackDecoder`, ADR-071).** They were decoded as UTF-8 with an invalid sequence replaced by U+FFFD, so a valid UTF-8 value such as `é` (`C3 A9`) arrived as `é` and now arrives as `Ã©`, which is what the HTTP/1.1 parser has always delivered. A handler that expects UTF-8 in a non-ASCII value decodes `value.getBytes(StandardCharsets.ISO_8859_1)` as UTF-8; see MIGRATION.
 - **`TransportStream#write` blocks at the stream's outbound bound, `queueWrite` must never wait for the peer, and `TransportConfig` gains a component (SPI, stable `spi.transport`, ADR-007).** A Community `write` parks its caller while the stream holds `maxQueuedWriteBytes` (default 256 KiB) the peer has not taken, and never parks a reactor thread; a caller that holds a lock across `write` orders every other sender behind a slow peer, so a sender that must not block uses `queueWrite` and bounds the loans it has outstanding by their release. An implementor's `queueWrite` returns without waiting for the peer, apart from a connection that is still being established, and releases a loan once its bytes have left the stream's queue or the stream ends, not before; a transport whose `queueWrite` sends synchronously no longer conforms, and `AbstractTransportStreamTck.QueueWriteDoesNotWait` fails it. `TransportConfig` gains the component `maxQueuedWriteBytes` after `maxActiveStreams`; the 0.12 nine-argument and eight-argument constructors stay and apply the default, so source and binary compatibility hold, but a record pattern over `TransportConfig` or reflection over its components sees a different shape. See `MIGRATION.md`.
 
 - **A declared `EntitlementRequirement` with no manifest stops the boot in every environment, development included (ADR-088, ADR-089).** `EX-LIC-0005` is raised whatever the `environment` key says; a commercial artifact now needs a manifest wherever it runs, and a developer runs it under a developer licence. The verified manifest's environment and capability checks run in every environment too. See `MIGRATION.md`.
@@ -68,6 +69,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   names the method of the route a request is dispatched to.
 
 ### Changed
+
 
 - **`…spi.http` (the whole package), `…spi.security` with `…security.identity`, `…spi.events`, `…spi.crypto`, `…spi.scheduling` and `…spi.storage.blob` are `stable` (ADR-100).** The SPI compatibility gate now fails a binary- or source-incompatible change to them, as it does for transport, persistence, flow and memory; they are semver-binding from 1.0. `…spi.contract`, `…spi.graph`, `…spi.time` and `…spi.websocket` stay `preview`. No signature changes; see `docs/stability-matrix.md`.
 
@@ -339,6 +341,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   exemption.
 
 ### Fixed
+
+- **HPACK sizes table entries and the field section by the octets on the wire.** The decoder measured an entry, and the field section, by re-encoding the decoded String as UTF-8. An obs-text octet that is not valid UTF-8 became U+FFFD and counted three octets where the client counted one. The server then evicted entries the client still held, and a later request referencing one failed as a COMPRESSION_ERROR, or a field section within http.maxHeaderListSize was refused. Sizes now come from the octets read. New AbstractHttp2HeaderLimitTck group ObsTextOctets.
 
 - **`spi-api-diff --history` labels each transition with the stability conf at its old ref, not the working tree's (tooling).** Regenerating the release history after a surface is promoted no longer reports that surface's earlier `preview` breaks as `stable` breaks; a single `--old/--new` run keeps judging by the current conf. `--self-test` pins the choice for each mode against a throwaway repository, and CI runs it.
 

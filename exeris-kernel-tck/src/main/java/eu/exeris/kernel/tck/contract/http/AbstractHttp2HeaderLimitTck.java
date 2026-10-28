@@ -53,7 +53,8 @@ import static org.assertj.core.api.Assertions.fail;
  *       a bound applied per frame rather than to the assembled block lets the over-limit case
  *       through.</li>
  *   <li>{@code maxHeaderListSize} — the decoded field section, sized as RFC 9113 §6.5.2 defines it:
- *       name octets plus value octets plus 32 per field. The server advertises this bound as
+ *       name octets plus value octets plus 32 per field. An obs-text octet (0x80&ndash;0xFF, allowed in
+ *       a value by RFC 9113 §8.2.1) counts as one. The server advertises this bound as
  *       {@code SETTINGS_MAX_HEADER_LIST_SIZE}.</li>
  *   <li>{@code maxStringLiteralSize} — one decoded name or one decoded value. A name and a value are
  *       separate directions of the bound, and each has an over-limit case.</li>
@@ -104,6 +105,14 @@ import static org.assertj.core.api.Assertions.fail;
  * context in an unknown state, so it is a connection error of type {@code COMPRESSION_ERROR}
  * (RFC 9113 §4.3) &mdash; a {@code GOAWAY} carrying error code {@code 0x9} whose last-stream-id is
  * below the stream, with the handler never invoked. A {@code 400} on the stream is not that.
+ *
+ * <h2>Obs-text octets</h2>
+ * <p>The {@code ObsTextOctets} group sends values made of obs-text octets that are not valid UTF-8.
+ * Both the list bound and the HPACK dynamic table count each such octet once. A server that sizes a
+ * field by re-encoding its decoded value counts more than the client does, so it refuses a field
+ * section at the limit and evicts entries the client still holds, and a later request that
+ * references one fails. The table case relies on the protocol-default 4096-octet table; a server
+ * that sizes correctly passes whatever table size it advertises.
  *
  * <h2>Binding obligations</h2>
  * <p>The server engine must accept cleartext HTTP/2 with prior knowledge when
@@ -416,6 +425,61 @@ public abstract class AbstractHttp2HeaderLimitTck {
     }
 
     @Nested
+    @DisplayName("A field value carrying obs-text octets is sized by its octets on the wire")
+    class ObsTextOctets {
+
+        private static final int LIST = 640;
+
+        @Test
+        @DisplayName("A field section of exactly maxHeaderListSize octets, its value obs-text, is served")
+        void listWithObsTextAtTheLimitIsServed() {
+            RequestBlock request = RequestBlock.ofDecodedSize(AT_LIMIT_PATH, LIST, (byte) 0xFF);
+            assertThat(request.decodedSize()).isEqualTo(LIST);
+
+            Probe probe = probe(12_288, LIST, 4_096, request.encoded(), false);
+
+            assertServed(probe, AT_LIMIT_PATH, "an obs-text field section of exactly maxHeaderListSize octets");
+        }
+
+        @Test
+        @DisplayName("A field section one octet over maxHeaderListSize, its value obs-text, is refused")
+        void listWithObsTextOverTheLimitIsRefused() {
+            RequestBlock request = RequestBlock.ofDecodedSize(OVER_LIMIT_PATH, LIST + 1, (byte) 0xFF);
+            assertThat(request.decodedSize()).isEqualTo(LIST + 1);
+
+            Probe probe = probe(12_288, LIST, 4_096, request.encoded(), false);
+
+            assertRefused(probe, "an obs-text field section one octet over maxHeaderListSize");
+        }
+
+        @Test
+        @DisplayName("Entries before and after an obs-text insertion are usable by the next request")
+        void entriesAroundAnObsTextInsertionAreUsable() {
+            byte[] obs = new byte[2_100];
+            Arrays.fill(obs, (byte) 0xFF);
+
+            ByteArrayOutputStream first = new ByteArrayOutputStream();
+            RequestBlock.writePseudoHeaders(first, AT_LIMIT_PATH);
+            RequestBlock.writeLiteralIncremental(first, "x-first", "one");
+            RequestBlock.writeLiteralIncremental(first, "x-obs", obs);
+
+            ByteArrayOutputStream followUp = new ByteArrayOutputStream();
+            RequestBlock.writePseudoHeaders(followUp, FOLLOW_UP_PATH);
+            RequestBlock.writeInteger(followUp, 0x80, 7, 63);
+            RequestBlock.writeLiteralNewName(followUp, "x-last", "1");
+
+            Sequence sequence = sequence(12_288, 16_384, 4_096, first.toByteArray(), followUp.toByteArray(), true);
+
+            assertThat(sequence.first().kind()).isEqualTo(Kind.STATUS);
+            assertThat(sequence.first().status()).isEqualTo(HttpStatus.OK.code());
+            assertThat(sequence.followUp())
+                    .as("the first request was served, so the follow-up must have been sent and answered")
+                    .isNotNull();
+            assertFollowUpServedWithTheFieldsSent(sequence, List.of("x-first: one", "x-last: 1"));
+        }
+    }
+
+    @Nested
     @DisplayName("A header block that does not decode is a COMPRESSION_ERROR connection error")
     class MalformedBlock {
 
@@ -612,6 +676,15 @@ public abstract class AbstractHttp2HeaderLimitTck {
      */
     private Sequence sequence(int maxHeaderBlockSize, int maxHeaderListSize, int maxStringLiteralSize,
                               byte[] refused, byte[] followUp) {
+        return sequence(maxHeaderBlockSize, maxHeaderListSize, maxStringLiteralSize, refused, followUp, false);
+    }
+
+    /**
+     * As above; {@code followUpAfterSuccess} also sends {@code followUp} when the first request was
+     * served with a {@code 200}.
+     */
+    private Sequence sequence(int maxHeaderBlockSize, int maxHeaderListSize, int maxStringLiteralSize,
+                              byte[] first, byte[] followUp, boolean followUpAfterSuccess) {
         HttpProvider provider = createProvider();
         String host = loopbackHost();
         int port = nextFreePort();
@@ -630,15 +703,15 @@ public abstract class AbstractHttp2HeaderLimitTck {
             engine.setHandler(handler);
             engine.start();
             try (RawH2Connection connection = RawH2Connection.open(host, port, responseTimeout())) {
-                connection.sendRequest(FIRST_STREAM, refused, false);
-                Outcome first = connection.awaitOutcome(FIRST_STREAM);
+                connection.sendRequest(FIRST_STREAM, first, false);
+                Outcome firstOutcome = connection.awaitOutcome(FIRST_STREAM);
                 Outcome second = null;
-                if (first.kind() == Kind.RESET
-                        || first.kind() == Kind.STATUS && first.status() != HttpStatus.OK.code()) {
+                if (firstOutcome.kind() == Kind.RESET || firstOutcome.kind() == Kind.STATUS
+                        && (followUpAfterSuccess || firstOutcome.status() != HttpStatus.OK.code())) {
                     connection.sendRequest(FOLLOW_UP_STREAM, followUp, false);
                     second = connection.awaitOutcome(FOLLOW_UP_STREAM);
                 }
-                return new Sequence(first, second, List.copyOf(served));
+                return new Sequence(firstOutcome, second, List.copyOf(served));
             }
         }
     }
@@ -710,21 +783,35 @@ public abstract class AbstractHttp2HeaderLimitTck {
         private static final String PAD_NAME = "x-pad";
 
         static RequestBlock withField(String path, String name, String value) {
+            return withField(path, name, value.getBytes(StandardCharsets.UTF_8));
+        }
+
+        /** A block with one literal field whose value is the given octets, whatever they decode to. */
+        static RequestBlock withField(String path, String name, byte[] value) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             int decoded = writePseudoHeaders(out, path);
-            writeLiteralNewName(out, name, value);
-            decoded += fieldSize(name, value);
+            out.write(0x00);
+            writeString(out, name);
+            writeString(out, value);
+            decoded += fieldSize(name, value.length);
             return new RequestBlock(out.toByteArray(), decoded);
         }
 
         /** A block whose decoded field section is exactly {@code target} octets. */
         static RequestBlock ofDecodedSize(String path, int target) {
+            return ofDecodedSize(path, target, (byte) 'p');
+        }
+
+        /** As above, the padding value made of {@code padOctet}. */
+        static RequestBlock ofDecodedSize(String path, int target, byte padOctet) {
             int base = pseudoHeaderSize(path);
-            int valueLength = target - base - fieldSize(PAD_NAME, "");
+            int valueLength = target - base - fieldSize(PAD_NAME, 0);
             if (valueLength < 0) {
                 throw new IllegalStateException("decoded size " + target + " is below the request's floor");
             }
-            return withField(path, PAD_NAME, "p".repeat(valueLength));
+            byte[] pad = new byte[valueLength];
+            Arrays.fill(pad, padOctet);
+            return withField(path, PAD_NAME, pad);
         }
 
         /** A block whose encoded length is exactly {@code target} octets. */
@@ -755,8 +842,11 @@ public abstract class AbstractHttp2HeaderLimitTck {
         }
 
         private static int fieldSize(String name, String value) {
-            return name.getBytes(StandardCharsets.UTF_8).length
-                    + value.getBytes(StandardCharsets.UTF_8).length + FIELD_OVERHEAD;
+            return fieldSize(name, value.getBytes(StandardCharsets.UTF_8).length);
+        }
+
+        private static int fieldSize(String name, int valueOctets) {
+            return name.getBytes(StandardCharsets.UTF_8).length + valueOctets + FIELD_OVERHEAD;
         }
 
         /** RFC 7541 §6.2.2: literal without indexing, name from the static table. */
@@ -767,6 +857,10 @@ public abstract class AbstractHttp2HeaderLimitTck {
 
         /** RFC 7541 §6.2.1: literal with incremental indexing, literal name. */
         private static void writeLiteralIncremental(ByteArrayOutputStream out, String name, String value) {
+            writeLiteralIncremental(out, name, value.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private static void writeLiteralIncremental(ByteArrayOutputStream out, String name, byte[] value) {
             out.write(0x40);
             writeString(out, name);
             writeString(out, value);
@@ -781,7 +875,10 @@ public abstract class AbstractHttp2HeaderLimitTck {
 
         /** RFC 7541 §5.2: a string literal, Huffman bit clear. */
         private static void writeString(ByteArrayOutputStream out, String text) {
-            byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+            writeString(out, text.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private static void writeString(ByteArrayOutputStream out, byte[] bytes) {
             writeInteger(out, 0x00, 7, bytes.length);
             out.writeBytes(bytes);
         }

@@ -342,6 +342,23 @@ that publishes under a tenant context.
 
 ---
 
+## 0.12.x → 0.13 — HTTP/2 header values reach handlers one char per octet (ADR-071)
+
+The HTTP/2 decoder hands each header name and value to the handler one char per octet received
+(ISO-8859-1), as the HTTP/1.1 parser always has. Before, HTTP/2 decoded them as UTF-8 and replaced an
+invalid sequence with U+FFFD, so the same request reached a handler as different Strings over HTTP/1.1
+and HTTP/2. Names are lowercase ASCII tokens, so only values outside ASCII are affected.
+
+1. **Find handlers that read non-ASCII header values.** A value sent as UTF-8 `é` (`C3 A9`) arrives as
+   `Ã©`. If the handler expects UTF-8 text, decode the octets:
+
+   ```java
+   String text = new String(value.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+   ```
+
+2. **Nothing changes for ASCII values**, which are what HTTP field values carry in practice; and a value
+   carrying obs-text octets now reaches the handler unchanged instead of as U+FFFD.
+
 ## 0.11.x → 0.12.x
 
 Where each `### Breaking` entry of [`CHANGELOG.md`](CHANGELOG.md#0120--2026-09-30) is handled:
