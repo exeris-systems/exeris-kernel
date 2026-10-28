@@ -15,6 +15,13 @@ import java.util.Set;
  * carries. The bus compares ordinals, never strings, so a key must be registered before any
  * publication or subscription that names it.
  *
+ * <p><b>Thread confinement:</b> any thread; every method is safe for concurrent use, and
+ * {@link #ordinalOf(String)} is called from publish and subscribe threads.
+ * <p><b>Ownership:</b> the {@link EventEngine} owns the registry; a caller borrows it through
+ * {@link EventEngine#isolationRegistry()} for the life of that engine.
+ * <p><b>Lifetime:</b> there is no unregister: a key and its ordinal stay claimed for the life of the
+ * registry.
+ *
  * @implSpec An implementation does <b>not</b> assign ordinals: the caller supplies them through
  *           {@link IsolationKeySpec}, and the registry is the arbiter of uniqueness. Lookup is O(1),
  *           and {@link #ordinalOf(String)} performs no allocation.
