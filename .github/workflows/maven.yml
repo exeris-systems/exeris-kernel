@@ -440,19 +440,28 @@ jobs:
           # naming convention nobody can enforce is not a guard, and the guard is what the GA line
           # got in v0.12 while this one did not.
           #
-          # NOT settled here: this picks the highest GA tag, so the gate measures the CONVERGENCE
-          # delta rather than whether a change broke this line's own published surface
-          # (`preview/v0.11.1`). It reports zero stable breaks today only because JEP 401 makes
-          # adding `value` binary-compatible, so the sweep that most distinguishes the two lines
-          # moves no signature — working by a property of the feature rather than by design. Which
-          # baseline this branch's gate ought to use is a decision, tracked in the GA line's ROADMAP.
+          # The baseline is the GA release of this line's own milestone: the highest tag at or below
+          # the reactor version, without `-SNAPSHOT`. The gate therefore measures whether this line
+          # still carries the stable SPI of the release it was merged up from, which is what
+          # convergence means here. The highest tag overall would make the answer depend on release
+          # order: once the GA line releases the next milestone, a cut of this one would see that
+          # whole delta as breaks of its own. Adding `value` is binary-compatible under JEP 401, so
+          # this line's value-class sweep moves no stable signature.
           # `|| true` is load-bearing under `set -euo pipefail`, not defensive noise. grep exits 1
           # when it matches nothing, pipefail makes that the pipeline's status, and an assignment
           # from a failing command substitution aborts under -e — so without it the friendly
           # "no release tag found" branch three lines down is UNREACHABLE and the job hard-fails
           # instead. The two-stage form this replaced never had the hazard: `head -1` exits 0 on an
           # empty stream. Adding a third stage is what introduced it.
-          BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+          VERSION="$(sed -n 's:^    <version>\(.*\)</version>$:\1:p' pom.xml | head -1)"
+          TARGET="v${VERSION%-SNAPSHOT}"
+          BASELINE=""
+          for tag in $(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || true); do
+            if [ "$(printf '%s\n%s\n' "$tag" "$TARGET" | sort -V | tail -1)" = "$TARGET" ]; then
+              BASELINE="$tag"
+            fi
+          done
+          echo "reactor version: $VERSION"
           if [ -z "$BASELINE" ]; then
             echo "no release tag found — nothing to compare against"; exit 0
           fi
