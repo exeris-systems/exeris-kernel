@@ -15,7 +15,7 @@ last-verified: 2026-09-08
   > **Note:** the SPI surface for compile-time RBAC ships in 0.7.0 — annotation + role-bit catalogue (Sprint 8a), `RoleRegistry` interface + `roleMask()` carrier (Sprint 8b-ii). The APT processor in `exeris-kernel-build-config` ships in Sprint 8b-i; the Core `RoleCheckEnforcer` runtime decision helper ships in Sprint 8b-ii.
   >
   > **Corrected 2026-08-05.** This note previously said that wiring the generated registry into a bootstrap loader and auto-binding the enforcer into the transport admission path "remain operator concerns until the auto-bind landing". Both halves of that were wrong by 0.8.0 and the sentence misled a later audit, so it is replaced rather than amended. Registry wiring **shipped** in Sprint 4 (SEC-080): `GeneratedRoleRegistryLoader.load()` is called in production from `CommunityHttpRequestProcessor`, and `SecurityInterceptor` binds a `MaskedPrincipal` carrying the precomputed `roleMask()`. Enforcer auto-binding is not pending either — kernel-edge `methodId` enforcement was **descoped**, for the reason recorded in §"`@RequiresRole` Processing" below, which is the authoritative statement.
-- Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityOidcIdentityProvider`, `CommunityOidcTokenValidator`, `CommunityClaimsMapper` + `CommunityClaimsMapperResolver`, `CommunityJwksHttpKeySetSource` + `CommunityRotatingKeySet` + `StaticJwksKeyResolver`)
+- Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityOidcIdentityProvider`, `CommunityOidcTokenValidator`, `CommunityClaimsMapper` + `CommunityClaimsMapperResolver`, `CommunityJwksHttpKeySetSource` + `CommunityRotatingKeySet` + `StaticJwksKeyResolver`, `JwsVerificationKey` + `PinnedJwsAlgorithm`, `CommunityEd25519JwsVerifier` + `Ed25519PublicKeys`)
 - Core: `eu.exeris.kernel.core.security.*` (`SecurityInterceptor`, `StorageContextBridge`, `CitadelGuard`, `RouteAuthorizationEnforcer`, `RoleCheckEnforcer`, `GeneratedRoleRegistryLoader`, `MaskedPrincipal`)
 
 **Layer:** L1 (Data & Integrity)
@@ -200,6 +200,33 @@ public final class SecurityInterceptor {
 ### 3. Fail-Closed Enforcement at Transport Edge
 
 > **Corrected 2026-09-08.** This note previously said `TokenValidator` does not exist as a class. It does, since 0.10: `eu.exeris.kernel.spi.security.identity.TokenValidator` is the SPI interface for the cryptographic-verification half of an `IdentityProvider` (`kid → key → algorithm → signature → issuer → audience → time`), implemented by Community's `CommunityOidcTokenValidator`. Fail-closed token rejection at the transport edge is still handled inside `SecurityInterceptor.intercept()`, which catches `SecurityAuthenticationException` (raised by `TokenValidator` and by the `SecurityProvider`/`IdentityProvider` chain above it), emits `SecurityContextMissingEvent` (JFR), and returns `false` without propagating the exception.
+
+### Signing algorithms (Community OIDC)
+
+The Community validator verifies two JWS algorithms: RS256 over an RSA key, and EdDSA over an Ed25519 key. The
+key decides the algorithm, never the token:
+
+- **The pin is fixed when the key is installed.** A JWKS entry is pinned to the `alg` it declares when it declares
+  one, and otherwise to what its `kty` and `crv` verify: an RSA key to RS256, an `OKP` key on `Ed25519` to EdDSA. A
+  header spelling the algorithm `Ed25519` is accepted as EdDSA.
+- **The header must agree before the signature is checked.** A token whose header names any algorithm other than its
+  key's is denied with `EX-SEC-2002` (reason `signature-invalid`) without reaching a verifier, so a token cannot move
+  a key onto an algorithm it was not published for: not RS512 or PS256 under an RSA key, not RS256 or HS256 under an
+  Ed25519 key, not EdDSA under an RSA key. A `crit` header parameter is denied on both algorithms.
+- **Some JWKS entries are not installed**, and the rest of the document still loads: an entry without a `kid`, with
+  a `use` other than `sig`, of a key type or curve this validator does not verify (EC, `oct`, `X25519`, `X448`,
+  `Ed448`), or declaring an `alg` that its key type does not verify (for example an RSA key declaring `RSA-OAEP`). A
+  `kid` that two installable entries publish is installed for neither; a skipped entry does not count. A supported key whose material is invalid, an
+  Ed25519 `x` that is not 32 bytes for one, fails the load as `jwks-key-invalid`; a document with no installed key
+  fails it as `jwks-no-usable-keys`.
+- **A map of `RSAPublicKey` values is RS256.** The constructors and the `initialKeys` of `overJwksEndpoint` take RSA
+  keys and pin each to RS256; an Ed25519 key reaches the validator through a JWKS document.
+- **Ed25519 is verified by the JDK's default provider**, as Core's licence verifier does. No optional Nimbus crypto
+  dependency is added.
+- **There is no allow-list of algorithms.** The set is what the key types above verify, not a configuration; ES\*, PS\*
+  and Ed448 are out of scope.
+
+The contract is ADR-040 Amendment A1; `AbstractSecurityProviderTck.PerKeyAlgorithmPinContract` pins it.
 
 ---
 

@@ -359,6 +359,20 @@ and HTTP/2. Names are lowercase ASCII tokens, so only values outside ASCII are a
 2. **Nothing changes for ASCII values**, which are what HTTP field values carry in practice; and a value
    carrying obs-text octets now reaches the handler unchanged instead of as U+FFFD.
 
+## 0.12.x → 0.13 — the Community OIDC validator reads each JWKS key's `use` and `alg` (ADR-040 A1)
+
+The Community validator installs a JWKS key only when it can verify tokens with it: `use` absent or
+`sig`, an RSA key whose `alg` is absent or `RS256`, or an Ed25519 `OKP` key whose `alg` is absent,
+`EdDSA` or `Ed25519`. A `kid` that two such keys publish is installed for neither. Before, `use` and
+`alg` were ignored, so a key published for encryption, or under another algorithm, verified RS256
+tokens.
+
+1. **Check the issuer's JWKS.** Fetch the document and confirm that the key that signs your tokens
+   has `use` absent or `sig`, an `alg` absent or matching its type, and a `kid` no other signing key
+   shares. A token signed by a key that fails this is refused with `EX-SEC-2002`.
+2. **Ed25519 keys are now honoured.** A JWKS that already publishes an Ed25519 key has tokens signed
+   by it accepted. The key comes from the issuer you configured.
+
 ## 0.11.x → 0.12.x
 
 Where each `### Breaking` entry of [`CHANGELOG.md`](CHANGELOG.md#0120--2026-09-30) is handled:

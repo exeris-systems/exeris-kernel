@@ -20,6 +20,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 - **A finished saga keeps its snapshot row whenever a snapshot store is bound, and the engine no longer deletes rows (behaviour, stable `spi.flow`, ADR-013 A1).** With the default `terminalCatalogMaxSize = 0`, completion used to delete the instance's row; it now leaves a `COMPLETED` row in every terminal-catalog mode, so `exeris_saga_state` (or any `FlowSnapshotStore`) grows by one row per finished instance until the binder purges it. No signature changes. A binder needs a retention job; see MIGRATION.
 - **HTTP/2 header names and values reach handlers one char per octet (ISO-8859-1), as on HTTP/1.1 (Core `HpackDecoder`, ADR-071).** They were decoded as UTF-8 with an invalid sequence replaced by U+FFFD, so a valid UTF-8 value such as `é` (`C3 A9`) arrived as `é` and now arrives as `Ã©`, which is what the HTTP/1.1 parser has always delivered. A handler that expects UTF-8 in a non-ASCII value decodes `value.getBytes(StandardCharsets.ISO_8859_1)` as UTF-8; see MIGRATION.
+- **The Community OIDC validator installs only JWKS keys labelled for signing with the algorithm their type verifies (behaviour, Community security, ADR-040 A1).** A JWKS entry with `use` other than `sig`, an RSA key declaring an `alg` other than RS256 (for example `RSA-OAEP`), and a `kid` that two installable keys publish no longer verify tokens; before, `use` and `alg` were ignored and the last entry with a `kid` won. A deployment whose signing key carries such a label gets `EX-SEC-2002` until the issuer corrects it; see Security and MIGRATION.
 - **`TransportStream#write` blocks at the stream's outbound bound, `queueWrite` must never wait for the peer, and `TransportConfig` gains a component (SPI, stable `spi.transport`, ADR-007).** A Community `write` parks its caller while the stream holds `maxQueuedWriteBytes` (default 256 KiB) the peer has not taken, and never parks a reactor thread; a caller that holds a lock across `write` orders every other sender behind a slow peer, so a sender that must not block uses `queueWrite` and bounds the loans it has outstanding by their release. An implementor's `queueWrite` returns without waiting for the peer, apart from a connection that is still being established, and releases a loan once its bytes have left the stream's queue or the stream ends, not before; a transport whose `queueWrite` sends synchronously no longer conforms, and `AbstractTransportStreamTck.QueueWriteDoesNotWait` fails it. `TransportConfig` gains the component `maxQueuedWriteBytes` after `maxActiveStreams`; the 0.12 nine-argument and eight-argument constructors stay and apply the default, so source and binary compatibility hold, but a record pattern over `TransportConfig` or reflection over its components sees a different shape. See `MIGRATION.md`.
 
 - **A declared `EntitlementRequirement` with no manifest stops the boot in every environment, development included (ADR-088, ADR-089).** `EX-LIC-0005` is raised whatever the `environment` key says; a commercial artifact now needs a manifest wherever it runs, and a developer runs it under a developer licence. The verified manifest's environment and capability checks run in every environment too. See `MIGRATION.md`.
@@ -67,6 +68,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   affects 0.11.0–0.12.0 with a policy bound). A `HEAD` rule now governs only a request dispatched
   to a `HEAD` route; where the `GET` handler runs, the `GET` rule does. `HttpRouter.routeMethod`
   names the method of the route a request is dispatched to.
+
+- **A JWKS key labelled for another use or algorithm no longer verifies tokens (ADR-040 A1).** The Community OIDC validator installs a JWKS entry only when its `use` is absent or `sig`, its `alg` is absent or the one its key type verifies (RS256 for an RSA key, EdDSA for an Ed25519 key), and no other installed entry publishes its `kid`. An RSA key declaring `RSA-OAEP` or `RS512`, a key with `use: enc`, and both entries of a `kid` that two installable keys publish are skipped; before, `use` and `alg` were ignored and the last of two entries with one `kid` won, so a key published for encryption, or a second key sharing a signing key's `kid`, could verify tokens. A deployment whose JWKS carries such an entry for the key that signs its tokens now sees `EX-SEC-2002` until the issuer corrects the entry.
 
 ### Changed
 
@@ -312,6 +315,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `TransactionRetryPolicy.fromConfig`; a `maxAttempts` below `1` fails the boot. Enterprise binds
   the slot in its own persistence subsystem separately.
 
+- **The Community OIDC validator accepts EdDSA (Ed25519) tokens, with the algorithm pinned per key (ADR-040 A1).** A JWKS entry of type `OKP` on curve `Ed25519` is installed beside the RSA entries and verifies tokens whose header names `EdDSA` (or `Ed25519`); an RSA entry still verifies only RS256. The key decides the algorithm: a header that names another algorithm than its key's is denied with `EX-SEC-2002` before any signature is checked, whichever key the `kid` selects. Ed25519 is verified by the JDK's default provider, so no dependency is added. A JWKS that already publishes an Ed25519 key, which the validator ignored, now has it honoured, and an issuer that signs access tokens with Ed25519 needs no change to its tokens. `ES*`, `PS*` and `Ed448` stay unsupported, and the set is not configurable.
+
 ### Added — verification
 
 - **The shared-scope matrix is bound on `uuid` keys.** `CommunityPersistenceSharedScopeUuidIT` runs
@@ -341,6 +346,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   where a skip is a gap, and a total. The OpenSSL-gated Community classes that no matrix step selected
   are now selected and floored, and the Core TCK bindings that skip by design have a floor instead of an
   exemption.
+
+- **The key's algorithm, not the header's, is a TCK contract.** `AbstractSecurityProviderTck.PerKeyAlgorithmPinContract` accepts an EdDSA token under its Ed25519 key's `kid` and denies an EdDSA token under an RSA key's `kid`, an RS256 token under an Ed25519 key's `kid`, an Ed25519-signed token whose header names RS256, and an RSA-signed token under an algorithm its key is not pinned to (RS512). The five hooks default to existing fixtures, so a binding that verifies no EdDSA token stays green; Community binds all five.
 
 ### Fixed
 

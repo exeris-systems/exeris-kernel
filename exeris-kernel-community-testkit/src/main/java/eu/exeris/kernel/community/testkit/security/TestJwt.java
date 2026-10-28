@@ -17,34 +17,43 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
+import java.security.Signature;
 import java.security.interfaces.RSAPublicKey;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
- * Signed-JWT fixture for security contract tests: builds RSA-2048 and, for algorithm-confusion
- * tests, HMAC-signed tokens without a running identity provider.
+ * Signed-JWT fixture for security contract tests: builds RSA-2048, Ed25519 and, for
+ * algorithm-confusion tests, HMAC-signed tokens without a running identity provider.
  *
  * <p>Every RS256 token is signed with the single {@link #TEST_KEY_PAIR} generated once for the
  * lifetime of the JVM; {@link #keySet()} exposes the matching public key under {@link #TEST_KID}
  * for a validator fixture to resolve, and {@link #UNKNOWN_KID} is a kid deliberately absent from
- * that key set, for negative tests.
+ * that key set, for negative tests. An Ed25519 token ({@link Builder#signedWithEd25519()}) is
+ * signed with {@link #TEST_ED25519_KEY_PAIR}, whose public key a fixture installs under
+ * {@link #TEST_ED25519_KID}; {@link #keySet()} does not include it, because that map is RSA-typed.
  *
  * <p>What it deliberately does not simulate: there is no JWKS endpoint and no key rotation, and
  * {@link Builder#expired()} back-dates {@code exp} by a fixed offset rather than advancing a clock.
- * {@link Builder#algNone()} and {@link Builder#hmacConfusion()} mint tokens for the {@code alg=none}
- * downgrade and the RS256-to-HS256 confusion attack respectively, and {@link Builder#tamperedSignature()}
- * corrupts a signed token's signature bytes — together with {@link Builder#claimRaw(String, Object)}
- * for wrong-typed claims, the builder targets the malformed and adversarial inputs a validator
- * binding test needs, not the shape of a real identity provider.
+ * {@link Builder#algNone()}, {@link Builder#hmacConfusion()} and
+ * {@link Builder#hmacConfusionOverEd25519Key()} mint tokens for the {@code alg=none} downgrade and the
+ * symmetric-MAC confusion attacks, {@link Builder#headerAlgorithm(String)} and
+ * {@link Builder#criticalHeaderParam(String, String)} shape the header a validator must pin against,
+ * and {@link Builder#tamperedSignature()} corrupts a signed token's signature bytes. Together with
+ * {@link Builder#claimRaw(String, Object)} for wrong-typed claims, the builder targets the malformed
+ * and adversarial inputs a validator binding test needs, not the shape of a real identity provider.
  *
  * <p>Used by Community's {@code SecurityProvider} TCK binding test and by other security
  * integration tests in this repository.
@@ -80,14 +89,23 @@ public final class TestJwt {
     /** Default {@code sub} claim for a token built without calling {@link Builder#subject(String)}. */
     public static final String TEST_SUBJECT = "00000000-0000-7000-8000-000000000001";
 
+    /** The stable test kid used for the Ed25519 test key pair. */
+    public static final String TEST_ED25519_KID = "test-ed25519-key-1";
+
     /** The test RSA key pair generated once for the lifetime of the JVM. */
     public static final KeyPair TEST_KEY_PAIR;
+
+    /** The test Ed25519 key pair generated once for the lifetime of the JVM. */
+    public static final KeyPair TEST_ED25519_KEY_PAIR;
+
+    private static final int ED25519_RAW_KEY_LENGTH = 32;
 
     static {
         try {
             KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
             kpg.initialize(2048);
             TEST_KEY_PAIR = kpg.generateKeyPair();
+            TEST_ED25519_KEY_PAIR = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         } catch (NoSuchAlgorithmException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -105,6 +123,26 @@ public final class TestJwt {
      */
     public static RSAPublicKey testPublicKey() {
         return (RSAPublicKey) TEST_KEY_PAIR.getPublic();
+    }
+
+    /**
+     * The Ed25519 public key half of {@link #TEST_ED25519_KEY_PAIR}.
+     *
+     * @return the test Ed25519 public key
+     */
+    public static PublicKey testEd25519PublicKey() {
+        return TEST_ED25519_KEY_PAIR.getPublic();
+    }
+
+    /**
+     * The raw 32-byte Ed25519 public key (RFC 8032 encoding, the JWK {@code x} value before
+     * base64url), the trailing bytes of the key's X.509 encoding.
+     *
+     * @return a fresh copy of the 32 raw public key bytes
+     */
+    public static byte[] testEd25519PublicKeyRaw() {
+        byte[] encoded = TEST_ED25519_KEY_PAIR.getPublic().getEncoded();
+        return Arrays.copyOfRange(encoded, encoded.length - ED25519_RAW_KEY_LENGTH, encoded.length);
     }
 
     /**
@@ -166,6 +204,11 @@ public final class TestJwt {
         private boolean omitKid;
         private boolean algNone;
         private boolean hmacConfusion;
+        private boolean ed25519;
+        private boolean hmacOverEd25519;
+        private String headerAlgorithm;
+        private String criticalName;
+        private String criticalValue;
         private final Map<String, String> customClaims = new LinkedHashMap<>();
         private final Map<String, Object> rawClaims = new LinkedHashMap<>();
 
@@ -278,6 +321,7 @@ public final class TestJwt {
         public Builder algNone() {
             this.algNone = true;
             this.hmacConfusion = false;
+            this.hmacOverEd25519 = false;
             return this;
         }
 
@@ -295,7 +339,69 @@ public final class TestJwt {
          */
         public Builder hmacConfusion() {
             this.hmacConfusion = true;
+            this.hmacOverEd25519 = false;
             this.algNone = false;
+            return this;
+        }
+
+        /**
+         * Signs the token with {@link #TEST_ED25519_KEY_PAIR}; the header names {@code EdDSA}
+         * unless {@link #headerAlgorithm(String)} overrides it. Resets {@link #algNone()} and the
+         * HMAC-confusion modes, and {@link #tamperedSignature()} still applies.
+         *
+         * @return this builder
+         */
+        public Builder signedWithEd25519() {
+            this.ed25519 = true;
+            this.algNone = false;
+            this.hmacConfusion = false;
+            this.hmacOverEd25519 = false;
+            return this;
+        }
+
+        /**
+         * Names {@code alg} in the JWS header instead of the algorithm the signing mode implies.
+         *
+         * <p>With the default RSA signing the token is genuinely signed with that algorithm
+         * ({@code RS256/384/512} or {@code PS256/384/512}; any other name throws
+         * {@link IllegalStateException} from {@link #serialize()}). With
+         * {@link #signedWithEd25519()} only the header changes and the signature stays Ed25519,
+         * which models a header that disagrees with the key that signed.
+         *
+         * @param alg the JWS algorithm name for the header
+         * @return this builder
+         */
+        public Builder headerAlgorithm(String alg) {
+            this.headerAlgorithm = Objects.requireNonNull(alg, "alg must not be null");
+            return this;
+        }
+
+        /**
+         * Produces a token signed with <b>HS256</b> using the X.509 bytes of the Ed25519
+         * <i>public</i> key as the HMAC secret: the symmetric-MAC confusion attack aimed at an
+         * Ed25519 key. The {@code kid} is retained so the token reaches the algorithm gate.
+         *
+         * @return this builder
+         */
+        public Builder hmacConfusionOverEd25519Key() {
+            this.hmacOverEd25519 = true;
+            this.hmacConfusion = false;
+            this.ed25519 = false;
+            this.algNone = false;
+            return this;
+        }
+
+        /**
+         * Adds a {@code crit} header listing {@code name} and a header parameter {@code name} with
+         * {@code value}, so the token carries a critical extension a verifier does not understand.
+         *
+         * @param name  the critical header parameter name
+         * @param value the parameter's string value
+         * @return this builder
+         */
+        public Builder criticalHeaderParam(String name, String value) {
+            this.criticalName = Objects.requireNonNull(name, "name must not be null");
+            this.criticalValue = Objects.requireNonNull(value, "value must not be null");
             return this;
         }
 
@@ -342,15 +448,25 @@ public final class TestJwt {
                     return new PlainJWT(claims).serialize();
                 }
 
-                JWSAlgorithm alg = hmacConfusion ? JWSAlgorithm.HS256 : JWSAlgorithm.RS256;
+                JWSAlgorithm alg = headerAlgorithmFor();
                 JWSHeader.Builder headerBuilder = new JWSHeader.Builder(alg);
                 if (!omitKid) {
                     headerBuilder.keyID(kid);
                 }
-                SignedJWT jwt = new SignedJWT(headerBuilder.build(), claims);
-                jwt.sign(signerFor());
+                if (criticalName != null) {
+                    headerBuilder.criticalParams(Set.of(criticalName));
+                    headerBuilder.customParam(criticalName, criticalValue);
+                }
+                JWSHeader header = headerBuilder.build();
+                SignedJWT jwt = new SignedJWT(header, claims);
 
-                String serialized = jwt.serialize();
+                String serialized;
+                if (ed25519) {
+                    serialized = signEd25519(jwt);
+                } else {
+                    jwt.sign(signerFor());
+                    serialized = jwt.serialize();
+                }
                 if (tamperSignature) {
                     serialized = tamperSignatureSegment(serialized);
                 }
@@ -381,7 +497,33 @@ public final class TestJwt {
             return claimsBuilder.build();
         }
 
+        private JWSAlgorithm headerAlgorithmFor() {
+            if (headerAlgorithm != null) {
+                return JWSAlgorithm.parse(headerAlgorithm);
+            }
+            if (hmacConfusion || hmacOverEd25519) {
+                return JWSAlgorithm.HS256;
+            }
+            return ed25519 ? JWSAlgorithm.EdDSA : JWSAlgorithm.RS256;
+        }
+
+        /** Signs the JWS signing input with the JDK's Ed25519 and joins the compact form by hand. */
+        private String signEd25519(SignedJWT jwt) {
+            try {
+                Signature signature = Signature.getInstance("Ed25519");
+                signature.initSign(TEST_ED25519_KEY_PAIR.getPrivate());
+                String signingInput = new String(jwt.getSigningInput(), StandardCharsets.US_ASCII);
+                signature.update(signingInput.getBytes(StandardCharsets.US_ASCII));
+                return signingInput + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(signature.sign());
+            } catch (GeneralSecurityException ex) {
+                throw new IllegalStateException("Failed to sign test JWT with Ed25519", ex);
+            }
+        }
+
         private JWSSigner signerFor() throws JOSEException {
+            if (hmacOverEd25519) {
+                return new MACSigner(TEST_ED25519_KEY_PAIR.getPublic().getEncoded());
+            }
             if (hmacConfusion) {
                 // RS256->HS256 confusion: HMAC keyed on the RSA public key's encoded bytes
                 // (>= 256 bits, satisfying the HS256 minimum-secret requirement).

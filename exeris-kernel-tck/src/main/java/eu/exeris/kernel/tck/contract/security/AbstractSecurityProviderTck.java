@@ -41,6 +41,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   <li>The binding's provider selection returns the highest-priority provider among staged rivals</li>
  *   <li>An unsecured ({@code alg=none}) or algorithm-confused (symmetric MAC keyed on an
  *       asymmetric public key) token is denied, never accepted (algorithm downgrade defense)</li>
+ *   <li>A token under an algorithm its key was not pinned to is denied: the algorithm is fixed
+ *       by the key that verifies, so a header may only agree with it, never choose it
+ *       ({@link #createEdDsaTokenUnderRsaKidBuffer()} and its siblings)</li>
  *   <li>A token with an unknown or missing {@code kid}, an expired {@code exp}, a wrong
  *       {@code iss}/{@code aud}, or a tampered signature is denied</li>
  *   <li>An isolation strategy claim resolves to the matching {@link StorageContext}: absent
@@ -266,6 +269,77 @@ public abstract class AbstractSecurityProviderTck {
      *         invalid-token default for bindings that cannot mint one
      */
     protected LoanedBuffer createAlgConfusionTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding a valid, correctly signed token whose header names
+     * {@code EdDSA} and whose {@code kid} resolves to an Ed25519 verification key.
+     * The provider MUST accept it.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createValidTokenBuffer()} for bindings that verify no EdDSA
+     * token; a binding that accepts EdDSA SHOULD override with a real one.
+     *
+     * @return a loaned buffer holding an acceptable EdDSA token, or the valid-token default
+     */
+    protected LoanedBuffer createEdDsaValidTokenBuffer() {
+        return createValidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding an EdDSA token, signed by an Ed25519 key, presented
+     * under the {@code kid} of a key that verifies a different algorithm (an RSA key).
+     * The provider MUST deny it — the key decides the algorithm, so a header cannot move a token
+     * onto another key's algorithm.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding an EdDSA token under an RSA key's {@code kid}, or the
+     *         invalid-token default
+     */
+    protected LoanedBuffer createEdDsaTokenUnderRsaKidBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding an RS256 token presented under the {@code kid} of an
+     * Ed25519 key. The provider MUST deny it.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding an RS256 token under an Ed25519 key's {@code kid}, or the
+     *         invalid-token default
+     */
+    protected LoanedBuffer createRs256TokenUnderEdDsaKidBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding a token signed by an Ed25519 key, under that key's
+     * {@code kid}, whose header names a different algorithm (RS256) than the key's.
+     * The provider MUST deny it — a header that disagrees with the key's algorithm is never
+     * reconciled in the header's favour.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding an Ed25519-signed token whose header names RS256, or the
+     *         invalid-token default
+     */
+    protected LoanedBuffer createEdDsaSignedTokenNamingRs256Buffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding a token signed by an RSA key, under that key's own
+     * {@code kid}, with an RSA algorithm the key is not pinned to (RS512). The signature is
+     * valid for that algorithm; the provider MUST still deny it.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding a validly signed RSA token under an unpinned algorithm, or
+     *         the invalid-token default
+     */
+    protected LoanedBuffer createRsaTokenUnderUnpinnedAlgorithmBuffer() {
         return createInvalidTokenBuffer();
     }
 
@@ -791,6 +865,57 @@ public abstract class AbstractSecurityProviderTck {
                             .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
                                     assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
                 }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Per-key algorithm pin
+    // =========================================================================
+
+    @Nested
+    @DisplayName("authenticate() — the key's algorithm, not the header's")
+    class PerKeyAlgorithmPinContract {
+
+        @Test
+        @DisplayName("accepts an EdDSA token under the kid of its Ed25519 key")
+        void acceptsEdDsaTokenUnderItsOwnKey() {
+            try (LoanedBuffer token = createEdDsaValidTokenBuffer()) {
+                AuthenticationResult result = provider.authenticate(token);
+                assertThat(result).isNotNull();
+                assertThat(result.principal()).isNotNull();
+            }
+        }
+
+        @Test
+        @DisplayName("denies an EdDSA token presented under an RSA key's kid")
+        void deniesEdDsaTokenUnderRsaKid() {
+            assertDenied(createEdDsaTokenUnderRsaKidBuffer());
+        }
+
+        @Test
+        @DisplayName("denies an RS256 token presented under an Ed25519 key's kid")
+        void deniesRs256TokenUnderEdDsaKid() {
+            assertDenied(createRs256TokenUnderEdDsaKidBuffer());
+        }
+
+        @Test
+        @DisplayName("denies a token whose header names another algorithm than its Ed25519 key's")
+        void deniesHeaderNamingAnotherAlgorithmThanItsEd25519Key() {
+            assertDenied(createEdDsaSignedTokenNamingRs256Buffer());
+        }
+
+        @Test
+        @DisplayName("denies an RSA-signed token under an algorithm its key is not pinned to")
+        void deniesRsaTokenUnderUnpinnedAlgorithm() {
+            assertDenied(createRsaTokenUnderUnpinnedAlgorithmBuffer());
+        }
+
+        private void assertDenied(LoanedBuffer buffer) {
+            try (LoanedBuffer token = buffer) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
         }
     }

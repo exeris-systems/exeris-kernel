@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
-import java.security.interfaces.RSAPublicKey;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -50,8 +49,8 @@ class CommunityJwksKeyRotationJfrTest {
     void emitsEachRotationPhase(@TempDir Path tmp) throws Exception {
         MutableClock clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
         ArmedKeySetSource source = new ArmedKeySetSource();
-        RSAPublicKey key = TestJwt.testPublicKey();
-        Map<String, RSAPublicKey> initial = Map.of(TestJwt.TEST_KID, key);
+        JwsVerificationKey key = JwsVerificationKey.rs256(TestJwt.testPublicKey());
+        Map<String, JwsVerificationKey> initial = Map.of(TestJwt.TEST_KID, key);
         CommunityRotatingKeySet keySet =
                 new CommunityRotatingKeySet(initial, source, KeyRotationPolicy.defaults(), clock);
 
@@ -97,10 +96,10 @@ class CommunityJwksKeyRotationJfrTest {
     /** Source that can be armed to return a new key set or to fail the next refresh. */
     private static final class ArmedKeySetSource implements KeySetSource {
 
-        private Map<String, RSAPublicKey> next;
+        private Map<String, JwsVerificationKey> next;
         private boolean failArmed;
 
-        private void armNewKeySet(Map<String, RSAPublicKey> keys) {
+        private void armNewKeySet(Map<String, JwsVerificationKey> keys) {
             this.next = keys;
         }
 
@@ -109,7 +108,7 @@ class CommunityJwksKeyRotationJfrTest {
         }
 
         @Override
-        public Map<String, RSAPublicKey> load() throws KeySetRefreshException {
+        public Map<String, JwsVerificationKey> load() throws KeySetRefreshException {
             if (failArmed) {
                 throw new KeySetRefreshException("refresh-failed");
             }

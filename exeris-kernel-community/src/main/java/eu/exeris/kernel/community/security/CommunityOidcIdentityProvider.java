@@ -34,9 +34,9 @@ import java.util.function.BiFunction;
  * kernel-owned fail-closed {@link IdentityStorageMapping} into a single
  * {@link AuthenticationResult}.
  *
- * <p>The static {@code kid → RSAPublicKey} map path resolves keys directly from a fixed snapshot;
- * the rotating-key-set path composes the {@link CommunityRotatingKeySet} seam through the
- * {@link JwksKeyResolver} constructor.
+ * <p>The static {@code kid → RSAPublicKey} map path resolves RSA keys, each pinned to RS256, directly
+ * from a fixed snapshot; the rotating-key-set path composes the {@link CommunityRotatingKeySet}
+ * seam through the {@link JwksKeyResolver} constructor.
  *
  * <p>A provider built by {@link #overJwksEndpoint} owns the client engine its key set is fetched
  * with, and {@link #close()} releases it. A provider over a fixed key map holds nothing to close.
@@ -207,7 +207,8 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider, Au
         CommunityJwksEndpoint endpoint = CommunityJwksEndpoint.of(jwksUri);
         CommunityJwksHttpKeySetSource source = CommunityJwksHttpKeySetSource.overEndpoint(endpoint, engineFactory);
         try {
-            JwksKeyResolver resolver = new CommunityRotatingKeySet(initialKeys, source, policy, clock);
+            JwksKeyResolver resolver = new CommunityRotatingKeySet(
+                    JwsVerificationKey.rs256All(initialKeys), source, policy, clock);
             // Same clock drives both rotation timing and token-expiry — no wall-clock skew between them.
             TokenValidator validator =
                     new CommunityOidcTokenValidator(resolver, expectedIssuer, expectedAudience, clock);

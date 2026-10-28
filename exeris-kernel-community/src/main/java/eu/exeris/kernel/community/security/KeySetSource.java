@@ -4,7 +4,6 @@
  */
 package eu.exeris.kernel.community.security;
 
-import java.security.interfaces.RSAPublicKey;
 import java.util.Map;
 
 /**
@@ -24,8 +23,8 @@ import java.util.Map;
     /**
      * Loads the current key-set snapshot.
      *
-     * @return an immutable snapshot of {@code kid -> RSA public key}
+     * @return an immutable snapshot of {@code kid -> verification key}, each key pinned to its algorithm
      * @throws KeySetRefreshException when a trustworthy snapshot cannot be produced
      */
-    Map<String, RSAPublicKey> load() throws KeySetRefreshException;
+    Map<String, JwsVerificationKey> load() throws KeySetRefreshException;
 }
