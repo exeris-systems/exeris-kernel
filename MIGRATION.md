@@ -373,6 +373,38 @@ tokens.
 2. **Ed25519 keys are now honoured.** A JWKS that already publishes an Ed25519 key has tokens signed
    by it accepted. The key comes from the issuer you configured.
 
+## 0.12.x → 0.13 — graph: multi-hop paths, explicit shortest path and refused traversals (ADR-102)
+
+`…spi.graph` is `preview`, and 0.13 changes its shape for implementers and its behaviour for callers.
+This section covers both.
+
+1. **An out-of-tree `GraphSession` implements three methods.** `traversePath(GraphPathSpec)` returns the
+   node ids a multi-hop path reaches (`List<UUID>`). `streamPathJson(GraphPathSpec)` returns the same
+   result as a JSON `LoanedBuffer`. `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract. The
+   two-argument `findShortestPath(UUID, UUID)` is a default that throws `GraphQueryException`
+   (`EX-GRPH-5002`, query type `SHORTEST_PATH`), so an implementation can no longer inherit a
+   descriptor-less shortest path.
+2. **An out-of-tree `GraphDialect` implements `buildPathQuery(List<GraphHop>)`.** `buildMatchQuery` and
+   `buildMultiHopQuery` are expressed through it on both Community dialects. Their result column is `id`,
+   where it was `target_id`, and the SQL binds the start node through `CAST($1 AS uuid)` in a leading CTE.
+   A caller that reads the column of a transpiled query by name moves to `id`.
+3. **Callers of shortest path pass a descriptor.** Replace `findShortestPath(source, target)` with
+   `findShortestPath(edge, source, target)`. The two-argument form is refused, and deprecated for removal.
+4. **Traversals honour the descriptor's direction.** `traverseBreadthFirst` and `streamBfsJson` with an
+   `INCOMING`, `BOTH` or bidirectional descriptor return a different set than in 0.12. A caller that
+   relied on the 0.12 result uses an explicit `OUTGOING` descriptor.
+5. **Expect two new refusals on Community.**
+   - A traversal whose path bound (`Σ maxRepeat`, or `maxDepth` for breadth-first) exceeds 64 is refused
+     before any I/O with `EX-GRPH-5002`, query type `PATH_LIMIT`.
+   - A traversal under a tenant context the backend cannot scope is refused before any I/O:
+     - SQL/PGQ serves `SEPARATED_SCHEMA` and `DEDICATED`, and refuses `SHARED`, or any tenant context
+       when no `PersistenceEngine` is bound;
+     - Cypher refuses every tenant context;
+     - system-scope callers are unaffected.
+6. **TCK bindings.** A binding of `AbstractGraphSessionLiveContractTck` implements
+   `scopableStrategies()` and `tenantContexts(IsolationStrategy)`, and an implementation that cannot scope
+   a traversal refuses it.
+
 ## 0.11.x → 0.12.x
 
 Where each `### Breaking` entry of [`CHANGELOG.md`](CHANGELOG.md#0120--2026-09-30) is handled:
