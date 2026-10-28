@@ -143,6 +143,8 @@ final class Http2TestClient implements AutoCloseable {
             socket.connect(new InetSocketAddress("127.0.0.1", port), (int) CONNECT_TIMEOUT_MILLIS);
             SSLParameters parameters = socket.getSSLParameters();
             parameters.setApplicationProtocols(new String[] {"h2"});
+            // The certificate names IP:127.0.0.1, so the client verifies the server it dialled, not only the chain.
+            parameters.setEndpointIdentificationAlgorithm("HTTPS");
             socket.setSSLParameters(parameters);
             socket.startHandshake();
             if (!"h2".equals(socket.getApplicationProtocol())) {
