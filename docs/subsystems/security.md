@@ -165,12 +165,13 @@ public interface PrincipalContext {
 ### 2. Context Binding with Scope Inheritance (Core)
 
 The `ScopedValue` bound here is visible to code running inside the binding scope on the thread that
-established it. It is not inherited by threads forked from it: the kernel forks through
-`eu.exeris.kernel.core.concurrent.StructuredScope`, whose subtasks carry only the bindings their opener
-passes (`StructuredScope.open(ScopedValue.Carrier)`) and inherit none (ADR-066), and a thread started
-with `Thread.ofVirtual()` or `Thread.ofPlatform()` inherits no binding at all. Within a request, the
-handler reads `PrincipalContext` without a method parameter; a handler that forks work re-binds what
-that work needs.
+established it. A thread started with `Thread.ofVirtual()` or `Thread.ofPlatform()` inherits nothing,
+and a `StructuredTaskScope` fork (a preview API) inherits the bindings in effect when its scope opened.
+The kernel's own forks on the default line go through `eu.exeris.kernel.core.concurrent.StructuredScope`
+(ADR-066), whose subtasks see only the carrier passed to `open(ScopedValue.Carrier)`, and nothing after
+`openWithoutBindings()`. Within a request, the handler reads `PrincipalContext` without a method
+parameter; a handler that forks work through `StructuredScope` or a plain thread re-binds what that work
+needs.
 
 > **Citadel Contract:** `SecurityInterceptor.interceptPreAuthenticated(PrincipalContext, Runnable)` does
 > **not** accept a `StorageContext` parameter from the caller.
@@ -203,7 +204,7 @@ public final class SecurityInterceptor {
 
 ### 3. Fail-Closed Enforcement at Transport Edge
 
-`eu.exeris.kernel.spi.security.identity.TokenValidator` (since 0.10) is the SPI interface for the cryptographic-verification half of an `IdentityProvider` (`kid → key → algorithm → signature → issuer → audience → expiry → isolation-claim typing`), implemented by Community's `CommunityOidcTokenValidator`. Fail-closed token rejection at the transport edge is handled inside `SecurityInterceptor.intercept()`: a `SecurityAuthenticationException` (raised by `TokenValidator` and by the `SecurityProvider`/`IdentityProvider` chain above it) emits `SecurityContextMissingEvent` (JFR) with reason `TOKEN_INVALID`, any other provider failure with `PROVIDER_ERROR`, and `intercept()` returns `false` without propagating the exception.
+`eu.exeris.kernel.spi.security.identity.TokenValidator` (since 0.10) is the SPI interface for the cryptographic-verification half of an `IdentityProvider` (`kid → key → algorithm → signature → issuer → audience → time`), implemented by Community's `CommunityOidcTokenValidator`, which then types the isolation claims. Fail-closed token rejection at the transport edge is handled inside `SecurityInterceptor.intercept()`: a `SecurityAuthenticationException` (raised by `TokenValidator` and by the `SecurityProvider`/`IdentityProvider` chain above it) emits `SecurityContextMissingEvent` (JFR) with reason `TOKEN_INVALID`, any other provider failure with `PROVIDER_ERROR`, and `intercept()` returns `false` without propagating the exception; an `Error` is recorded with `PROVIDER_ERROR`, then rethrown.
 
 ### Signing algorithms (Community OIDC)
 
@@ -246,8 +247,8 @@ The contract is ADR-040 Amendment A1; `AbstractSecurityProviderTck.PerKeyAlgorit
 
 - Token extraction and validation in the Community HTTP request processor (`CommunityHttpRequestProcessor` / `CommunityHttpRequestDispatcher`, layered over the native TCP carrier) — `SecurityInterceptor` is wired at the HTTP layer, not inside the raw TCP transport driver itself.
 - `ScopedValue` propagation during parallel processing: verify `PrincipalContext` is accessible in a
-  subtask only when the opener of its `StructuredScope` passes the binding, and unbound in a thread
-  started any other way.
+  `StructuredScope` subtask only when the opener passes the binding, accessible in a `StructuredTaskScope`
+  fork, and unbound in a plainly started thread.
 - RLS enforcement: DB queries are physically restricted to the bound tenant — verified by attempting
   cross-tenant access and asserting row count is zero.
 - Fail-Closed: invalid token at transport edge results in `EX-SEC-2002` and zero downstream calls.

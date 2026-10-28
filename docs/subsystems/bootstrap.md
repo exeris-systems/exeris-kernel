@@ -526,14 +526,12 @@ failure is logged and never fails the subsystem.
   subsystem is initialized
 - `CoreBootstrapOrchestratorTckTest`, `CoreBootstrapOrchestratorRealSortTckTest` — `AbstractBootstrapOrchestratorTck`
 - `CoreFailurePolicyTckTest` — `AbstractFailurePolicyTck` (FAIL_FAST vs DEGRADE)
-- `CoreGracefulShutdownTckTest` — `AbstractGracefulShutdownTck` (stop order and drain, stub subsystems through the real bootstrap)
+- `CoreGracefulShutdownTckTest` — `AbstractGracefulShutdownTck` (stop order and drain, stub subsystems through the real bootstrap, with its trigger wired to `KernelBootstrap.shutdown()`)
 - `CoreSubsystemErrorRoutingTckTest` — `AbstractSubsystemErrorRoutingTck` (routing non-fatal `Error` through failure policy; `VirtualMachineError` raw propagation)
 - `CoreBootstrapZeroAllocTckTest` — `BootstrapZeroAllocTck`
 - `CoreHealthMonitorTckTest`, `CoreProviderBindingLifecycleTckTest`, `KernelBootstrapTest`, `ScopedValueBindingTest`
 - `KernelBootstrapShutdownTest`, `SubsystemOrchestratorShutdownTest` — the `shutdown()` entry point, the hook
   lifecycle, and the concurrency rules (racing callers, re-entry, a stop requested during boot)
-- `CoreGracefulShutdownTckTest` binds `AbstractGracefulShutdownTck` over stub subsystems, with its trigger wired
-  to `KernelBootstrap.shutdown()`
 
 ### Integration Tests (Community)
 

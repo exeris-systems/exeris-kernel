@@ -535,8 +535,9 @@ the old or new value itself. In regulated environments, this event stream is the
 > banned parsers, the raw `watch()` no-op contract on the per-tier provider in isolation).
 > `AbstractDynamicConfigRegistryTck` (bound by `CoreDynamicConfigRegistryTckTest`) separately covers
 > `KernelConfigRegistry`'s register/fireReload/seal dispatch contract. Neither exercises EX-CFG-1001 or
-> EX-CFG-1002; the only coverage of a config error code on a live path is `ContractBootstrapStepTest`
-> (`EX-CFG-1002` for `environment`). Full end-to-end TCK coverage (a bound provider driving a real file change through `KernelBootstrap`) is still pending.
+> EX-CFG-1002; the only live-path coverage of EX-CFG-1001/1002 is `ContractBootstrapStepTest`
+> (`EX-CFG-1002` for `environment`). `DynamicConfigFileWatcherTest` drives a real file change and asserts the
+> EX-CFG-1004 refusal event. Full end-to-end TCK coverage (a bound provider driving a real file change through `KernelBootstrap`) is still pending.
 
 ---
 

@@ -18,7 +18,7 @@ provider implementations, bootstrap wiring, tests, and e2e assets.
 - `compile`: `exeris-kernel-spi` (SPI contracts — The Wall)
 - `compile`: `exeris-kernel-core` (bootstrap/runtime infrastructure shared across tiers)
 - `compile`: `slf4j-api`, `jctools-core`, HikariCP (persistence pool), `nimbus-jose-jwt` (JWKS/claims),
-  `jackson-databind` (JSON body encoding), `bcprov-jdk18on` (Argon2id), `neo4j-java-driver` (Cypher graph binding)
+  `jackson-databind` (JSON body encoding and decoding, event payload codec), `bcprov-jdk18on` (Argon2id), `neo4j-java-driver` (Cypher graph binding)
 - `optional`: the PostgreSQL JDBC driver
 - `test`: `exeris-kernel-tck`, `exeris-kernel-community-testkit`
 
@@ -43,7 +43,7 @@ Every incoming request traverses this pipeline. Annotations mark the **memory do
 flowchart TD
     NIC(["🌐 NIC / TCP Packet"])
 
-    A["① TCP accept()\n<b>NativeTcpCarrier — java.nio selector reactors</b>\nFile Descriptor acquired\n<i>[OS Kernel → JVM boundary]</i>"]
+    A["① TCP accept()\n<b>NativeTcpCarrier — NIO ServerSocketChannel, selector reactors</b>\nFile Descriptor acquired\n<i>[OS Kernel → JVM boundary]</i>"]
 
     B["② LoanedBuffer.allocate()\n<b>CommunityMemoryAllocator (per-shard Arena pool)</b>\nRaw bytes written to MemorySegment\nref-count = 1\n<i>[OFF-HEAP]</i>"]
 
@@ -93,7 +93,7 @@ flowchart TD
 3. **The Heap Boundary (JDBC):** The heap boundary begins at the business logic layer (step ⑥).
    JDBC persistence (step ⑦) allocates `ResultSet`, DTO, and `String` objects on the JVM heap.
    The Garbage Collector may trigger here. Community persistence is therefore operational but not zero-GC.
-4. **No Kernel-Bypass:** Uses standard networking through `java.nio` selector reactors (`NativeTcpCarrier`). Advanced kernel-bypass
+4. **No Kernel-Bypass:** Uses the kernel's standard socket stack. `NativeTcpCarrier` takes readiness from `java.nio` selector reactors and accepts through NIO. With `transport.socket.backend=auto` (the default) or `posix-hybrid`, a plaintext stream reads and writes through FFM `recv`/`send` on the file descriptor it reaches through `--add-opens java.base/sun.nio.ch` (POSIX only; Windows stream I/O stays on NIO); a TLS stream's bytes move through OpenSSL bound to the same descriptor. `nio` is the fallback when that seam cannot be armed (`NativeTcpSocketBackend`, `NativeTcpStreamPlainSocketIo`). Advanced kernel-bypass
    techniques (`io_uring`, strictly off-heap custom DB drivers) are reserved for the Enterprise module.
 5. **Controlled Core Access (ADR-008):** Community drivers depend on `exeris-kernel-core` to utilize shared
    infrastructure (e.g., `CoreOpenSslLoader`, `TlsStateMachine`). However, drivers must never bypass standard
@@ -112,8 +112,8 @@ flowchart TD
 
 | Feature         | Community (Off-Heap Network, Heap Persistence)                                                  | Enterprise (Zero-GC End-to-End)               |
 | :-------------- | :---------------------------------------------------------------------------------------------- | :-------------------------------------------- |
-| **Network I/O** | Off-heap `LoanedBuffer`s over `java.nio` selector reactors + OpenSSL/FFM; bounded allocation per record | Zero-Alloc + Kernel-Bypass (`io_uring`)       |
-| **TLS Hot Path** | **Community OpenSSL/FFM provider path** via `CommunityKernelCryptoProvider` + `CommunityTlsEngine`; at most 8 `eu.exeris.*` allocations per iteration (`CryptoZeroAllocTck`) | Zero-Alloc hard guarantee (Panama FFM / OpenSSL) |
+| **Network I/O** | Off-heap `LoanedBuffer`s; selector readiness and NIO accept, plaintext read/write over FFM `recv`/`send` on POSIX (NIO fallback), OpenSSL on the fd for TLS; bounded allocation per record | Zero-Alloc + Kernel-Bypass (`io_uring`)       |
+| **TLS Hot Path** | **Community OpenSSL/FFM provider path** via `CommunityKernelCryptoProvider` + `CommunityTlsEngine`. Only the Core `OffHeapTlsEngine` guard path is allocation-asserted (zero, `CoreOffHeapTlsEngineZeroAllocTckTest`); the steady-state cipher path is not measured | Zero-Alloc hard guarantee (Panama FFM / OpenSSL) |
 | **Telemetry**   | Bounded (JFR event objects)                                                                     | Strict Zero (Binary Ring-Buffer off-heap)     |
 | **Persistence** | JDBC overhead (heap-bound) ⚠️                                                                   | Strict Zero (Native DB driver)                |
 | **Context**     | `ScopedValue` (low overhead)                                                                    | `ScopedValue` + Off-Heap Arena                |
@@ -121,8 +121,7 @@ flowchart TD
 ## 🎯 Open-Core Strategy
 
 The Community tier is an engineering-grade, production-ready engine — not a crippled fallback. It eliminates the
-Garbage Collector from the payload path of the network hot-path — bytes live off-heap, and the TLS path is held to a
-small per-iteration allocation budget. The upgrade path to
+Garbage Collector from the payload path of the network hot-path — bytes live off-heap. The upgrade path to
 Enterprise targets the remaining bottlenecks: OS-level syscall overhead (solved by `io_uring`) and heap-bound DB
 drivers (solved by the native persistence driver).
 

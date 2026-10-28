@@ -470,8 +470,10 @@ genuinely deep queue. Setting `queueDepthAllowanceRatio=0` recovers the strict p
 resolved from `persistence.admission.*` at bootstrap by `CommunityPersistenceSubsystem`, which also
 registers a watch callback that re-resolves the record. The Community `ConfigProvider` reads system
 properties and environment variables only, and the callback re-reads through it, so in practice the
-thresholds are fixed for the life of the process; a different `ConfigProvider` that serves file values
-would change them live. The thresholds live entirely in Community (`CommunityAdmissionConfig`) — no SPI
+thresholds are fixed for the life of the process. The callback is registered with `KernelConfigRegistry`
+(through `RegistryBackedConfigProvider`) for the exact key `persistence.admission` in `persistence.json`,
+so it fires only when that file changes a line keyed exactly `persistence.admission`; editing a
+`persistence.admission.<name>` threshold in the file does not fire it, whatever provider is bound. The thresholds live entirely in Community (`CommunityAdmissionConfig`) — no SPI
 field is added, so The Wall is untouched.
 
 ### HTTP Integration: 503 Service Unavailable

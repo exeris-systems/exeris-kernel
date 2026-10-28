@@ -50,8 +50,9 @@ This is where Exeris implements the **"No Waste Compute"** philosophy.
 
 Allocation is asserted per subsystem by the suites built on `AbstractSubsystemZeroAllocTck`: zero
 `eu.exeris.*` allocations per iteration when a binding sets `supportsZeroGcHotPath()`, otherwise a
-per-iteration budget (8 for the TLS path, `CryptoZeroAllocTck`). Latency, pause and throughput targets
-are measured by JMH benchmarks that assert nothing; no merge gate holds them.
+per-iteration budget the suite sets (default 5; `CryptoZeroAllocTck` sets 8, though its only binding in
+this repository asserts zero on the `OffHeapTlsEngine` guard path). No merge gate holds the latency, pause
+or throughput targets; the JMH benchmarks in this repository assert nothing, and none measures GC pause.
 
 ---
 
@@ -101,7 +102,7 @@ This prevents unchecked thread proliferation and pool queuing:
 **Community:** HikariCP-based gating (ADR-035), `CommunityPersistenceAdmissionController`
 - Reads the pool's active, idle and pending-acquire counts from the Hikari pool MXBean
 - Sheds only once pending acquires exceed an allowance of `ceil(maxPoolSize × queueDepthAllowanceRatio)`; the ratio defaults to `8.0` (`persistence.admission.queueDepthAllowanceRatio`), and `0` restores shedding on the first queued acquire
-- Past the allowance it rejects when: `active / maxPoolSize >= 0.90`; or `active / maxPoolSize >= 0.85` with little headroom left or sustained fairness stress; or no idle connection remains
+- Past the allowance it rejects when: `active / maxPoolSize >= 0.90`; or `active / maxPoolSize >= 0.85` with little headroom left or sustained fairness stress; or no idle connection remains (the ratios are defaults of `persistence.admission.*` keys read by `CommunityAdmissionConfig`)
 - Below the allowance a request is admitted and waits on the connection-acquire timeout
 
 **Enterprise:** Predictive native gating (design target; the Enterprise tier is not in this repository)
@@ -138,10 +139,11 @@ the enforcement in this repository is stated beside each.
 - **Warning (L0):** Queue > 2,000 requests. Carried as `ScalingContext.free().maxQueueDepth()`, a value
   a caller passes to `ResourceArbiter`; no kernel code path measures a request queue against it.
 - **Saturated (L1):** Queue > 5,000 requests → Trigger Backpressure (`H3_EXCESSIVE_LOAD` or HTTP `503`).
-  Concurrently admitted streams are capped per engine at `TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS`
-  (5,000) by `AdmissionController`; `H3_EXCESSIVE_LOAD` is the PAQS response at the `SHEDDING`
-  memory watermark (≥ 95% of the off-heap budget); the HTTP `503` is the persistence admission gate
-  above.
+  Concurrently admitted streams are capped per engine by `AdmissionController` at
+  `transport.paqs.maxActiveStreams` (default `TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS`, 5,000; `-1`
+  for none). `H3_EXCESSIVE_LOAD` is the documented response to the `SHEDDING` watermark, but no code in
+  this repository sends it, and the Community watermark never leaves `NORMAL` (#786). The HTTP `503` is
+  the persistence admission gate above.
 - **Starved (L2):** Carrier Thread blocked > 50 ms → Kill Task (`EX-RUN-3002`). Target only: `EX-RUN-3002`
   is a registered code with a `CarrierPinnedJfrEvent`, and no kernel code measures carrier blocking or
   kills a task. Carrier pinning is asserted from JFR recordings by `AbstractCarrierPinningTck`.

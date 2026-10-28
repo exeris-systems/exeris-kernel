@@ -114,8 +114,8 @@ cross-referenced from `TransportEngine`, and pinned by `AbstractTransportWorkloa
 `TransportConfig.maxActiveStreams()` (`transport.paqs.maxActiveStreams`, default
 `TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS` = 5000) is a hard cap on **concurrently admitted
 streams per engine**, enforced by `AdmissionController.admit` after the memory-pressure decision and
-before a virtual thread is spawned. Over the cap the decision becomes `SHED_CAPACITY` whatever the
-priority and whatever the watermark says.
+before a virtual thread is spawned. Once the cap is reached, an admitted stream becomes `SHED_CAPACITY`
+whatever its priority and whatever the watermark says.
 
 This is a different bound from the connection ceiling above, and one is not derivable from the
 other: an HTTP/1 connection carries one stream, an HTTP/2 connection carries many.
@@ -705,7 +705,7 @@ sequenceDiagram
     participant RA    as ResourceArbiter (L0)
     participant VT    as Virtual Thread (Loom)
 
-    NIC->>PAQS: onStreamArrival(stream)
+    NIC->>PAQS: schedule(stream)
     PAQS->>PAQS: priorityExtractor.apply(stream)
 
     PAQS->>AC: admit(priority)
@@ -735,7 +735,7 @@ sequenceDiagram
         PAQS->>PAQS: emit StreamShedEvent (JFR)
         Note over PAQS: All streams shed (close + StreamShedEvent),<br/>no exception propagated to the carrier VT.
     end
-    Note over AC: Over transport.paqs.maxActiveStreams the decision<br/>is SHED_CAPACITY whatever the action.
+    Note over AC: An ADMIT becomes SHED_CAPACITY once<br/>transport.paqs.maxActiveStreams streams are active.
 ```
 
 > The `priorityExtractor` step above is illustrative of the target design (see the caveat under
@@ -1080,7 +1080,7 @@ into it for `closeKeyStream`, `readIngress`, `flushStream` and stream resolution
 Alongside it, `NativeTcpSocketBackend` / `NativeTcpSocketProbe` now hold the FFM socket-backend
 selection and validation responsibility line, `ChannelRuntimeRegistry` holds channel/stream/owner
 bookkeeping, and on the stream side `NativeTcpStreamPendingWrite`, `NativeTcpStreamConsumerGate`, `NativeTcpStreamRegistrationGate` and
-`NativeTcpStreamPlainSocketIo` have been split out of what was one file. `registerAndHandshakeConnection`
+`NativeTcpStreamPlainSocketIo`, `NativeTcpStreamTeardown`, `NativeTcpStreamTlsDrain`, `NativeTcpStreamTlsHandshake` and `NativeTcpStreamWriteBound` have been split out of what was one file. `registerAndHandshakeConnection`
 below is `registerConnection` in the current source. Whether this extraction was driven by the
 per-reactor idle-reaper state introduced in 0.12 (`NativeTcpIdleReaper`, which needed a natural
 per-reactor owner) or by the general pressure below has not been confirmed against a PR history for

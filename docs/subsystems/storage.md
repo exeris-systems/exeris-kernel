@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-10-28
+last-verified: 2026-09-08
 ---
 
 # Storage Subsystem — Blob Contract
@@ -182,7 +182,7 @@ so a `begin() → I/O → commit()` straddle would bind the carrier-local `Event
 strategy `SHARED` with an empty key, so reporting the strategy alone would tell an operator `SHARED` for
 the one case where the interesting fact is that nothing was scoped. The strategy is recorded beside it.
 
-Neither event carries an object key, for the same reason `BlobStorageException` refuses to capture one.
+No event carries an object key, for the same reason `BlobStorageException` refuses to capture one.
 
 ## Error codes
 

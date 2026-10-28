@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-10-28
+last-verified: 2026-08-12
 ---
 
 # Physical Tier: Core (The Brain)
@@ -19,23 +19,26 @@ last-verified: 2026-10-28
 Core owns the canonical subsystem lifecycle. `KernelBootstrap.boot(Runnable)` resolves configuration and
 runs the contract gate; `SubsystemOrchestrator` (both in `eu.exeris.kernel.core.bootstrap`) then initializes
 and starts the subsystems. The lifecycle is irreversible — there is no `RESTART` transition; a failed node
-must be replaced. `KernelHealthMonitor.KernelState` latches the kernel-level states below; the
+must be replaced. `KernelHealthMonitor.KernelState` latches `INITIALIZED`, `STARTED`, `SHUTTING_DOWN`, and
+`FAILED` when a mandatory subsystem fails; configuration and contract failures happen before the monitor
+exists and only make `boot()` throw. The
 per-subsystem state machine is in [`subsystems/bootstrap.md`](../subsystems/bootstrap.md).
 
 ```mermaid
 stateDiagram-v2
     direction LR
     [*] --> INITIALIZED : config resolved · contract gate passed\nevery subsystem initialize() returned
-    [*] --> FAILED      : ConfigProvider missing · contract refused\nprovider missing · initialize() failure
+    [*] --> FAILED      : a mandatory subsystem's initialize() fails
 
     INITIALIZED --> STARTED : every subsystem start() returned
     INITIALIZED --> FAILED  : start() failure
 
+    INITIALIZED --> SHUTTING_DOWN : stop requested during boot
     STARTED --> SHUTTING_DOWN : kernelMain returns · KernelBootstrap.shutdown()\nor the JVM shutdown hook (SIGTERM)
 
     SHUTTING_DOWN --> [*] : running subsystems stopped in reverse\ntopological order, memory last
 
-    FAILED --> [*] : boot() throws BootstrapException\nthe kernel never exits the JVM
+    FAILED --> [*] : boot() throws · running subsystems are still stopped\nthe kernel never exits the JVM
 
     note right of STARTED
         Hot-path active.
@@ -77,9 +80,10 @@ graph TD
     KB -->|"resolves"| CP
     KB --> SO
     SO -->|"all providers, priority-sorted"| SPV
-    SO --> BPS
+    SPV -->|"each subsystem's initialize()"| BPS
+    SPV -->|"memory subsystem constructs its provider"| MP
     BPS --> SL
-    BPS -->|"highest-priority provider per contract"| MP & KC & SP & PP & HP
+    BPS -->|"highest-priority provider per contract"| KC & SP & PP & HP
     COMM_IMPL -.->|"implements (Community classpath)"| SPV & MP & KC & SP & PP & HP
     ENT_IMPL  -.->|"implements (Enterprise classpath)"| SPV & MP & KC & SP & PP & HP
 
@@ -90,10 +94,15 @@ graph TD
 ```
 
 > **Failure behaviour:** a missing `ConfigProvider` fails `KernelBootstrap.boot()` with a
-> `BootstrapException` citing `EX-CFG-0001`. A subsystem whose `initialize()` or `start()` fails aborts
-> the boot under the default `FAIL_FAST` policy; under `DEGRADE` only an optional subsystem outside
-> `FOUNDATION` is dropped, with its dependents. A subsystem with no provider or no configuration stays
-> inert and reports `isRunning() == false`. `boot()` throws; the kernel never exits the JVM. See
+> `BootstrapException` citing `EX-CFG-0001`; the contract gate refuses with `ContractBreachException`, an
+> environment the gate does not know raises `ConfigProviderException` (`EX-CFG-1002`), and a dependency
+> cycle raises `SubsystemCircularDependencyException`. A subsystem whose `initialize()` or `start()` fails
+> aborts the boot under the default `FAIL_FAST` policy; under `DEGRADE` only an optional subsystem outside
+> `FOUNDATION` is dropped, with its dependents. Some subsystems stay inert and report
+> `isRunning() == false` instead of failing — transport, http and websocket when not configured, crypto
+> and security when no provider is discovered — while a mandatory subsystem whose provider is missing,
+> persistence for one, fails its `initialize()`. Whatever fails, `orchestrator.shutdown()` still stops the
+> subsystems already running, and the kernel never exits the JVM. See
 > [`subsystems/bootstrap.md`](../subsystems/bootstrap.md).
 
 ## 🧠 Architectural Rules (L0 Enforcement)
@@ -141,7 +150,7 @@ graph TD
 - HTTP wire codecs are currently implemented in `exeris-kernel-core` under `eu.exeris.kernel.core.http`.
 - Implemented areas: `http1.*`, `http2.*`, `hpack.*`, `hpack.huffman.*`, plus `routing.*` (`HttpRouter`,
   path templates, stream routes), `sse.*` (`HttpStreamEngine`, `SseEventEncoder`, stream admission),
-  `client.*` (`KernelWebClient`) and `jfr.*` (HTTP stream events).
+  `client.*` (`KernelWebClient`) and `jfr.*` (HTTP stream and aggregate-buffer events).
 - Root reactor does not currently include a dedicated `exeris-kernel-http` module.
 - Core remains responsible for delivering these codec primitives to downstream transport integrations in the current layout.
 

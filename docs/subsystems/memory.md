@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-10-28
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Memory (L0 Foundation)
@@ -41,9 +41,9 @@ Every byte allocated must serve a purpose:
 - **Zero Copy:** Data is never copied to the JVM Heap unless interacting with legacy Java systems.
 - **Deterministic Lifecycle:** Reference counting via `VarHandle` atomics ensures memory is returned to native pools
   immediately after use.
-- **Implementation Blindness:** Core operates exclusively on the `MemoryAllocator` interface, obtained from the
-  `MemoryProvider` that `ServiceLoader` discovers. It must never know what platform-specific allocator backs the
-  `MemoryAllocator` contract.
+- **Implementation Blindness:** Core operates exclusively on the `MemoryAllocator` it reads from
+  `KernelProviders.MEMORY_ALLOCATOR`, which the memory subsystem binds. It must never know what platform-specific
+  allocator backs the `MemoryAllocator` contract.
 
 ---
 
@@ -182,15 +182,15 @@ decisions.
 
 ## Code Examples
 
-### 1. Subsystem Registration via ServiceLoader
+### 1. Obtaining the Allocator
 
-Core never directly instantiates an allocator. It receives it through the SPI discovery chain.
+Core never directly instantiates an allocator. The memory subsystem, itself discovered through
+`ServiceLoader<SubsystemProvider>`, builds its provider and allocator (Community: `CommunityMemorySubsystem`
+creates `CommunityMemoryProvider` and calls `createAllocator`) and binds them to
+`KernelProviders.MEMORY_PROVIDER` and `KernelProviders.MEMORY_ALLOCATOR`; Core code reads the slot.
 
 ```java
-MemoryProvider provider = ServiceLoader.load(MemoryProvider.class)
-        .findFirst()
-        .orElseThrow(); // no MemoryProvider on the module/class path
-MemoryAllocator allocator = provider.createAllocator(config);
+MemoryAllocator allocator = KernelProviders.MEMORY_ALLOCATOR.get();
 ```
 
 ### 2. ResourceArbiter Integration
@@ -249,10 +249,14 @@ work — projections, sagas, graph queries — for transport throughput under pr
 
 **Configuration:** none of the watermark thresholds or the poll interval is configurable.
 `WatermarkManager` thresholds are the `WatermarkLevel` enum constants (70/85/95% of the off-heap budget),
-and the watermark refresh interval is `MemoryMaintenanceTask.DEFAULT_WATERMARK_INTERVAL_MS` (5,000 ms).
+and `WatermarkManager.refresh()` is what moves the level. `MemoryMaintenanceTask` calls it every
+`DEFAULT_WATERMARK_INTERVAL_MS` (5,000 ms), but no kernel code constructs or starts that task, and
+nothing else calls `refresh()`: the `WatermarkManager` that `NativeTcpCarrier.initPaqs()` builds for the
+Community transport stays at `NORMAL`, so the shedding levels above are not reached in a default boot.
 No code reads `network.paqs.*Threshold`, `memory.watermarkPollIntervalMs` or
-`telemetry.allocationSampleRate`. Community allocation JFR sampling uses the system property
-`-Dexeris.community.memory.jfr.sampleEvery=N` (integer allocation frequency, not a rate fraction).
+`telemetry.allocationSampleRate`. Community allocation JFR sampling reads the config key
+`memory.jfr.sampleEvery`, falling back to the system property `-Dexeris.community.memory.jfr.sampleEvery`;
+it is an integer stride (default 64), not a rate fraction (`CommunityMemoryJfrSampling`).
 
 ---
 
@@ -263,7 +267,7 @@ No code reads `network.paqs.*Threshold`, `memory.watermarkPollIntervalMs` or
   `MemoryEnvironmentProbed` JFR event. Not currently wired to bootstrap: no caller in
   `KernelBootstrap`, `SubsystemOrchestrator`, or `CommunityMemorySubsystem` invokes it in this
   repository — its only caller is its own unit test, so it does not run during a kernel boot today.
-- **`MemoryMaintenanceTask`** — Virtual Thread maintenance loop: calls `performMaintenance()` every 10 s, `WatermarkManager.refresh()` every 5 s
+- **`MemoryMaintenanceTask`** — Virtual Thread maintenance loop: calls `performMaintenance()` every 10 s, `WatermarkManager.refresh()` every 5 s. No kernel code starts it in this repository; its callers are tests
 
 ---
 
@@ -271,12 +275,15 @@ No code reads `network.paqs.*Threshold`, `memory.watermarkPollIntervalMs` or
 
 `KernelBootstrap.boot(...)` registers a JVM shutdown hook, unless `Builder.registerShutdownHook(false)`
 disables it, that runs `shutdown()`. A standalone process therefore stops in order on `SIGTERM`; the
-kernel installs no signal handler and never exits the JVM. `shutdown()` turns readiness to `503`, then
-stops every running subsystem in reverse topological order, the transport draining first and memory
-released last. `AbstractGracefulShutdownTck` pins that order and the drain of in-flight work before the
+kernel installs no signal handler and never exits the JVM. `shutdown()` marks the kernel `SHUTTING_DOWN`,
+so readiness drops (a `503` from `HealthEndpointHandler` where the host wires it), then stops every running
+subsystem in reverse topological order; the drain happens in the transport's `stop()`, and memory is
+stopped last. `AbstractGracefulShutdownTck` pins that order and the drain of in-flight work before the
 Persistence engine closes.
 
-The kernel has no hard drain timeout and no force-release step. Stopping the memory subsystem closes
+`shutdown()` itself has no timeout, and there is no arena force-release step. The one bound is the
+transport drain: `PaqsScheduler.close()` waits up to 60 s for streams in service, then seals and proceeds,
+and the streams still open are force-closed. Stopping the memory subsystem closes
 the allocator, which closes every shard arena and invalidates the buffers still outstanding from it, so
 a `LoanedBuffer` that is still held when memory stops is no longer usable. Work that holds buffers has to
 finish, and release them, while the transport drains.
@@ -344,7 +351,7 @@ flowchart TD
 ## Summary
 
 The Memory subsystem provides the foundation for hyper-density execution. By enforcing the `LoanedBuffer` pattern
-through SPI and resolving allocator providers via `ServiceLoader`, it ensures that off-heap memory lifecycle is explicit and GC-independent, 
+through SPI and handing Core the allocator through `KernelProviders.MEMORY_ALLOCATOR`, it ensures that off-heap memory lifecycle is explicit and GC-independent, 
 regardless of which allocator is active.
 
 ---

@@ -386,7 +386,7 @@ public final class ErrorMapperRegistry {
 ```
 
 > **Note:** `EX-EVENT-*` and `EX-FLOW-*` map to `INTERNAL_ERROR` explicitly, and every prefix the registry does not list
-> (`EX-HTTP-*`, `EX-GRPH-*`, `EX-BLOB-*`, `EX-JOB-*`, `EX-LIC-*`) falls through to it — these represent internal
+> (`EX-HTTP-*`, `EX-GRPH-*`, `EX-BLOB-*`, `EX-JOB-*`, `EX-LIC-*`, `EX-DIAG-*`, `EX-UNK-*`) falls through to it — these represent internal
 > infrastructure failures not surfaced as distinct protocol-level codes.
 
 ---
