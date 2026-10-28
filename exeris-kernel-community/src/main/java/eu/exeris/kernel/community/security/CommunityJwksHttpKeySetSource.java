@@ -47,8 +47,9 @@ import java.util.function.Supplier;
  * rather than failing the whole load, because a JWKS routinely carries keys for other purposes. A JWK
  * is not installed when it
  * <ul>
- *   <li>has no {@code kid}, or a {@code kid} that appears more than once in the document (which of
- *       two keys a token means is undecidable, so neither verifies);</li>
+ *   <li>has no {@code kid}, or a {@code kid} that another JWK which would be installed also publishes
+ *       (which of two keys a token means is undecidable, so neither verifies; a JWK skipped by another
+ *       rule here does not count);</li>
  *   <li>declares {@code use} other than {@code sig};</li>
  *   <li>is not an RSA key or an Ed25519 {@code OKP} key, or declares an {@code alg} other than the
  *       one its key type verifies.</li>
@@ -103,8 +104,9 @@ final class CommunityJwksHttpKeySetSource implements KeySetSource, AutoCloseable
      *
      * @implNote Fetches the JWKS document via this source's injected fetcher, parses it as a
      *           JOSE {@code JWKSet}, and keeps the entries that qualify under the class rules
-     *           (signing use, unique {@code kid}, RS256 over RSA or EdDSA over Ed25519), each
-     *           pinned to its algorithm; other entries are skipped rather than failing the load.
+     *           (signing use, a {@code kid} no other installed key publishes, RS256 over RSA or
+     *           EdDSA over Ed25519), each pinned to its algorithm; other entries are skipped rather
+     *           than failing the load.
      *           Never returns an empty map: a document with no qualifying entry raises
      *           {@link KeySetRefreshException}.
      */
