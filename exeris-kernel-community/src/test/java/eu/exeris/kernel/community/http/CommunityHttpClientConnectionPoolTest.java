@@ -4,7 +4,7 @@
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpVersion;
@@ -881,7 +881,7 @@ class CommunityHttpClientConnectionPoolTest {
         ManualTimeSource virtualTime = new ManualTimeSource(1_000_000_000L);
 
         // Pool constructed inside carrier scope captures bound TimeSource per ADR-082 Amendment A1
-        ScopedValue.where(KernelProviders.TIME_SOURCE, virtualTime).run(() -> {
+        ScopedValue.where(TimeKernelProviders.TIME_SOURCE, virtualTime).run(() -> {
             try (CommunityHttpClientConnectionPool pool = new CommunityHttpClientConnectionPool(config)) {
                 FakeConnection conn = new FakeConnection();
                 FakeStream stream = new FakeStream(conn);

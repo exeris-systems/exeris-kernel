@@ -6,15 +6,20 @@ package eu.exeris.kernel.community.graph;
 
 import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
-import eu.exeris.kernel.spi.graph.model.GraphTraversal;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.security.StorageContext;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.Transaction;
 
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -49,6 +54,20 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
 
     private static final String PMD_AVOID_CATCHING_GENERIC_EXCEPTION = "PMD.AvoidCatchingGenericException";
     private static final String CYPHER_BACKEND_QUERY_TYPE = "CYPHER_BACKEND";
+    private static final String BINDING_NAME = "Community Cypher (Neo4j)";
+    private static final Set<StorageContext.IsolationStrategy> SCOPABLE =
+            Collections.unmodifiableSet(EnumSet.noneOf(StorageContext.IsolationStrategy.class));
+    private static final Map<StorageContext.IsolationStrategy, String> SCOPE_REFUSAL_DETAILS;
+
+    static {
+        Map<StorageContext.IsolationStrategy, String> details =
+                new EnumMap<>(StorageContext.IsolationStrategy.class);
+        for (StorageContext.IsolationStrategy strategy : StorageContext.IsolationStrategy.values()) {
+            details.put(strategy, BINDING_NAME + " cannot scope a graph query under isolation strategy "
+                    + strategy + "; scopable strategies: none");
+        }
+        SCOPE_REFUSAL_DETAILS = Collections.unmodifiableMap(details);
+    }
 
     private final CommunityNeo4jClient neo4jClient;
     private final CommunityGraphCypherReader reader;
@@ -66,13 +85,23 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
     // ─── CommunityGraphBackend — read delegation ─────────────────────────────────
 
     @Override
-    public List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
-        return reader.traverseBreadthFirst(traversal);
+    public List<UUID> traversePath(GraphPathSpec path) {
+        return reader.traversePath(path);
     }
 
     @Override
-    public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
-        return reader.streamBfsJson(traversal);
+    public LoanedBuffer streamPathJson(GraphPathSpec path) {
+        return reader.streamPathJson(path);
+    }
+
+    @Override
+    public Set<StorageContext.IsolationStrategy> scopableStrategies() {
+        return SCOPABLE;
+    }
+
+    @Override
+    public String scopeRefusalDetail(StorageContext.IsolationStrategy strategy) {
+        return SCOPE_REFUSAL_DETAILS.get(strategy);
     }
 
     @Override

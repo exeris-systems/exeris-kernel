@@ -138,11 +138,12 @@ class CommunityGraphEngineTest {
         void openSessionInCypherModeSupportsSameNodeShortestPath() {
             try (GraphEngine cypherEngine = new CommunityGraphEngine(GraphConfig.create("neo4j"));
                  GraphSession session = cypherEngine.openSession()) {
-            UUID nodeId = UUID.randomUUID();
+                UUID nodeId = UUID.randomUUID();
+                GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Node", "LINK", "Node");
 
-            assertThatCode(() -> session.findShortestPath(nodeId, nodeId))
-                .doesNotThrowAnyException();
-            assertThat(session.findShortestPath(nodeId, nodeId).found()).isTrue();
+                assertThatCode(() -> session.findShortestPath(edge, nodeId, nodeId))
+                        .doesNotThrowAnyException();
+                assertThat(session.findShortestPath(edge, nodeId, nodeId).found()).isTrue();
             }
         }
     }

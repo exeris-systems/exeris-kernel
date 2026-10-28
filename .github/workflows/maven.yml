@@ -69,7 +69,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -172,6 +172,13 @@ jobs:
         #
         # Config-only, so it needs no build artifact — same reasoning as the two gates above.
         run: tools/checkstyle-parity-check/checkstyle-parity-check.sh
+      - name: Help-Header Gate
+        # Every script under tools/ that answers --help prints its whole header, exits 0, and keeps
+        # doing so when the header changes length. Found by searching for the handler, so a new
+        # script is covered from its first commit.
+        #
+        # Sources-only, so it needs no build artifact — same reasoning as the gates above.
+        run: tools/help-header-check/help-header-check.sh
 
       - name: SPI Contract-Blindness Gate
         # exeris-kernel-spi states obligations. This fails when a contract position states instead
@@ -340,39 +347,41 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # Publish to GitHub Packages on push to main (release versions like 0.7.0) AND on push
-      # to any RC trunk (development/0.8, development/0.9, ...) where the POM carries a
-      # `-SNAPSHOT` qualifier. The same step handles both: Maven routes release versions to
-      # <repository> and SNAPSHOTs to <snapshotRepository> (both pointing at GitHub Packages
-      # in this repo, but the URL choice is Maven's, not the workflow's).
+      # Publish to GitHub Packages. A release version is published from `main` only, after the
+      # release pull request has merged; a development line publishes its `-SNAPSHOT` and nothing
+      # else. Maven routes release versions to <repository> and SNAPSHOTs to <snapshotRepository>.
       #
-      # GitHub Packages mutability:
-      #   * Release versions are IMMUTABLE — a 409 on retry means the version is already
-      #     published, which is not a real failure (covered by continue-on-error).
-      #   * SNAPSHOTs are MUTABLE — every push to an RC trunk overwrites the previous
-      #     SNAPSHOT artifact so downstream consumers (e.g. exeris-spring-runtime) always
-      #     pull the latest RC trunk HEAD.
+      # GitHub Packages makes a release version IMMUTABLE: the first upload of `X.Y.Z` is the one
+      # every consumer gets, and any later upload of the same version is refused with 409. So a
+      # development line carrying the plain release version must not publish at all, or its first
+      # push freezes a pre-release build under the release coordinate and every later push,
+      # including the release itself, is silently refused. On `main` a refusal is a real failure
+      # and fails the step; on a development line a SNAPSHOT upload problem must not take down the
+      # pipeline this job roots, so it is reported and tolerated there.
       #
-      # THE PREVIEW LINE PUBLISHES TOO (since v0.11) — but read the rest of this comment before
-      # changing its version. Maven's ComparableVersion sorts an UNKNOWN qualifier AFTER the release:
-      # measured, `0.11.0-preview` > `0.11.0` and > `0.10.2`. A release version carrying `-preview`
-      # under the same groupId:artifactId would therefore win a `[0.11.0,)` range and `RELEASE`
-      # metadata resolution — capturing exactly the consumers who wanted the preview-clean artifact.
-      # That is why the coordinate decision (#329) went to a distinct groupId, `eu.exeris.preview`,
-      # with a plain version: the two lines never share a version axis to compete on.
+      # SNAPSHOTs are MUTABLE: every push to a development line overwrites the previous one, so
+      # downstream consumers pull that line's head.
       #
-      # So the preview line publishes RELEASES at a cut and `-SNAPSHOT`s between cuts — and the
-      # `continue-on-error` above is what makes leaving it on a release version silent. `preview` is
-      # a WORKING branch, not the GA line's `main`, so every push deploys; a branch still carrying the
-      # plain version it was cut at answers each one with a swallowed 409 and publishes nothing.
-      # Measured: `preview/v0.11.1` was cut at 673c0c2f and the branch ran five commits past it with
-      # the poms unchanged, none of them consumable. Reopening the next `-SNAPSHOT` in the same
-      # session as the cut is the step that prevents it — PREVIEW-TRACK.md §"Cutting a release on
-      # this line" is the ritual.
+      # The preview line publishes too, under its own groupId `eu.exeris.preview`: a release version
+      # at a cut and `-SNAPSHOT`s between cuts. It is a working branch, so every push deploys, and a
+      # branch still carrying the plain version it was cut at answers each push with a tolerated 409
+      # and publishes nothing. Reopening the next `-SNAPSHOT` right after the cut prevents it —
+      # PREVIEW-TRACK.md §"Cutting a release on this line".
       - name: Publish to GitHub Packages
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/preview' || startsWith(github.ref, 'refs/heads/development/'))
-        continue-on-error: true
+        continue-on-error: ${{ github.ref != 'refs/heads/main' }}
         run: |
+          set -euo pipefail
+          version="$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout --settings .github/maven-settings.xml)"
+          case "$version" in
+            *-SNAPSHOT) ;;
+            *)
+              if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+                echo "::notice::${GITHUB_REF#refs/heads/} carries the release version $version; it is published from main after the release merge, not from here"
+                exit 0
+              fi
+              ;;
+          esac
           mvn deploy -B -e \
             --settings .github/maven-settings.xml \
             -DskipTests
@@ -412,7 +421,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -425,6 +434,11 @@ jobs:
         # class would otherwise mark the whole directory classified, and the rest would
         # fall out of both include lists below — neither gated nor reported.
         run: tools/spi-api-diff/spi-api-diff.sh --verify-surfaces
+
+      - name: History and single-run modes pick the stability conf they should
+        # A transition labelled by the wrong conf still prints a well-formed report, so the choice
+        # is asserted against a throwaway repository rather than trusted.
+        run: tools/spi-api-diff/spi-api-diff.sh --self-test
 
       - name: Diff SPI against the last released version
         run: |
@@ -439,6 +453,9 @@ jobs:
           # baseline. This line tags `preview/vX.Y.Z` precisely so it stays out of `v*` — but a
           # naming convention nobody can enforce is not a guard, and the guard is what the GA line
           # got in v0.12 while this one did not.
+          # The same filter deliberately skips a release candidate, `vX.Y.Z-RC<n>`: diffing against
+          # a candidate would make whatever it changed the reference for the next one, so the freeze
+          # would follow the candidates instead of holding them to the last release.
           #
           # NOT settled here: this picks the highest GA tag, so the gate measures the CONVERGENCE
           # delta rather than whether a change broke this line's own published surface
@@ -496,7 +513,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -511,6 +528,14 @@ jobs:
             -DincludedGroups=integration \
             -DexcludedGroups= \
             test -B -e
+
+      - name: Refuse skipped or missing live graph integration tests
+        # The graph ITs skip without Docker and a skipped test reports green; the floors file names
+        # each class and the tests it must have executed, none skipped. The self-test runs first, so
+        # a check that stopped failing closed is itself a failed step.
+        run: |
+          bash .github/scripts/tls-matrix-floor-selftest.sh
+          bash .github/scripts/tls-matrix-floor.sh .github/graph-it-floors.txt
 
       - name: Upload persistence JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -566,7 +591,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -628,7 +653,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -694,7 +719,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -790,7 +815,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -869,7 +894,7 @@ jobs:
         run: |
           mvn -pl exeris-kernel-core \
             -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
-            -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest' \
+            -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,CoreOpenSslCleanseTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest,CoreOpenSslAbiSymbolResolutionTckTest,CoreSyscallAbiSymbolResolutionTckTest' \
             test -B -e
 
       - name: Run core TLS ITs against OpenSSL ${{ matrix.openssl_version }}
@@ -910,7 +935,7 @@ jobs:
           mvn -pl exeris-kernel-community \
             -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
             -Dsurefire.failIfNoSpecifiedTests=false \
-            -Dtest='CommunityOpenSslPinnedMajorTest,CommunityTlsEngineLoopbackIntegrationTest,CommunityHttpClientTlsPeerVerificationTckTest,CommunityTlsPeerVerificationTest,CommunityTlsServerErrorQueueTest,CommunityServerContextErrorQueueTest,CommunityClientTrustOpeningTest,CommunityClientEngineAssemblyTest,NativeTcpTransportProviderClientTlsTest,TransportTlsDecisionTest,CommunityHttpDualSelfDialTest,NativeTcpCarrierCloseRacesConnectTest,CommunityS3EndpointSchemeTest,CommunityS3BootedEndpointSchemeTest' \
+            -Dtest='CommunityOpenSslPinnedMajorTest,CommunityTlsEngineLoopbackIntegrationTest,CommunityHttpClientTlsPeerVerificationTckTest,CommunityTlsPeerVerificationTest,CommunityTlsServerErrorQueueTest,CommunityServerContextErrorQueueTest,CommunityClientTrustOpeningTest,CommunityClientEngineAssemblyTest,CommunityServerCertificateChainTest,CommunityHttpAlpnMaxVersionIntegrationTest,CommunityHttp2StreamRouteIntegrationTest,CommunityHttp2RequestBodyIntegrationTest,NativeTcpTransportProviderClientTlsTest,TransportTlsDecisionTest,CommunityHttpDualSelfDialTest,NativeTcpCarrierCloseRacesConnectTest,CommunityS3EndpointSchemeTest,CommunityS3BootedEndpointSchemeTest,CommunityAbiSymbolResolutionTckTest,CommunityTlsEngineBindTest,CommunityTlsEngineLifecycleTest,CommunityTlsFdOwnerContractTckTest,CommunityKernelCryptoProviderTest,CommunityKernelCryptoProviderTckTest,NativeTcpTlsEstablishedOnceIntegrationTest,CommunityHttpBootstrapIntegrationTest,NativeTcpClientServerE2eIntegrationTest,NativeTcpClientServerE2eMultiReactor2IntegrationTest,NativeTcpClientServerE2eMultiReactor4IntegrationTest,NativeTcpTlsSendBufferStallIntegrationTest' \
             test -B -e
 
       - name: Run community default-trust suite against OpenSSL ${{ matrix.openssl_version }}
@@ -924,50 +949,15 @@ jobs:
           mvn -pl exeris-kernel-community surefire:test@default-trust -B -e
 
       - name: Refuse skipped or empty TLS suites for OpenSSL ${{ matrix.openssl_version }}
-        # A skipped test reports green, and so does a -Dtest pattern that matched nothing. Every
-        # class named here must have a report, at least one test run and none skipped. The Core
-        # TCK bindings (CoreOffHeapTlsEngineTckTest, CoreOffHeapTlsEngineZeroAllocTckTest) are not
-        # listed: they skip cases by design.
+        # A skipped test reports green, and so does a -Dtest pattern that matched nothing. The floors
+        # file names every class this job must have run and the fewest tests each must have executed
+        # (tests minus skipped); a class that skips by design has a floor instead of an exemption, and a
+        # row marked zero-skip refuses any skip. The script is run through bash, so it does not depend on
+        # an exec bit that core.fileMode=false would hide. The self-test runs first, so a check that stopped
+        # failing closed is itself a failed step.
         run: |
-          set -euo pipefail
-          shopt -s nullglob
-          failed=0
-          require_ran() {
-            local dir=$1 cls=$2 tests=0 skipped=0 file head t s
-            local files=("$dir"/TEST-*."$cls".xml "$dir"/TEST-*."$cls"'$'*.xml)
-            if [ ${#files[@]} -eq 0 ]; then
-              echo "::error::$cls: no report in $dir"
-              failed=1
-              return
-            fi
-            for file in "${files[@]}"; do
-              head=$(grep -m1 -o '<testsuite [^>]*' "$file" || true)
-              t=$(grep -o ' tests="[0-9]*"' <<<"$head" | tr -dc '0-9' || true)
-              s=$(grep -o ' skipped="[0-9]*"' <<<"$head" | tr -dc '0-9' || true)
-              tests=$((tests + ${t:-0}))
-              skipped=$((skipped + ${s:-0}))
-            done
-            echo "$cls: tests=$tests skipped=$skipped"
-            if [ "$tests" -eq 0 ] || [ "$skipped" -gt 0 ]; then
-              echo "::error::$cls ran $tests tests and skipped $skipped against OpenSSL ${{ matrix.openssl_version }}"
-              failed=1
-            fi
-          }
-          require_ran exeris-kernel-core/target/surefire-reports CoreOpenSslPinnedVersionAssertionTest
-          for cls in OffHeapTlsEngineLoopbackIT OffHeapTlsEngineErrorQueueIT OffHeapTlsEnginePeerVerificationIT; do
-            require_ran exeris-kernel-core/target/failsafe-reports "$cls"
-          done
-          for cls in CommunityOpenSslPinnedMajorTest CommunityTlsEngineLoopbackIntegrationTest \
-                     CommunityHttpClientTlsPeerVerificationTckTest CommunityTlsPeerVerificationTest \
-                     CommunityTlsServerErrorQueueTest CommunityServerContextErrorQueueTest \
-                     CommunityClientTrustOpeningTest CommunityClientEngineAssemblyTest \
-                     NativeTcpTransportProviderClientTlsTest TransportTlsDecisionTest \
-                     CommunityHttpDualSelfDialTest NativeTcpCarrierCloseRacesConnectTest \
-                     CommunityS3EndpointSchemeTest CommunityS3BootedEndpointSchemeTest \
-                     CommunityTlsDefaultTrustTest; do
-            require_ran exeris-kernel-community/target/surefire-reports "$cls"
-          done
-          exit "$failed"
+          bash .github/scripts/tls-matrix-floor-selftest.sh
+          bash .github/scripts/tls-matrix-floor.sh .github/tls-matrix-floors.txt
 
       - name: Upload OpenSSL ${{ matrix.openssl_version }} TLS JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -1019,7 +1009,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -1150,7 +1140,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz

@@ -5,8 +5,6 @@
 package eu.exeris.kernel.community.security;
 
 import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
@@ -19,7 +17,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
-import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.time.TimeSource;
 
 import java.time.Clock;
@@ -29,9 +27,9 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Community OIDC/JWKS {@link TokenValidator}: the ordered, fail-closed RS256 verification pipeline
+ * Community OIDC/JWKS {@link TokenValidator}: the ordered, fail-closed verification pipeline
  * ({@code kid → key → algorithm → signature → issuer → audience → time}) over a JWT, producing
- * format-blind {@link VerifiedClaims}.
+ * format-blind {@link VerifiedClaims}. The algorithm is per-key pinned RS256 or EdDSA (Ed25519).
  *
  * <p>This validator owns only cryptographic verification. Tenant-isolation →
  * {@code StorageContext} mapping and principal assembly live above this seam, in
@@ -62,18 +60,18 @@ final class CommunityOidcTokenValidator implements TokenValidator {
      */
     /* default */ CommunityOidcTokenValidator(
             Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience) {
-        this(keysByKid, expectedIssuer, expectedAudience, KernelProviders.timeSource().asClock());
+        this(keysByKid, expectedIssuer, expectedAudience, TimeKernelProviders.timeSource().asClock());
     }
 
     /* default */ CommunityOidcTokenValidator(
             Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience, Clock clock) {
-        this(new StaticJwksKeyResolver(Objects.requireNonNull(keysByKid, "keysByKid must not be null")),
+        this(StaticJwksKeyResolver.ofRsa(Objects.requireNonNull(keysByKid, "keysByKid must not be null")),
                 expectedIssuer, expectedAudience, clock);
     }
 
     /* default */ CommunityOidcTokenValidator(
             JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
-        this(keyResolver, expectedIssuer, expectedAudience, KernelProviders.timeSource().asClock());
+        this(keyResolver, expectedIssuer, expectedAudience, TimeKernelProviders.timeSource().asClock());
     }
 
     /* default */ CommunityOidcTokenValidator(
@@ -128,17 +126,19 @@ final class CommunityOidcTokenValidator implements TokenValidator {
             throw new SecurityAuthenticationException(JWT_TYPE, "missing-kid");
         }
 
-        RSAPublicKey publicKey = keyResolver.resolve(kid);
-        if (publicKey == null) {
+        JwsVerificationKey key = keyResolver.resolve(kid);
+        if (key == null) {
             throw new SecurityAuthenticationException(JWT_TYPE, "unknown-kid");
         }
 
-        // Algorithm pinned BEFORE signature verification (algorithm-confusion defence).
-        if (!JWSAlgorithm.RS256.equals(signedJwt.getHeader().getAlgorithm())) {
+        // The key's algorithm is pinned BEFORE signature verification; the header may only agree with
+        // it, so an algorithm the key was not installed for never reaches a verifier (algorithm-confusion
+        // defence).
+        if (!key.algorithm().admits(signedJwt.getHeader().getAlgorithm())) {
             throw new SecurityAuthenticationException(JWT_TYPE, "signature-invalid");
         }
 
-        verifySignature(signedJwt, publicKey);
+        verifySignature(signedJwt, key);
 
         JWTClaimsSet claims = extractClaims(signedJwt);
         validateIssuer(claims);
@@ -157,9 +157,9 @@ final class CommunityOidcTokenValidator implements TokenValidator {
         }
     }
 
-    private static void verifySignature(SignedJWT signedJwt, RSAPublicKey publicKey) {
+    private static void verifySignature(SignedJWT signedJwt, JwsVerificationKey key) {
         try {
-            if (!signedJwt.verify(new RSASSAVerifier(publicKey))) {
+            if (!signedJwt.verify(key.verifier())) {
                 throw new SecurityAuthenticationException(JWT_TYPE, "signature-invalid");
             }
         } catch (JOSEException _) {

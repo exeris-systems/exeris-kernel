@@ -6,6 +6,7 @@ package eu.exeris.kernel.core.http.http1;
 
 import com.sun.management.ThreadMXBean;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -18,8 +19,8 @@ import java.nio.charset.StandardCharsets;
  * RESEARCH — how much the HTTP/1 header path allocates, and what the slope per header is.
  *
  * <p>Not a gate and not an assertion: this prints a table. It exists so the T2-10 decision rests on
- * a measured number instead of a counted call site, and it lives on {@code research/*} rather than
- * in the suite.
+ * a measured number instead of a counted call site. It is tagged {@code research}, so no build runs it
+ * unless the {@code research} profile selects it.
  *
  * <h2>Instrument</h2>
  * <p>{@code ThreadMXBean.getThreadAllocatedBytes} — the exact per-thread delta, not JFR's
@@ -33,6 +34,7 @@ import java.nio.charset.StandardCharsets;
  * A single shape would conflate the two.
  */
 @DisplayName("RESEARCH: HTTP/1 parser allocation")
+@Tag("research")
 class Http1ParserAllocationResearch {
 
     private static final ThreadMXBean THREADS =

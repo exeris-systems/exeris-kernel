@@ -32,8 +32,9 @@ returned nothing, and one import makes the failure go away.
   the import above is silently absent from that invocation. Run the Community-side suite too —
   [build and CI](../.agents/references/build-and-ci.md) names both commands, and
   [definition of done](../.agents/policies/definition-of-done.md) item 3 is why.
-- **Bans apply at runtime scope, not by module.** `noThreadLocal`, `noExecutors`,
-  `noCompletableFuture` and `noUnsafe` are asserted here by `KernelTierBanArchitectureTest`.
+- **Bans apply at runtime scope, not by module — except `ThreadLocal`, which ADR-007 bans in every
+  scope, tests included.** `noThreadLocal`, `noExecutors`, `noCompletableFuture` and `noUnsafe` are
+  asserted here by `KernelTierBanArchitectureTest`.
   Context propagates through `ScopedValue`; concurrency goes through `core.concurrent.StructuredScope`,
   which is the seam that keeps `StructuredTaskScope` on the `preview` branch and out of this one
   ([the JDK track](../.agents/policies/jdk-and-preview-track.md)).

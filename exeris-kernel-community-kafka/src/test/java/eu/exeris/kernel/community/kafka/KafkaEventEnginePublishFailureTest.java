@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.events.EventTypeSpec;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
+import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -96,7 +97,7 @@ class KafkaEventEnginePublishFailureTest {
     void publishSendThrows() {
         Producer<byte[], byte[]> producer = mockProducer();
         KafkaException broker = new KafkaException("broker disconnected");
-        when(producer.send(any(ProducerRecord.class))).thenThrow(broker);
+        when(producer.send(any(ProducerRecord.class), any(Callback.class))).thenThrow(broker);
         engine = newEngine(producer);
         EventBus bus = engine.bus();
         EventDescriptor descriptor = descriptor(REGISTERED_ORDINAL);

@@ -15,9 +15,9 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -35,14 +35,21 @@ import java.util.Map;
  * behaviour, which the H2-backed {@code CommunityPersistenceEngineTckTest} cannot express.
  *
  * <h2>The conforming policy</h2>
- * <p>The reference shape {@code RlsConnectionInterceptor} publishes: the tenant-private policy for every
- * command, and an additive {@code FOR SELECT} policy that widens reads on the published shared scope.
- * Writes see only the owner policy, so a tenant can read a partition-mate's row and cannot update,
- * re-own or delete it. The {@code NULLIF} guard stops a cleared scope from matching rows whose own tag
- * is empty.
+ * <p>The reference shape {@code RlsConnectionInterceptor} publishes: the owner policy for every command,
+ * and an additive {@code FOR SELECT} policy that widens reads on the published shared scope. Writes see
+ * only the owner policy, so a tenant can read a partition-mate's row and cannot update, re-own or delete
+ * it. The owner policy's {@code WITH CHECK} pins the tag as well as the owner: a written row is
+ * tenant-private ({@code ''} or {@code NULL}) or carries the scope the request published, so a row's own
+ * column never grants visibility that no token carried. The {@code NULLIF} guard on the read arm stops a
+ * cleared scope from matching rows whose own tag is empty. The tenant arm calls the deployment-installed
+ * {@code exeris_required_setting}, so a tenant-less context raises on read and on write instead of
+ * matching the empty tenant.
+ *
+ * <p>The tag column is nullable on purpose: it is what exercises the {@code COALESCE} arm of the check,
+ * which a {@code NOT NULL DEFAULT ''} column would leave unreachable.
  *
  * <h2>Execution</h2>
- * <pre>mvn -pl exeris-kernel-community test -Dtest=CommunityPersistenceSharedScopeIT -DincludedGroups=integration -DexcludedGroups=</pre>
+ * <pre>mvn -pl exeris-kernel-community -am test -DincludedGroups=integration -DexcludedGroups=</pre>
  *
  * @since 0.11.0
  */
@@ -52,7 +59,7 @@ import java.util.Map;
 class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixTck {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
 
     private static final String APP_USER = "exeris_app";
     private static final String APP_PASSWORD = "exeris_app_pw";
@@ -94,10 +101,9 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
         try (PersistenceConnection conn = engine.openConnection(ctx);
              PersistenceStatement stmt = conn.prepare(
                      "INSERT INTO scoped_docs(tenant_id, shared_scope, value) VALUES (?, ?, ?)")) {
-            stmt.bindString(0, owner)
-                    .bindString(1, sharedScope == null ? "" : sharedScope)
-                    .bindString(2, value)
-                    .executeUpdate();
+            stmt.bindString(0, owner);
+            bindTag(stmt, 1, sharedScope);
+            stmt.bindString(2, value).executeUpdate();
         }
     }
 
@@ -122,6 +128,29 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
     }
 
     @Override
+    protected String tenantlessOwner() {
+        return "";
+    }
+
+    @Override
+    protected int retagScope(StorageContext ctx, String value, String newSharedScope) {
+        try (PersistenceConnection conn = engine.openConnection(ctx);
+             PersistenceStatement stmt = conn.prepare("UPDATE scoped_docs SET shared_scope = ? WHERE value = ?")) {
+            bindTag(stmt, 0, newSharedScope);
+            return Math.toIntExact(stmt.bindString(1, value).executeUpdate());
+        }
+    }
+
+    /** Binds a tag, with {@code null} as SQL {@code NULL} so the nullable column's {@code COALESCE} arm runs. */
+    private static void bindTag(PersistenceStatement stmt, int index, String tag) {
+        if (tag == null) {
+            stmt.bindNull(index);
+        } else {
+            stmt.bindString(index, tag);
+        }
+    }
+
+    @Override
     protected int reassignOwner(StorageContext ctx, String value, String newOwner) {
         try (PersistenceConnection conn = engine.openConnection(ctx);
              PersistenceStatement stmt = conn.prepare("UPDATE scoped_docs SET tenant_id = ? WHERE value = ?")) {
@@ -137,7 +166,7 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
         }
     }
 
-    private static PersistenceEngine createEngine(PostgreSQLContainer<?> container) {
+    private static PersistenceEngine createEngine(PostgreSQLContainer container) {
         PersistenceConfig config = new PersistenceConfig(
                 container.getJdbcUrl(), APP_USER, APP_PASSWORD,
                 24, 2, 5_000L, 60_000L, 600_000L,
@@ -145,7 +174,7 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
         return new CommunityPersistenceProvider().createEngine(config);
     }
 
-    private static void bootstrapSchema(PostgreSQLContainer<?> container) {
+    private static void bootstrapSchema(PostgreSQLContainer container) {
         try (Connection conn = DriverManager.getConnection(
                 container.getJdbcUrl(), container.getUsername(), container.getPassword());
              Statement st = conn.createStatement()) {
@@ -154,14 +183,16 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
                     + "    CREATE ROLE exeris_app LOGIN NOSUPERUSER PASSWORD 'exeris_app_pw'; "
                     + "  END IF; "
                     + "END $$");
+            st.execute(RlsReferencePolicy.REQUIRED_SETTING_FUNCTION);
             st.execute("DROP TABLE IF EXISTS scoped_docs CASCADE");
             st.execute("CREATE TABLE scoped_docs (tenant_id TEXT NOT NULL, "
-                    + "shared_scope TEXT NOT NULL DEFAULT '', value TEXT NOT NULL)");
+                    + "shared_scope TEXT, value TEXT NOT NULL)");
             st.execute("ALTER TABLE scoped_docs ENABLE ROW LEVEL SECURITY");
             st.execute("ALTER TABLE scoped_docs FORCE ROW LEVEL SECURITY");
             st.execute("CREATE POLICY tenant_isolation ON scoped_docs "
-                    + "USING (tenant_id = current_setting('exeris.tenant_id', true)) "
-                    + "WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true))");
+                    + "USING (" + RlsReferencePolicy.TENANT_ARM + ") "
+                    + "WITH CHECK (" + RlsReferencePolicy.TENANT_ARM + " "
+                    + "AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)))");
             st.execute("CREATE POLICY shared_scope_read ON scoped_docs FOR SELECT "
                     + "USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''))");
             st.execute("GRANT USAGE ON SCHEMA public TO exeris_app");

@@ -4,9 +4,12 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.http.HttpProvider;
 import eu.exeris.kernel.tck.contract.http.AbstractHttpProviderTck;
 import org.junit.jupiter.api.DisplayName;
+
+import java.util.List;
 
 @DisplayName("Community: HttpProvider TCK")
 class CommunityHttpProviderTckTest extends AbstractHttpProviderTck {
@@ -14,5 +17,11 @@ class CommunityHttpProviderTckTest extends AbstractHttpProviderTck {
     @Override
     protected HttpProvider createProvider() {
         return new CommunityHttpProvider();
+    }
+
+    @Override
+    protected HttpProvider selectAmong(List<HttpProvider> candidates) {
+        // The kernel selects this SPI through BootstrapProviderSelector.
+        return BootstrapProviderSelector.selectHighestPriority(candidates, HttpProvider::priority).orElseThrow();
     }
 }

@@ -8,23 +8,29 @@
 # and `forbidden` are substrings of the raw answer, `min_findings` counts, and `any_check_result`
 # asserts the verdict admitted a check it did not run.
 #
-# Seven of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
+# Eight of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
 # derivable rather than remembered — `--tags negative` selects exactly them. That balance is
 # deliberate: every profile here carries a non-goal about over-policing, and a suite of only
 # positive cases passes against an agent that blocks everything — the same shape as a TCK that only
 # tests the happy flow, which this repository rejects in code and should not accept in its own
 # agent layer.
 #
-# Five of the 7 are one half of a PAIR, and the pairing is the point: the same construct is a
+# Seven of the 8 are one half of a PAIR, and the pairing is the point: the same construct is a
 # defect or ordinary depending on where it sits, so a case that only asserts the defect passes
 # against an agent that has learned the string and nothing about the scope.
 #
-#   ThreadLocal            hot path -> blocking      | testkit fixture -> PASS
-#   an allocation          write path -> blocking    | bootstrap, once per JVM -> PASS
+#   a heap copy            decode path -> BLOCK      | testkit fixture -> PASS
+#                                                    | bootstrap, once per JVM -> PASS
+#   ThreadLocal            runtime -> BLOCK, testkit -> BLOCK | ThreadLocalRandom -> PASS
 #   a cross-module import  SPI -> Community -> BLOCK | Community -> Core -> PASS
 #   target-state prose     reported as shipped -> flag | labelled as not-here -> PASS
 #   MULTI_DOMAIN           a real four-surface change | a typo -> DOCS_ADR
 #   the whole-PR verdict   that same four-surface change | a typo -> PASS
+#
+# The ThreadLocal row is the exception that proves the scope rule: ADR-007 bans it without a scope
+# class, so the testkit case is BLOCKED too, and the negative half is a different type that shares
+# the name rather than the same type somewhere milder. Scope discipline narrows a policy's ban; it
+# never narrows an ADR's.
 #
 # They run on demand and on a schedule, never on every pull request: model-in-the-loop CI on a solo
 # project is cost without a signal. A change to a profile, skill or policy a case covers reruns that
@@ -77,30 +83,35 @@ cases:
     tags: [wall, architect, negative]
 
   # ── scope discipline — the same construct is a defect or fine depending on where it sits ─────
-  - id: scope-threadlocal-on-a-hot-path-is-blocking
+  - id: scope-a-heap-copy-on-a-hot-path-is-blocking
+    # A per-request `byte[]`, a copy out of the receive buffer and a `String` built from it: three
+    # allocations where a slice of the loaned buffer would do. The answer must name the ownership
+    # abstraction that replaces them, which the fixture deliberately does not.
     agent: exeris-performance
-    fixture: threadlocal-on-hot-path.md
+    fixture: heap-copy-on-the-decode-path.md
     prompt: "Review this change against the hot-path performance contract."
     expect:
       schema: verdict.schema.json
       fields:
+        decision: BLOCKED
         scope_class: runtime hot path
       min_findings: 1
-      contains: ["ScopedValue"]
+      contains: ["LoanedBuffer"]
     tags: [scope, performance, bans]
 
-  - id: scope-threadlocal-in-a-test-fixture-is-not
-    # The paired negative. Without it the suite passes against an agent that has learned the string
-    # `ThreadLocal` and nothing about where the ban applies.
+  - id: scope-a-heap-copy-in-a-test-fixture-is-not
+    # The paired negative: the same copy, in a testkit helper nothing in production reaches. Without
+    # it the suite passes against an agent that has learned `new byte[]` and nothing about where the
+    # zero-copy discipline applies.
     agent: exeris-performance
-    fixture: threadlocal-in-a-test-fixture.md
+    fixture: heap-copy-in-a-test-fixture.md
     prompt: "Review this change against the hot-path performance contract."
     expect:
       schema: verdict.schema.json
       fields:
         decision: PASS
         scope_class: test-tooling
-    tags: [scope, performance, bans, negative]
+    tags: [scope, performance, negative]
 
   - id: scope-a-bootstrap-allocation-is-not-a-hot-path-defect
     # The other axis of the same discipline. The testkit case above separates production from test;
@@ -115,6 +126,52 @@ cases:
         decision: PASS
         scope_class: runtime non-hot
     tags: [scope, performance, negative]
+
+  # ── unscoped bans — ADR-007 states the ThreadLocal ban without a scope class ─────────────────
+  - id: ban-threadlocal-carrying-context-is-blocking
+    # Off the hot path on purpose: the ban is not a performance rule, so a reviewer that finds it
+    # only where latency matters has learned the wrong reason for it.
+    agent: exeris-evaluator
+    fixture: threadlocal-carries-request-context.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: BLOCKED
+        scope_class: runtime non-hot
+      min_findings: 1
+      contains: ["ScopedValue", "ADR-007"]
+    tags: [bans, evaluator]
+
+  - id: ban-threadlocal-in-a-test-fixture-is-still-blocking
+    # The scope class is test-tooling and the verdict is still BLOCKED. This is the case that keeps
+    # scope discipline from swallowing an ADR: a ban stated without a scope has no scope to classify
+    # out of.
+    agent: exeris-evaluator
+    fixture: threadlocal-in-a-test-fixture.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: BLOCKED
+        scope_class: test-tooling
+      min_findings: 1
+      contains: ["ADR-007"]
+    tags: [bans, evaluator]
+
+  - id: ban-threadlocalrandom-is-not-threadlocal
+    # The paired negative for both cases above. `ThreadLocalRandom` shares a prefix and nothing else:
+    # it holds no caller state, so there is nothing to outlive a scope. The architecture guards name
+    # `java.lang.ThreadLocal` by its qualified name for the same reason.
+    agent: exeris-evaluator
+    fixture: threadlocal-random-for-jitter.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: runtime non-hot
+    tags: [bans, evaluator, negative]
 
   # ── contract verification ────────────────────────────────────────────────────────────────────
   - id: tck-signature-change-owes-abstract-tck

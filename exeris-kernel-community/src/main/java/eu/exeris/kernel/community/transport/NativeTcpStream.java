@@ -14,8 +14,10 @@ import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import org.jctools.queues.MpscUnboundedArrayQueue;
@@ -28,7 +30,6 @@ import java.net.StandardSocketOptions;
 import java.nio.channels.SocketChannel;
 import java.util.Objects;
 import java.util.Queue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -55,14 +56,16 @@ import java.util.concurrent.locks.LockSupport;
  * allocates the inbound buffer and this class only retains a reference to it. Every write that
  * cannot be sent directly ({@link #enqueueDeferredWrite}, or {@link #write} on the TLS branch)
  * allocates one {@link LoanedBuffer} to hold a private copy of the caller's bytes before queueing
- * it. A TLS stream additionally allocates one per-stream ciphertext placeholder at construction,
- * reused for every unwrap/wrap rather than allocated per record, plus small transient buffers for
- * the handshake and the shutdown record.
+ * it: one per chunk of at most half the outbound bound for the bytes the socket refuses (plain) or
+ * for every write (TLS), and one for the whole remainder when the bound is off. A TLS stream also
+ * allocates one per-stream ciphertext placeholder at construction, reused for every unwrap/wrap
+ * rather than allocated per record, plus small transient buffers for the handshake and shutdown.
  * <p><b>Thread confinement:</b> not confined to one thread over its lifetime, but single-consumer
  * per direction at any instant — {@link NativeTcpStreamConsumerGate} lets exactly one thread at a
  * time drain the inbound queue and exactly one (possibly different) thread at a time drain the
  * outbound queue, so ingress and egress may run concurrently on different threads but never two
- * readers or two writers at once.
+ * readers or two writers at once. {@link #write} may park its caller while the outbound queue is at
+ * its bound, and never parks a reactor thread.
  * <p><b>Ownership:</b> every {@link LoanedBuffer} handed to this stream (via {@link #offerIngress}
  * or a queued write) is closed by whichever consumer drains it — inbound buffers in
  * {@link #closeCurrentInbound()} / {@link #drainInboundQueue()}, outbound ones in
@@ -95,9 +98,6 @@ import java.util.concurrent.locks.LockSupport;
 final class NativeTcpStream implements TransportStream {
 
     private static final System.Logger LOG = System.getLogger(NativeTcpStream.class.getName());
-    private static final String STREAM_CLOSED_MESSAGE = "Stream is closed";
-    private static final long REGISTRATION_BACKOFF_NANOS = 100_000L;
-    private static final long REGISTRATION_TIMEOUT_MILLIS = 5_000L;
     private static final long CLOSE_OUTBOUND_CONSUMER_BACKOFF_NANOS = 100_000L;
     private static final int CLOSE_OUTBOUND_CONSUMER_DRAIN_ATTEMPTS = 32;
 
@@ -111,9 +111,8 @@ final class NativeTcpStream implements TransportStream {
     private static final int INBOUND_QUEUE_CAPACITY =
             QUEUE_BACKPRESSURE_ENABLED ? QUEUE_DEPTH_THRESHOLD_HIGH : Integer.MAX_VALUE;
 
-    private static final int DRAIN_CLOSED  = 0;
-    private static final int DRAIN_OK      = 1;
-    private static final int DRAIN_STALLED = 2;
+    private static final int DRAIN_OK      = NativeTcpStreamTlsDrain.DRAIN_OK;
+    private static final int DRAIN_STALLED = NativeTcpStreamTlsDrain.DRAIN_STALLED;
 
     private static final int INBOUND_ADVANCE_NEEDS_MORE_DATA = -1;
     private static final int INBOUND_ADVANCE_RETRY = 0;
@@ -133,6 +132,7 @@ final class NativeTcpStream implements TransportStream {
     private final NativeTcpStreamPendingWrite.TlsContext pendingWriteTlsContext;
     private final NativeTcpStreamPendingWrite.TryWriter pendingWriteTryWriter;
     private final NativeTcpStreamTlsHandshake tlsHandshake;
+    private final NativeTcpStreamTlsDrain tlsDrain;
 
     // PERF: fd-owner BIO unwrap pulls ciphertext directly from the kernel socket and never
     // inspects its {@code ciphertext} parameter (OffHeapTlsEngine#unwrap contract). A single
@@ -144,8 +144,14 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean closeRequested = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
+    // Set when the remote end (or a carrier teardown) is observed while no local close was requested:
+    // the first side to end the stream decides which closed-stream code it reports.
+    private final AtomicBoolean peerEndedFirst = new AtomicBoolean(false);
     // Set by reset(long): abandon queued writes (no drain wait) and terminate abortively (RST).
     private final AtomicBoolean resetRequested = new AtomicBoolean(false);
+    // Set only by a send-failure abort after the peer ended the stream: bytes the peer sent first
+    // stay readable. A local close() or reset(long) clears it and discards what is queued.
+    private final AtomicBoolean inboundOutlivesAbort = new AtomicBoolean(false);
     // Last time the application moved bytes on this connection, for idle reclamation
     // (transport.idleTimeoutMillis, swept by NativeTcpIdleReaper on the owning reactor).
     // "Activity" is an attempted read or queued write, not bytes observed on the wire: a peer that
@@ -160,6 +166,8 @@ final class NativeTcpStream implements TransportStream {
             ? new SpscArrayQueue<>(INBOUND_QUEUE_CAPACITY)
             : new SpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
     private final AtomicInteger outboundQueueDepth = new AtomicInteger(0);
+    // Bytes of every pending write, from write() and queueWrite alike, and the writer parked on them.
+    private final NativeTcpStreamWriteBound writeBound;
     private final AtomicInteger inboundQueueDepth = new AtomicInteger(0);
     // One-shot latch + callback fired exactly once when the connection becomes established
     // (plaintext: reactor registration armed; TLS: reactor-driven handshake reached ACTIVE).
@@ -211,7 +219,7 @@ final class NativeTcpStream implements TransportStream {
                 writeInterestCallback, closeCallback, socketHandles, NativeTcpHandshakeBackoff.PARK);
     }
 
-    @SuppressWarnings("PMD.ExcessiveParameterList") // the canonical constructor plus the backoff seam
+    @SuppressWarnings("PMD.ExcessiveParameterList") // the canonical constructor minus the write bound
     /* default */ NativeTcpStream(String engineName,
                     long streamId,
                     SocketChannel channel,
@@ -222,9 +230,27 @@ final class NativeTcpStream implements TransportStream {
                     Runnable closeCallback,
                     SyscallHandles socketHandles,
                     NativeTcpHandshakeBackoff handshakeBackoff) {
+        this(engineName, streamId, channel, connection, allocator, tlsEngine,
+                writeInterestCallback, closeCallback, socketHandles, handshakeBackoff,
+                TransportConfig.UNBOUNDED_QUEUED_WRITE_BYTES);
+    }
+
+    @SuppressWarnings("PMD.ExcessiveParameterList") // the canonical constructor plus the backoff and bound
+    /* default */ NativeTcpStream(String engineName,
+                    long streamId,
+                    SocketChannel channel,
+                    NativeTcpConnection connection,
+                    MemoryAllocator allocator,
+                    TlsEngine tlsEngine,
+                    Runnable writeInterestCallback,
+                    Runnable closeCallback,
+                    SyscallHandles socketHandles,
+                    NativeTcpHandshakeBackoff handshakeBackoff,
+                    int maxQueuedWriteBytes) {
         Objects.requireNonNull(handshakeBackoff, "handshakeBackoff must not be null");
         this.engineName = Objects.requireNonNull(engineName, "engineName must not be null");
         this.streamId = streamId;
+        this.writeBound = new NativeTcpStreamWriteBound(streamId, validBound(maxQueuedWriteBytes), this::ensureOpen);
         this.channel = Objects.requireNonNull(channel, "channel must not be null");
         this.connection = Objects.requireNonNull(connection, "connection must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
@@ -255,10 +281,13 @@ final class NativeTcpStream implements TransportStream {
         this.pendingWriteTlsContext = tlsEngine == null
                 ? null
                 : new NativeTcpStreamPendingWrite.TlsContext(
-                        tlsEngine, tlsLock, tlsCiphertextPlaceholder);
+                        tlsEngine, tlsLock, tlsCiphertextPlaceholder, new AtomicBoolean());
         this.pendingWriteTryWriter = this::tryWrite;
         this.tlsHandshake = new NativeTcpStreamTlsHandshake(engineName, tlsEngine, channel, allocator,
-                tlsLock, handshakeBackoff, closed, this::close, writeInterestCallback);
+                tlsLock, handshakeBackoff, closed, closeRequested, this::close, writeInterestCallback);
+        this.tlsDrain = tlsEngine == null ? null : new NativeTcpStreamTlsDrain(
+                engineName, remoteClosed, closed, pendingWriteTlsContext.waitingForPeer(), this::requestAbort,
+                this::abortOnPeerGone, ((CommunityTlsEngine) tlsEngine)::lastWriteErrno, this::isPeerGone);
     }
 
     /**
@@ -271,8 +300,9 @@ final class NativeTcpStream implements TransportStream {
      * @return the number of bytes read, {@code 0} if {@code maxBytes <= 0}, or {@code -1} on EOF
      * @throws IllegalArgumentException if {@code target} is {@code null} or {@code maxBytes}
      *                                   exceeds its capacity
-     * @throws IllegalStateException    if this stream has been closed and the remote side did not
-     *                                   close first
+     * @throws TransportStreamClosedException if this stream has been closed and the remote side did
+     *                                   not close first ({@code EX-NET-4009}); a closed stream whose
+     *                                   remote end was observed reports end of stream instead
      * @throws TlsHandshakeException    if the TLS handshake failed ({@code EX-NET-2001}), including a
      *                                   server certificate that failed verification
      * @throws TransportException       if the TLS handshake does not complete within its timeout
@@ -295,7 +325,7 @@ final class NativeTcpStream implements TransportStream {
         NativeTcpStreamConsumerGate.acquireSingleConsumer(runtime.inboundConsumer(), currentThread, "inbound");
         try {
             tlsHandshake.throwRecordedFailure();
-            if (closed.get()) {
+            if (mustReportClosed()) {
                 return closedReadOutcome();
             }
             if (remoteClosed.get() && currentInbound == null && inboundQueueDepth.get() == 0) {
@@ -306,7 +336,7 @@ final class NativeTcpStream implements TransportStream {
             runtime.streamVt().set(currentThread);
 
             while (true) {
-                if (closed.get()) {
+                if (mustReportClosed()) {
                     return closedReadOutcome();
                 }
                 int inboundState = advanceInbound();
@@ -376,18 +406,25 @@ final class NativeTcpStream implements TransportStream {
     /**
      * Writes {@code length} bytes from {@code source}: written straight to the socket with no
      * intermediate copy when nothing is already queued and the stream is plaintext; otherwise
-     * copied into a buffered pending write, which a TLS stream always uses and which may still
+     * copied into buffered pending writes, which a TLS stream always uses and which may still
      * drain before this call returns.
+     *
+     * <p>May park the caller while the outbound queue is at its bound, until the peer takes enough or
+     * the stream ends; a reactor thread never parks and queues past the bound instead. A write that
+     * throws after parking may already have queued a prefix of {@code source}.
      *
      * @param source off-heap segment containing the data to send; this stream never retains a
      *               reference to it after the call returns
      * @param length number of bytes to write, from offset {@code 0}; {@code 0} is a no-op
      * @throws IllegalArgumentException if {@code source} is {@code null} or {@code length} is out
      *                                   of range for it
-     * @throws IllegalStateException    if this stream has been closed
+     * @throws TransportStreamClosedException if this stream has been closed ({@code EX-NET-4008} when
+     *                                   the carrier observed the remote end first, {@code EX-NET-4009}
+     *                                   otherwise)
      * @throws TlsHandshakeException    if the TLS handshake failed ({@code EX-NET-2001}), including a
      *                                   server certificate that failed verification
      * @throws TransportException       if an unrecoverable send failure occurs ({@code EX-NET-4002})
+     * @throws IllegalStateException    if another thread is parked as the writer, or the park is interrupted
      */
     @Override
     public void write(MemorySegment source, int length) {
@@ -409,7 +446,7 @@ final class NativeTcpStream implements TransportStream {
 
         if (tlsEngine == null) {
             if (hasPendingData()) {
-                enqueueDeferredWrite(source, 0, length);
+                enqueueBounded(source, 0, length);
             } else {
                 writeDirect(source, length);
             }
@@ -417,8 +454,18 @@ final class NativeTcpStream implements TransportStream {
         }
 
         requireTlsReady();
+        int offset = 0;
+        while (offset < length) {
+            writeBound.awaitCapacity();
+            int chunk = Math.min(length - offset, writeBound.chunkBytes());
+            queueTlsCopy(source, offset, chunk);
+            offset += chunk;
+        }
+    }
+
+    private void queueTlsCopy(MemorySegment source, int offset, int length) {
         try (LoanedBuffer plain = allocator.allocateNetwork(length)) {
-            MemorySegment.copy(source, 0, plain.segment(), 0, length);
+            MemorySegment.copy(source, offset, plain.segment(), 0, length);
             plain.setSize(length);
             plain.retain();
             try {
@@ -440,7 +487,7 @@ final class NativeTcpStream implements TransportStream {
             throw new IllegalArgumentException("buffer must not be null");
         }
         // Neither of these closes the buffer. The SPI puts it back with the caller on any thrown
-        // exception — it says so for IllegalStateException by name — so closing it here too makes
+        // exception — it says so for the closed-stream signal by name — so closing it here too makes
         // the caller's own release a double-free: the SIGSEGV shape the ownership policy exists to
         // rule out, reached by both sides obeying different halves of one contract. The two branches
         // must agree; one of them closing and the other not is the same defect wearing a smaller
@@ -452,7 +499,7 @@ final class NativeTcpStream implements TransportStream {
         lastActivityNanos = System.nanoTime();
         if (closeRequested.get() || closed.get()) {
             tlsHandshake.throwRecordedFailure();
-            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+            throw closedSignal();
         }
         if (length == 0) {
             buffer.close();
@@ -468,7 +515,7 @@ final class NativeTcpStream implements TransportStream {
             if (observedConsumer != null
                     && !Objects.equals(observedConsumer, Thread.currentThread())
                     && activeConsumer == null
-                    && hasPendingData()) {
+                    && needsWriteInterest()) {
                 writeInterestCallback.run();
             }
             return;
@@ -482,9 +529,13 @@ final class NativeTcpStream implements TransportStream {
             // producer saw a non-empty depth, so it is not a flusher, and this flush never saw its
             // write. A depth still above zero here hands the stream to the reactor, which keeps
             // write interest armed until it observes the depth at zero.
-            if (hasPendingData()) {
+            if (needsWriteInterest()) {
                 writeInterestCallback.run();
             }
+        } catch (TransportStreamClosedException ended) {
+            // The abort finishes the close after the slot is released; close() would end the survival
+            // of the peer's bytes, which only the application's own close or reset may do.
+            throw ended;
         } catch (RuntimeException error) {
             close();
             throw error;
@@ -526,29 +577,20 @@ final class NativeTcpStream implements TransportStream {
     }
 
     /**
-     * Closes this stream: unparks any thread waiting to read, write, or complete registration,
-     * waits briefly for whichever thread currently holds the outbound consumer slot to yield it,
-     * then best-effort flushes any remaining queued writes before finishing the teardown.
-     * Idempotent.
+     * Closes this stream: wakes any thread waiting to read, write, or complete registration (on
+     * every call, not only the first), waits briefly for whichever thread currently holds the
+     * outbound consumer slot to yield it, then best-effort flushes any remaining queued writes
+     * before finishing the teardown. Idempotent.
      */
     @Override
     public void close() {
         if (!closeRequested.compareAndSet(false, true)) {
+            wakeAllWaiters();
             finishCloseIfDrained();
+            endInboundSurvival();
             return;
         }
-        Thread readerThread = runtime.streamVt().getAndSet(null);
-        if (readerThread != null) {
-            LockSupport.unpark(readerThread);
-        }
-        Thread writerThread = runtime.writeWaiter().getAndSet(null);
-        if (writerThread != null) {
-            LockSupport.unpark(writerThread);
-        }
-        Thread registrationThread = runtime.registrationGate().clearWaiter();
-        if (registrationThread != null) {
-            LockSupport.unpark(registrationThread);
-        }
+        wakeAllWaiters();
         awaitOutboundConsumerToYield();
 
         if (hasPendingData()) {
@@ -578,26 +620,20 @@ final class NativeTcpStream implements TransportStream {
         // queued writes are abandoned (not drained) and the socket is closed with SO_LINGER 0
         // so the peer observes a RST rather than a graceful FIN. errorCode is advisory for TCP.
         if (!resetRequested.compareAndSet(false, true)) {
+            wakeAllWaiters();
+            finishCloseIfDrained();
+            endInboundSurvival();
+            if (!closed.get()) {
+                writeInterestCallback.run();
+            }
             return;
         }
         closeRequested.set(true);
+        wakeAllWaiters();
         try {
             channel.setOption(StandardSocketOptions.SO_LINGER, 0);
         } catch (IOException | RuntimeException _) {
             // Best effort: if SO_LINGER can't be set, the terminal close falls back to FIN.
-        }
-        // Unpark any reader/writer/registration waiter so they observe the closed state and bail.
-        Thread readerThread = runtime.streamVt().getAndSet(null);
-        if (readerThread != null) {
-            LockSupport.unpark(readerThread);
-        }
-        Thread writerThread = runtime.writeWaiter().getAndSet(null);
-        if (writerThread != null) {
-            LockSupport.unpark(writerThread);
-        }
-        Thread registrationThread = runtime.registrationGate().clearWaiter();
-        if (registrationThread != null) {
-            LockSupport.unpark(registrationThread);
         }
         // Terminate now if this thread owns (or no one owns) the outbound consumer; otherwise the
         // owning carrier reactor completes the abort on its next cycle (closeRequested + the
@@ -626,17 +662,26 @@ final class NativeTcpStream implements TransportStream {
         return NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.outboundConsumer(), owner);
     }
 
+    /** Test-only: releases a slot taken by {@link #tryPinOutboundConsumerForTest}. */
+    /* default */ void unpinOutboundConsumerForTest(Thread owner) {
+        NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), owner);
+    }
+
+    /** Test-only: registers {@code waiter} as the parked reader a terminal transition has to wake. */
+    /* default */ void registerReaderWaiterForTest(Thread waiter) {
+        runtime.streamVt().set(waiter);
+    }
+
     /**
-     * Test-only: completes a deferred abortive close while {@code owner} still holds the outbound
-     * consumer slot, then releases it. Running {@link #finishCloseIfDrained()} on the slot owner
-     * discards the queued write (it is never written to the socket) before the carrier reactor can
-     * acquire the slot and flush it — the determinism the {@code reset()}-abandon discriminator needs.
+     * Test-only: completes a requested close or reset while {@code owner} still holds the outbound
+     * slot, then releases it. A reset discards the queued write before the reactor can flush it; a
+     * graceful close stays deferred while data is queued and the reactor drains it after the release.
      */
-    /* default */ void completeAbortAndUnpinOutboundConsumerForTest(Thread owner) {
-        assert resetRequested.get()
-                : "completeAbortAndUnpinOutboundConsumerForTest requires a prior reset() — "
-                + "completing a close while holding the consumer slot without an abort request "
-                + "would tear down a still-live stream";
+    /* default */ void completeRequestedCloseAndUnpinOutboundConsumerForTest(Thread owner) {
+        assert closeRequested.get()
+                : "completeRequestedCloseAndUnpinOutboundConsumerForTest requires a prior close() or "
+                + "reset() — completing a close while holding the consumer slot without a close "
+                + "request would tear down a still-live stream";
         try {
             finishCloseIfDrained();
         } finally {
@@ -661,7 +706,30 @@ final class NativeTcpStream implements TransportStream {
      * @return whether the queue accepted the write
      */
     /* default */ boolean publishReservedWriteForTest(LoanedBuffer buffer, int length) {
-        return outboundQueue.offer(newPendingWrite(buffer, length));
+        NativeTcpStreamPendingWrite pendingWrite = newPendingWrite(buffer, length);
+        writeBound.add(length);
+        boolean offered = outboundQueue.offer(pendingWrite);
+        if (!offered) {
+            writeBound.add(-length);
+        }
+        return offered;
+    }
+
+    private static int validBound(int bound) {
+        if (bound < 1 && bound != TransportConfig.UNBOUNDED_QUEUED_WRITE_BYTES) {
+            throw new IllegalArgumentException("maxQueuedWriteBytes must be >= 1, or -1 for no bound, got: " + bound);
+        }
+        return bound;
+    }
+
+    /** The outbound bound this stream was built with; {@code -1} when there is none. */
+    /* default */ int maxQueuedWriteBytes() {
+        return writeBound.maxQueuedWriteBytes();
+    }
+
+    /** Test-only: bytes currently held in the outbound queue, from both write entry points. */
+    /* default */ long outboundQueuedBytesForTest() {
+        return writeBound.queuedBytes();
     }
 
     /* default */ void offerIngress(LoanedBuffer ingressBuffer) {
@@ -705,9 +773,12 @@ final class NativeTcpStream implements TransportStream {
     }
 
     /* default */ void markRemoteClosed() {
+        if (!closeRequested.get()) {
+            peerEndedFirst.set(true);
+        }
         remoteClosed.set(true);
         connection.markClosedByCarrier();
-        signalReadableIngress();
+        wakeAllWaiters();
     }
 
     /* default */ void markRegistrationPending() {
@@ -717,7 +788,6 @@ final class NativeTcpStream implements TransportStream {
     /* default */ void markRegistrationReady() {
         runtime.registrationGate().markReady();
         registrationReadyNanos = System.nanoTime();
-        signalWriteReady();
         if (tlsEngine == null) {
             // Plaintext has no handshake: the connection is established the moment the reactor
             // has armed the key. (TLS defers to fireEstablishedOnce() in readTlsIngressFromFd
@@ -757,6 +827,11 @@ final class NativeTcpStream implements TransportStream {
     }
 
     /* default */ boolean isClosed() {
+        return isEndingOrEnded();
+    }
+
+    /** Whether a close or reset was requested, or the teardown already finished. */
+    private boolean isEndingOrEnded() {
         return closeRequested.get() || closed.get();
     }
 
@@ -878,15 +953,67 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
+    /**
+     * Whether the head write waits for the peer's next record instead of for socket space. Write
+     * interest stays off meanwhile, because a writable socket would not change anything for it.
+     */
+    /* default */ boolean stalledOnRead() {
+        return tlsDrain != null && tlsDrain.stalledOnRead();
+    }
+
+    private boolean needsWriteInterest() {
+        return hasPendingData() && !stalledOnRead();
+    }
+
+    /** Flushes a write that waited for the peer, after an ingress batch that may have satisfied it. */
+    /* default */ void flushPendingAfterIngress() {
+        if (tlsDrain != null && tlsDrain.markRetryAfterIngress() && hasPendingData()) {
+            try {
+                flushPendingWrites();
+            } catch (TransportStreamClosedException _) {
+                // The abort already released the queue and finishes the close; the writer sees the
+                // signal on its next call.
+                return;
+            }
+            if (needsWriteInterest()) {
+                writeInterestCallback.run();
+            }
+        }
+    }
+
     /* default */ boolean flushPendingWrites() {
         Thread currentThread = Thread.currentThread();
-        if (!NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.outboundConsumer(), currentThread)) {
+        int entry = NativeTcpStreamConsumerGate.enterSingleConsumer(runtime.outboundConsumer(), currentThread);
+        if (entry == NativeTcpStreamConsumerGate.NOT_ACQUIRED) {
             return false;
         }
+        boolean drained;
         try {
-            return drainPendingWrites();
+            try {
+                drained = drainPendingWrites();
+            } finally {
+                NativeTcpStreamConsumerGate.exitSingleConsumer(runtime.outboundConsumer(), currentThread, entry);
+            }
         } finally {
-            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
+            // An abort, or a close deferred while this thread held the slot, finishes here after the
+            // release. The finishes inside drainPendingWrites run under the slot, which is safe
+            // because a nested cleanup leaves the holder's slot in place.
+            if (entry == NativeTcpStreamConsumerGate.ACQUIRED && closeRequested.get()) {
+                finishAfterRelease();
+            }
+        }
+        // An ingress batch that found the slot held left a retry request; the release above is what
+        // lets it run. The check is on the stall path only, so a drained queue pays nothing for it.
+        boolean retry = !drained && entry == NativeTcpStreamConsumerGate.ACQUIRED
+                && tlsDrain != null && tlsDrain.consumeRetryAfterIngress();
+        return retry ? flushPendingWrites() : drained;
+    }
+
+    private void finishAfterRelease() {
+        try {
+            finishCloseIfDrained();
+        } catch (RuntimeException error) {
+            logBestEffortCleanupFailure("finishAfterRelease", error);
         }
     }
 
@@ -904,9 +1031,6 @@ final class NativeTcpStream implements TransportStream {
         NativeTcpStreamPendingWrite pending = outboundQueue.peek();
         while (pending != null) {
             int result = drainSinglePendingWrite(pending);
-            if (result == DRAIN_CLOSED) {
-                return true;
-            }
             if (result == DRAIN_STALLED) {
                 finalizeCloseIfRequestedAfterBestEffortFlush();
                 return false;
@@ -932,36 +1056,22 @@ final class NativeTcpStream implements TransportStream {
         if (tlsEngine == null) {
             return tryDrainPlainWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
         }
-        return drainTlsPending(pending);
+        return tlsDrain.drain(pending);
     }
 
     private void completeQueueHeadAfterDrain(NativeTcpStreamPendingWrite expectedHead) {
         NativeTcpStreamPendingWrite completed = outboundQueue.poll();
-        if (!Objects.equals(completed, expectedHead)) {
+        if (completed == null || !completed.equals(expectedHead)) {
             throw new IllegalStateException("Outbound queue head changed during flush for stream " + streamId);
         }
         closePendingWriteAfterPoll(completed);
     }
 
     private void closePendingWriteAfterPoll(NativeTcpStreamPendingWrite pendingWrite) {
+        long length = pendingWrite.plainLength();
         decrementDepth(outboundQueueDepth);
         pendingWrite.close();
-    }
-
-    private int drainTlsPending(NativeTcpStreamPendingWrite pending) {
-        TlsStatus status = pending.prepareCipher();
-        if (status == TlsStatus.CLOSED) {
-            close();
-            return DRAIN_CLOSED;
-        }
-        if (status != TlsStatus.OK) {
-            // Same fail-closed discipline as the IOException paths: an unrecoverable TLS WRAP
-            // status must not leave the queued write stuck (hasPendingData() would stay true and
-            // hang teardown). We hold the single-consumer slot here, so the discard is safe.
-            abortOnUnrecoverableWriteFailure();
-            throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
-        }
-        return tryDrainCipherWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
+        writeBound.release(length);
     }
 
     private boolean tryDrainPlainWrite(NativeTcpStreamPendingWrite pending) {
@@ -971,40 +1081,59 @@ final class NativeTcpStream implements TransportStream {
             if (closed.get()) {
                 return true;
             }
-            abortOnUnrecoverableWriteFailure();
-            throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
-        }
-    }
-
-    private boolean tryDrainCipherWrite(NativeTcpStreamPendingWrite pending) {
-        try {
-            return pending.writeCipher();
-        } catch (IOException e) {
-            if (closed.get()) {
-                return true;
+            if (isPeerGone(e)) {
+                throw abortOnPeerGone(pending.bytesWritten(), e);
             }
-            abortOnUnrecoverableWriteFailure();
+            requestAbort(false);
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
         }
     }
 
     /**
-     * Reacts to an unrecoverable outbound-write {@link IOException} by abandoning the queued
-     * writes and marking the stream for abortive termination.
-     *
-     * <p>Without this, a failed write would leave the pending entry in the queue forever:
-     * {@link #hasPendingData()} would stay {@code true} and {@link #close()} (and any drain-bounded
-     * teardown) would hang until its timeout. This runs on the carrier reactor thread while it
-     * holds the single-consumer slot (via {@code flushPendingWrites}), so {@link #drainOutboundQueue}
-     * is safe to call directly — but {@code finishCloseIfDrained()} MUST NOT be invoked here, as its
-     * nested consumer-slot acquire/release would prematurely free the slot held by the caller. The
-     * terminal channel close therefore runs later on the {@link #close()} / teardown path, which by
-     * then sees no pending data and the {@code resetRequested} flag (abortive close).
+     * Whether a failed send found the peer gone: its end was observed, the send's errno says reset, or,
+     * on the NIO fallback, which reports no errno and whose messages are locale text, the channel failed
+     * on a send for any reason but a local close. A local close is a {@link ClosedChannelException}, so
+     * the class alone separates it from a broken connection.
      */
-    private void abortOnUnrecoverableWriteFailure() {
+    private boolean isPeerGone(IOException failure) {
+        return remoteClosed.get()
+                || failure instanceof NativeTcpPeerResetException
+                || (!plainSocketBackend.usesCoreSocketSeam()
+                        && NativeTcpStreamPlainSocketIo.isBrokenConnection(failure));
+    }
+
+    /**
+     * Ends the stream after a send found the peer gone and returns the signal to throw. The remote end
+     * is recorded first, so the peer ended first unless the application closed earlier. The caller
+     * holds the outbound slot.
+     */
+    private TransportStreamClosedException abortOnPeerGone(long bytesSent, Throwable lowLevel) {
+        markRemoteClosed();
+        requestAbort(true);
+        return closedSignal(TransportException.sendFailure(engineName, bytesSent, lowLevel));
+    }
+
+    /**
+     * Reacts to an unrecoverable outbound failure by abandoning the queued writes, marking the
+     * stream for abortive termination and waking every waiter.
+     *
+     * <p>Without the discard, a failed write would stay queued forever and hang teardown. The caller
+     * holds the outbound slot (via {@code flushPendingWrites}), so {@link #drainOutboundQueue} is
+     * safe here; {@code flushPendingWrites} finishes the teardown after releasing the slot. When the
+     * peer had already ended the stream, bytes it sent first stay readable until the application
+     * closes or resets the stream.
+     *
+     * @param peerGone whether the peer already ended the stream (then it ended first)
+     */
+    private void requestAbort(boolean peerGone) {
+        if (peerGone && !closeRequested.get()) {
+            peerEndedFirst.set(true);
+            inboundOutlivesAbort.set(true);
+        }
         resetRequested.set(true);
         closeRequested.set(true);
         drainOutboundQueue();
+        wakeAllWaiters();
     }
 
     private void writeDirect(MemorySegment source, int length) {
@@ -1021,20 +1150,38 @@ final class NativeTcpStream implements TransportStream {
             }
         } catch (IOException e) {
             if (!closeRequested.get() && !closed.get()) {
-                throw TransportException.sendFailure(engineName, writtenTotal, e);
+                throw directSendFailure(e, writtenTotal);
             }
             return;
         }
 
         if (writtenTotal < length && !closeRequested.get() && !closed.get()) {
-            enqueueDeferredWrite(source, writtenTotal, length - writtenTotal);
+            enqueueBounded(source, writtenTotal, length - writtenTotal);
+        }
+    }
+
+    /** Whether a read reports the closed stream: ending or ended, unless an abort kept the peer's bytes. */
+    private boolean mustReportClosed() {
+        return isEndingOrEnded() && !(inboundOutlivesAbort.get() && remoteClosed.get()
+                && (currentInbound != null || inboundQueueDepth.get() > 0));
+    }
+
+    /** The application closed or reset: end the survival and release what is queued. */
+    private void endInboundSurvival() {
+        if (inboundOutlivesAbort.compareAndSet(true, false) && closed.get()) {
+            try {
+                cleanupInboundIfOwnedByCurrentThreadOrIdle();
+            } catch (RuntimeException error) {
+                logBestEffortCleanupFailure("cleanupInbound", error);
+            }
         }
     }
 
     private void awaitReadableIngress() {
         runtime.readParked().set(true);
         try {
-            if (closed.get() || remoteClosed.get() || currentInbound != null || inboundQueueDepth.get() > 0) {
+            if (closed.get() || closeRequested.get() || remoteClosed.get()
+                    || currentInbound != null || inboundQueueDepth.get() > 0) {
                 return;
             }
             LockSupport.park();
@@ -1051,13 +1198,20 @@ final class NativeTcpStream implements TransportStream {
         return runtime.registrationGate().awaitReady(blocking);
     }
 
-    /* default */ void signalWriteReady() {
-        if (!runtime.writeParked().get()) {
-            return;
-        }
-        Thread writerThread = runtime.writeWaiter().get();
-        if (writerThread != null) {
-            LockSupport.unpark(writerThread);
+    /**
+     * Wakes the reader, a writer and a registration waiter. Called after each terminal flag is
+     * written, whichever caller won it, and never gated on a parked hint: a surplus permit is
+     * harmless because every park loop re-checks. Registrations stay in place for later wakes.
+     */
+    private void wakeAllWaiters() {
+        unparkIfSet(runtime.streamVt().get());
+        unparkIfSet(writeBound.waiter());
+        unparkIfSet(runtime.registrationGate().waiter());
+    }
+
+    private static void unparkIfSet(Thread waiter) {
+        if (waiter != null) {
+            LockSupport.unpark(waiter);
         }
     }
 
@@ -1090,10 +1244,41 @@ final class NativeTcpStream implements TransportStream {
         return written;
     }
 
+    /**
+     * The closed-stream signal for a stream observed closed. The first side to end the stream decides
+     * the code: the remote end (or a carrier teardown) observed before any local close request reports
+     * {@code EX-NET-4008}, even when a local close followed; a local close request that came first
+     * reports {@code EX-NET-4009}, even when the remote end was observed afterwards.
+     */
+    private TransportStreamClosedException closedSignal() {
+        return peerEndedFirst.get()
+                ? TransportStreamClosedException.peerClosed()
+                : TransportStreamClosedException.locallyClosed();
+    }
+
+    /**
+     * What a failed direct write throws. No slot is held and nothing is queued, so a peer that is gone
+     * leaves nothing to abort: the application's close ends the stream.
+     */
+    private RuntimeException directSendFailure(IOException failure, int bytesSent) {
+        if (isPeerGone(failure)) {
+            markRemoteClosed();
+            return closedSignal(TransportException.sendFailure(engineName, bytesSent, failure));
+        }
+        return TransportException.sendFailure(engineName, bytesSent, failure);
+    }
+
+    /** The closed-stream signal for a failed send, carrying the transport failure as its cause. */
+    private TransportStreamClosedException closedSignal(Throwable cause) {
+        TransportStreamClosedException signal = closedSignal();
+        signal.initCause(cause);
+        return signal;
+    }
+
     private void ensureOpen() {
         if (closeRequested.get() || closed.get()) {
             tlsHandshake.throwRecordedFailure();
-            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+            throw closedSignal();
         }
     }
 
@@ -1103,7 +1288,7 @@ final class NativeTcpStream implements TransportStream {
      */
     private void requireTlsReady() {
         if (!tlsHandshake.ensureReady(true)) {
-            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+            throw closedSignal();
         }
     }
 
@@ -1118,19 +1303,31 @@ final class NativeTcpStream implements TransportStream {
         if (remoteClosed.get()) {
             return -1;
         }
-        throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+        throw TransportStreamClosedException.locallyClosed();
     }
 
     private void cleanupInboundIfOwnedByCurrentThreadOrIdle() {
         Thread currentThread = Thread.currentThread();
-        if (!NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.inboundConsumer(), currentThread)) {
+        int entry = NativeTcpStreamConsumerGate.enterSingleConsumer(runtime.inboundConsumer(), currentThread);
+        if (entry == NativeTcpStreamConsumerGate.NOT_ACQUIRED) {
             return;
         }
         try {
             closeCurrentInbound();
             drainInboundQueue();
         } finally {
-            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.inboundConsumer(), currentThread);
+            NativeTcpStreamConsumerGate.exitSingleConsumer(runtime.inboundConsumer(), currentThread, entry);
+        }
+    }
+
+    /** Queues {@code source} as chunks, each once the queue is at the resume mark; unbounded is one chunk. */
+    private void enqueueBounded(MemorySegment source, int offset, int length) {
+        int done = 0;
+        while (done < length) {
+            writeBound.awaitCapacity();
+            int chunk = Math.min(length - done, writeBound.chunkBytes());
+            enqueueDeferredWrite(source, offset + done, chunk);
+            done += chunk;
         }
     }
 
@@ -1148,9 +1345,11 @@ final class NativeTcpStream implements TransportStream {
 
     private boolean enqueuePendingWrite(NativeTcpStreamPendingWrite pendingWrite, boolean signalWriteInterest) {
         int previousDepth = outboundQueueDepth.getAndIncrement();
+        writeBound.add(pendingWrite.plainLength());
         boolean offered = outboundQueue.offer(pendingWrite);
         if (!offered) {
             try (pendingWrite) {
+                writeBound.add(-pendingWrite.plainLength());
                 decrementDepth(outboundQueueDepth);
                 throw new IllegalStateException("Failed to enqueue outbound write for stream " + streamId);
             }
@@ -1178,13 +1377,14 @@ final class NativeTcpStream implements TransportStream {
 
     private void cleanupOutboundIfOwnedByCurrentThreadOrIdle() {
         Thread currentThread = Thread.currentThread();
-        if (!NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.outboundConsumer(), currentThread)) {
+        int entry = NativeTcpStreamConsumerGate.enterSingleConsumer(runtime.outboundConsumer(), currentThread);
+        if (entry == NativeTcpStreamConsumerGate.NOT_ACQUIRED) {
             return;
         }
         try {
             drainOutboundQueue();
         } finally {
-            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
+            NativeTcpStreamConsumerGate.exitSingleConsumer(runtime.outboundConsumer(), currentThread, entry);
         }
     }
 
@@ -1208,13 +1408,16 @@ final class NativeTcpStream implements TransportStream {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
+        wakeAllWaiters();
 
-        releaseTlsResources();
+        NativeTcpStreamTeardown.releaseTlsResources(tlsEngine, allocator, tlsCiphertextPlaceholder);
 
-        try {
-            cleanupInboundIfOwnedByCurrentThreadOrIdle();
-        } catch (RuntimeException error) {
-            logBestEffortCleanupFailure("cleanupInbound", error);
+        if (!inboundOutlivesAbort.get()) {
+            try {
+                cleanupInboundIfOwnedByCurrentThreadOrIdle();
+            } catch (RuntimeException error) {
+                logBestEffortCleanupFailure("cleanupInbound", error);
+            }
         }
 
         try {
@@ -1223,64 +1426,10 @@ final class NativeTcpStream implements TransportStream {
             logBestEffortCleanupFailure("cleanupOutbound", error);
         }
 
-        closeChannelQuietly();
+        NativeTcpStreamTeardown.closeChannelQuietly(channel, resetRequested.get());
 
         connection.markClosedByCarrier();
         closeCallback.run();
-    }
-
-    /**
-     * Terminal, best-effort release of TLS-owned resources: graceful shutdown record, the engine
-     * itself, and the per-stream ciphertext placeholder (see {@link #tlsCiphertextPlaceholder}).
-     * Invoked exactly once from {@link #finishCloseIfDrained()} under its {@code closed} CAS guard.
-     */
-    private void releaseTlsResources() {
-        if (tlsEngine == null) {
-            return;
-        }
-        try {
-            try (LoanedBuffer outbound = allocator.allocateNetwork(1024)) {
-                tlsEngine.initiateShutdown(outbound);
-            }
-        } catch (RuntimeException _) {
-            // best effort
-        }
-        try {
-            tlsEngine.close();
-        } catch (RuntimeException _) {
-            // best effort
-        }
-        if (tlsCiphertextPlaceholder != null) {
-            try {
-                // Safe outside tlsLock: fd-owner unwrap never dereferences the ciphertext segment
-                // (OffHeapTlsEngine#unwrap reads the socket BIO directly). Do NOT move this under
-                // tlsLock — that lock is held on the ingress hot path, and finishCloseIfDrained()
-                // must never block on it.
-                tlsCiphertextPlaceholder.close();
-            } catch (RuntimeException _) {
-                // best effort
-            }
-        }
-    }
-
-    /**
-     * Best-effort terminal close of the underlying channel. A graceful close half-closes the output
-     * first (FIN); an abortive {@link #reset(long)} skips the half-close so the SO_LINGER-0 close
-     * emits a RST instead.
-     */
-    private void closeChannelQuietly() {
-        if (!resetRequested.get()) {
-            try {
-                channel.shutdownOutput();
-            } catch (IOException | RuntimeException _) {
-                // best effort half-close before full close
-            }
-        }
-        try {
-            channel.close();
-        } catch (IOException _) {
-            // best effort close
-        }
     }
 
     private void closeCurrentInbound() {
@@ -1318,68 +1467,14 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
-    private final class RegistrationGate {
-
-        private final AtomicBoolean ready = new AtomicBoolean(true);
-        private final AtomicReference<Thread> waiter = new AtomicReference<>();
-
-        private void markPending() {
-            ready.set(false);
-        }
-
-        private void markReady() {
-            ready.set(true);
-            Thread waiterThread = waiter.getAndSet(null);
-            if (waiterThread != null) {
-                LockSupport.unpark(waiterThread);
-            }
-        }
-
-        private Thread clearWaiter() {
-            return waiter.getAndSet(null);
-        }
-
-        private boolean awaitReady(boolean blocking) {
-            if (ready.get()) {
-                return true;
-            }
-            if (!blocking) {
-                return false;
-            }
-
-            Thread currentThread = Thread.currentThread();
-            waiter.set(currentThread);
-            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(REGISTRATION_TIMEOUT_MILLIS);
-            try {
-                while (!closeRequested.get() && !closed.get()) {
-                    if (ready.get()) {
-                        return true;
-                    }
-                    if (System.nanoTime() >= deadline) {
-                        return false;
-                    }
-                    LockSupport.parkNanos(REGISTRATION_BACKOFF_NANOS);
-                    if (Thread.interrupted()) {
-                        Thread.currentThread().interrupt();
-                        throw new IllegalStateException("Registration wait interrupted");
-                    }
-                }
-                return false;
-            } finally {
-                waiter.compareAndSet(currentThread, null);
-            }
-        }
-    }
-
     private final class StreamRuntimeState {
 
         private final AtomicReference<Thread> streamVt = new AtomicReference<>();
         private final AtomicReference<Thread> inboundConsumer = new AtomicReference<>();
         private final AtomicReference<Thread> outboundConsumer = new AtomicReference<>();
-        private final RegistrationGate registrationGate = new RegistrationGate();
+        private final NativeTcpStreamRegistrationGate registrationGate =
+                new NativeTcpStreamRegistrationGate(NativeTcpStream.this::isEndingOrEnded);
         private final AtomicBoolean readParked = new AtomicBoolean(false);
-        private final AtomicReference<Thread> writeWaiter = new AtomicReference<>();
-        private final AtomicBoolean writeParked = new AtomicBoolean(false);
 
         private AtomicReference<Thread> streamVt() {
             return streamVt;
@@ -1393,20 +1488,12 @@ final class NativeTcpStream implements TransportStream {
             return outboundConsumer;
         }
 
-        private RegistrationGate registrationGate() {
+        private NativeTcpStreamRegistrationGate registrationGate() {
             return registrationGate;
         }
 
         private AtomicBoolean readParked() {
             return readParked;
-        }
-
-        private AtomicReference<Thread> writeWaiter() {
-            return writeWaiter;
-        }
-
-        private AtomicBoolean writeParked() {
-            return writeParked;
         }
     }
 

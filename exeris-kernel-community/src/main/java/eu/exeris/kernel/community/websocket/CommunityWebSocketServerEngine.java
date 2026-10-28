@@ -5,7 +5,10 @@
 package eu.exeris.kernel.community.websocket;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.contract.ContractKernelProviders;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.spi.websocket.WebSocketConfig;
@@ -36,6 +39,7 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
     private final MemoryAllocator allocator;
     /** True when no ambient allocator was bound, so this engine created one and must release it. */
     private final boolean ownsAllocator;
+    private final int maxQueuedWriteBytes;
     private final TransportEngine transport;
     private final int listenPort;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -56,8 +60,10 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
                 CommunityWebSocketTransportFactory.resolveAllocator();
         this.ownsAllocator = resolved.ours();
         this.allocator = resolved.allocator();
-        this.transport = CommunityWebSocketTransportFactory.buildTransport(nonNull, resolvedPort,
-                this.allocator);
+        TransportConfig transportConfig =
+                CommunityWebSocketTransportFactory.resolveTransportConfig(nonNull, resolvedPort);
+        this.maxQueuedWriteBytes = transportConfig.maxQueuedWriteBytes();
+        this.transport = CommunityWebSocketTransportFactory.buildTransport(transportConfig, this.allocator);
         this.listenPort = resolvedPort;
     }
 
@@ -90,7 +96,10 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
         }
         boolean startFailed = true;
         try {
-            transport.setStreamHandler(this::serve);
+            // Read here, inside the kernel scope, and captured: the connection threads inherit no binding.
+            WorkloadAdmission admission = ContractKernelProviders.workloadAdmission();
+            boolean enforced = admission.enforced();
+            transport.setStreamHandler(stream -> serve(stream, admission, enforced));
             transport.start();
             CommunityWebSocketLifecycleEvent.emit("start", listenPort);
             startFailed = false;
@@ -101,9 +110,9 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
         }
     }
 
-    private void serve(TransportStream stream) {
+    private void serve(TransportStream stream, WorkloadAdmission admission, boolean enforced) {
         CommunityWebSocketUpgrade.Outcome outcome =
-                CommunityWebSocketUpgrade.negotiate(stream, config, handshakeHandler, allocator);
+                CommunityWebSocketUpgrade.negotiate(stream, config, handshakeHandler, allocator, admission, enforced);
         if (!outcome.accepted()) {
             stream.close();
             return;
@@ -117,7 +126,7 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
         try (TransportStream carrier = stream;
              CommunityWebSocketExchange exchange =
                      new CommunityWebSocketExchange(carrier, session, allocator,
-                             config.maxMessageBytes())) {
+                             config.maxMessageBytes(), maxQueuedWriteBytes)) {
             handler.handle(exchange);
         }
     }

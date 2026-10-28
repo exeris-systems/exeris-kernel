@@ -34,7 +34,7 @@ package eu.exeris.kernel.spi.graph;
  *     .orElseThrow(() -> new GraphBootstrapException("N/A", "No GraphProvider on classpath"));
  *
  * GraphEngine engine = provider.createEngine(config);
- * ScopedValue.where(KernelProviders.GRAPH_ENGINE, engine).run(kernel::startSubsystems);
+ * ScopedValue.where(GraphKernelProviders.GRAPH_ENGINE, engine).run(kernel::startSubsystems);
  * }
  *
  * <h2>SPI Compliance</h2>

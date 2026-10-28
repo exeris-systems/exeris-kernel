@@ -20,13 +20,13 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.OptionalLong;
 
 /**
  * Community {@link KernelCryptoProvider} that creates {@link TlsEngine} instances backed by
@@ -36,6 +36,11 @@ import java.util.Objects;
  * {@link CryptoBootstrapException} for {@code Protocol.QUIC}. Registers at {@link #priority()}
  * {@code 0}; per {@link KernelCryptoProvider}'s discovery contract, a higher-priority provider on
  * the classpath is selected instead.
+ *
+ * <h2>Protocol floor</h2>
+ * <p>Every context, server and client, refuses a peer that negotiates below
+ * {@link CryptoProviderConfig#minimumTlsVersion()}: {@code "TLSv1.2"} and {@code "TLSv1.3"} are
+ * served, and any other value fails the engine's creation.
  *
  * <h2>Client verification</h2>
  * <p>A client engine verifies its server. {@link #createClientTlsEngine} builds one that expects a
@@ -77,15 +82,11 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	/* default */ CommunityKernelCryptoProvider(ClientPeerBinder peerBinder) {
 		this.peerBinder = Objects.requireNonNull(peerBinder, "peerBinder must not be null");
 		runtime = CoreOpenSslLoader.load(Arena.global());
-		FunctionDescriptor setFdDescriptor =
-				FunctionDescriptor.of(
-						ValueLayout.JAVA_INT,
-						ValueLayout.JAVA_LONG,
-						ValueLayout.JAVA_INT);
 		sslSetFd = runtime.optionalSslHandle(
-				"SSL_set_fd",
-				setFdDescriptor);
-		if (sslSetFd == null) {
+				CommunityForeignCall.SSL_SET_FD.symbol(),
+				CommunityForeignCall.SSL_SET_FD.descriptor());
+		CommunityForeignCall.Resolution resolution = CommunityForeignCall.SSL_SET_FD.resolution();
+		if (sslSetFd == null && resolution == CommunityForeignCall.Resolution.REQUIRED) {
 			throw new CryptoBootstrapException(
 					PROVIDER_NAME,
 					"Required OpenSSL symbol SSL_set_fd not found");
@@ -112,7 +113,8 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	 * @param config cryptographic configuration, or {@code null} for {@link CryptoProviderConfig#tcpClient()}
 	 * @return a TLS engine ready for {@link TlsEngine#beginHandshake}
 	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) for {@code Protocol.QUIC}, for a
-	 *         config with exactly one of {@code certChainPath}/{@code privateKeyPath} set, or if
+	 *         config with exactly one of {@code certChainPath}/{@code privateKeyPath} set, for a
+	 *         {@code minimumTlsVersion} other than {@code TLSv1.2} or {@code TLSv1.3}, or if
 	 *         the native SSL context cannot be created or configured
 	 */
 	@Override
@@ -148,8 +150,8 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	 * @param peer   the identity the server's certificate must carry
 	 * @return the engine, with its peer expected and ready to bind
 	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) for {@code Protocol.QUIC}, for a
-	 *         configuration carrying a certificate or key, or if the native context cannot be
-	 *         created
+	 *         configuration carrying a certificate or key, for a {@code minimumTlsVersion} other
+	 *         than {@code TLSv1.2} or {@code TLSv1.3}, or if the native context cannot be created
 	 * @throws IllegalStateException if {@code trust} has been closed
 	 * @throws eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException ({@code EX-NET-2001})
 	 *         if OpenSSL refuses {@code peer}
@@ -170,7 +172,14 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		try {
 			peerBinder.bind(engine.delegate(), peer);
 		} catch (RuntimeException | Error failure) {
-			engine.close();
+			try {
+				engine.close();
+			} catch (RuntimeException | Error releaseFailure) {
+				// the binding failure is the outcome the caller acts on; a failed release rides along
+				if (!releaseFailure.equals(failure)) {
+					failure.addSuppressed(releaseFailure);
+				}
+			}
 			throw failure;
 		}
 		return engine;
@@ -223,6 +232,40 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		// Provider keeps only shared runtime handles bound to Arena.global().
 	}
 
+	/**
+	 * {@code minimumTlsVersion} itself when this provider serves it.
+	 *
+	 * @param minimumTlsVersion a {@code CryptoProviderConfig#minimumTlsVersion} value
+	 * @return {@code minimumTlsVersion}
+	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) if it is neither {@code TLSv1.2} nor
+	 *         {@code TLSv1.3}
+	 * @since 0.13
+	 */
+	public static String requireSupportedMinimumTlsVersion(String minimumTlsVersion) {
+		resolveMinimumProtocol(minimumTlsVersion);
+		return minimumTlsVersion;
+	}
+
+	/**
+	 * The OpenSSL protocol version that {@code minimumTlsVersion} names. Only the versions this
+	 * provider serves are accepted, and a name that matches none is refused rather than mapped to a
+	 * default.
+	 *
+	 * @param minimumTlsVersion a {@code CryptoProviderConfig#minimumTlsVersion} value
+	 * @return the OpenSSL protocol version constant for {@code minimumTlsVersion}
+	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) if it is neither {@code TLSv1.2} nor
+	 *         {@code TLSv1.3}
+	 */
+	/* default */ static int resolveMinimumProtocol(String minimumTlsVersion) {
+		return switch (minimumTlsVersion) {
+			case "TLSv1.2" -> CoreOpenSslLoader.TLS1_2_VERSION;
+			case "TLSv1.3" -> CoreOpenSslLoader.TLS1_3_VERSION;
+			default -> throw new CryptoBootstrapException(PROVIDER_NAME,
+					"Unsupported minimumTlsVersion: expected TLSv1.2 or TLSv1.3",
+					minimumTlsVersion);
+		};
+	}
+
 	private static void requireTcp(CryptoProviderConfig config) {
 		if (config.protocol() == CryptoProviderConfig.Protocol.QUIC) {
 			throw new CryptoBootstrapException(PROVIDER_NAME,
@@ -241,6 +284,7 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	})
 	private CommunityTlsEngine buildEngine(CryptoProviderConfig config, boolean serverMode,
 			CommunityTlsClientTrust trust, boolean noPeerIdentity) {
+		int minimumProtocol = resolveMinimumProtocol(config.minimumTlsVersion());
 		long startedAt = System.nanoTime();
 		boolean ownsAllocator = !KernelProviders.MEMORY_ALLOCATOR.isBound();
 		MemoryAllocator allocator = ownsAllocator
@@ -251,7 +295,7 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		OffHeapTlsEngine delegate = null;
 		CommunityTlsEngine engine = null;
 		try {
-			sslCtxPtr = createSslCtx(config, allocator, serverMode);
+			sslCtxPtr = createSslCtx(config, allocator, serverMode, minimumProtocol);
 			if (trust != null) {
 				installTrust(sslCtxPtr, trust);
 			}
@@ -301,7 +345,8 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	private long createSslCtx(
 			CryptoProviderConfig config,
 			MemoryAllocator allocator,
-			boolean serverMode) {
+			boolean serverMode,
+			int minimumProtocol) {
 		CoreSslHandles.CtxHandles ctx = runtime.handles().ctx();
 		long methodPtr = serverMode ? ctx.invokeServerMethod() : ctx.invokeClientMethod();
 		long sslCtxPtr = ctx.invokeCtxNew(methodPtr);
@@ -311,6 +356,10 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		}
 		boolean contextReady = false;
 		try {
+			if (ctx.invokeCtxSetMinProtoVersion(sslCtxPtr, minimumProtocol) != SSL_SUCCESS) {
+				throw new CryptoBootstrapException(PROVIDER_NAME,
+						"SSL_CTX_set_min_proto_version refused " + config.minimumTlsVersion());
+			}
 			// A client verifies its server; the Community server asks no client certificate.
 			int verifyMode = serverMode
 					? CoreOpenSslLoader.SSL_VERIFY_NONE
@@ -336,14 +385,11 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 			CryptoProviderConfig config, MemoryAllocator allocator) {
 		int certResult;
 		try (LoanedBuffer cert = toCString(config.certChainPath(), allocator)) {
-			certResult = ctx.invokeCtxUseCertFile(
-					sslCtxPtr,
-					cert.segment().address(),
-					CoreOpenSslLoader.SSL_FILETYPE_PEM);
+			certResult = ctx.invokeCtxUseCertChainFile(sslCtxPtr, cert.segment().address());
 		}
 		if (certResult != SSL_SUCCESS) {
 			throw new CryptoBootstrapException(PROVIDER_NAME,
-					"SSL_CTX_use_certificate_file failed", certResult);
+					"SSL_CTX_use_certificate_chain_file failed", certResult);
 		}
 
 		int keyResult;
@@ -364,9 +410,10 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 					PROVIDER_NAME,
 					"SSL_CTX_check_private_key mismatch");
 		}
-		if (CommunityAlpnSelector.STUB != null) {
+		OptionalLong alpnArgument = CommunityAlpnSelector.argumentFor(config.alpnProtocols());
+		if (CommunityAlpnSelector.STUB != null && alpnArgument.isPresent()) {
 			ctx.invokeCtxSetAlpnSelectCb(
-					sslCtxPtr, CommunityAlpnSelector.STUB.address(), NULL_PTR);
+					sslCtxPtr, CommunityAlpnSelector.STUB.address(), alpnArgument.getAsLong());
 		}
 	}
 

@@ -383,6 +383,28 @@ public abstract class AbstractJobSchedulerTck {
                     .isFalse();
         }
 
+        /**
+         * A driver rebinds what it captured and nothing else. A storage-only submission is the shape
+         * a declared job takes, and a driver that adds a default principal to it hands that job an
+         * authority no submitter granted.
+         */
+        @Test
+        @DisplayName("a storage-only submission runs with no principal bound")
+        void storageOnlySubmissionRunsWithoutPrincipal() throws InterruptedException {
+            CountDownLatch fired = new CountDownLatch(1);
+            AtomicReference<Boolean> principalBound = new AtomicReference<>();
+
+            submitAsTenant("storage-only", new JobTrigger.OneShot(Duration.ZERO), () -> {
+                principalBound.set(KernelProviders.PRINCIPAL_CONTEXT.isBound());
+                fired.countDown();
+            });
+
+            assertThat(fired.await(FIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            assertThat(principalBound.get())
+                    .as("ADR-057 §5 — the driver binds no principal the submitter did not supply")
+                    .isFalse();
+        }
+
         @Test
         @DisplayName("a job submitted with no context refuses to run")
         void contextlessJobFailsClosed() throws InterruptedException {

@@ -26,6 +26,10 @@
       PARITY-DELTA: drop OneStatementPerLine   15
       PARITY-DELTA: drop RightCurly             2
 
+      PARITY-DELTA: drop SuppressionSingleFilter     — it exempts only the SPI's KernelErrorCodes
+                                                     from FileLength, a file these classes do not
+                                                     include, so there is nothing here to exempt
+
       PARITY-DELTA: set LineLength.max              120 -> 140, relaxed rather than dropped:
                                                     assertion messages and @DisplayName text are
                                                     prose a reader needs on one line, and all 53

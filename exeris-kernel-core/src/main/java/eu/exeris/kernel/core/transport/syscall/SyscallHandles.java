@@ -74,6 +74,13 @@ public value record SyscallHandles(
 ) {
 
     /**
+     * Initialises the errno readers before any handle can be used; see {@link SyscallErrno#warmUp}.
+     */
+    public SyscallHandles {
+        SyscallErrno.warmUp(socketLastError);
+    }
+
+    /**
      * Returns {@code true} if non-blocking control is available through the
      * POSIX {@code fcntl} interface (Linux / macOS).
      *

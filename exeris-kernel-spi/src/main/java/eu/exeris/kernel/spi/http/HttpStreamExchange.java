@@ -102,6 +102,36 @@ public interface HttpStreamExchange {
     }
 
     /**
+     * Returns the IP address literal of the immediate transport peer of the connection that holds
+     * this stream open, in the same form as
+     * {@link eu.exeris.kernel.spi.transport.TransportConnection#remoteAddress()}.
+     *
+     * <p>The semantics are those of {@link HttpExchange#remoteAddress()}: the proxy when one sits in
+     * front, no forwarded-header interpretation, and {@code null} when no network transport backs the
+     * stream. The value is fixed for the life of the stream and stays readable after it ends.
+     *
+     * @return the peer's IP address literal, or {@code null} when no network transport backs this stream
+     * @implSpec An engine backed by a transport overrides this and {@link #remotePort()}. A decorator
+     *           delegates both. Neither method allocates per call.
+     * @since 0.13
+     */
+    default String remoteAddress() {
+        return null;
+    }
+
+    /**
+     * Returns the port of the immediate transport peer, as reported by {@link #remoteAddress()}.
+     *
+     * @return the peer's port number, or {@code -1} when no network transport backs this stream;
+     *         meaningful only when {@link #remoteAddress()} is non-null
+     * @implSpec Overridden together with {@link #remoteAddress()}, under the same contract.
+     * @since 0.13
+     */
+    default int remotePort() {
+        return -1;
+    }
+
+    /**
      * Frames and writes a single SSE event to the wire.
      *
      * <p><strong>Backpressure:</strong> if the egress window is full, this call parks the calling virtual

@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.security;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.KernelIsolationClaims;
@@ -13,7 +14,6 @@ import eu.exeris.kernel.tck.contract.security.AbstractSecurityProviderTck;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.MemorySegment;
-import java.security.interfaces.RSAPublicKey;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -27,7 +27,19 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
 
     @Override
     protected SecurityProvider createProvider() {
-        return new CommunitySecurityProvider(TestJwt.keySet(), TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE);
+        // The public map constructor stays covered by CommunityOidcIdentityProviderTckTest and the HTTP
+        // admission ITs; this binding needs an Ed25519 key beside the RSA one, which only a resolver can hold.
+        return CommunitySecurityProvider.withKeyResolver(
+                new StaticJwksKeyResolver(Map.of(
+                        TestJwt.TEST_KID, JwsVerificationKey.rs256(TestJwt.testPublicKey()),
+                        TestJwt.TEST_ED25519_KID, JwsVerificationKey.ed25519(TestJwt.testEd25519PublicKey()))),
+                TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE);
+    }
+
+    @Override
+    protected SecurityProvider selectAmong(List<SecurityProvider> candidates) {
+        // The kernel selects this SPI through BootstrapProviderSelector.
+        return BootstrapProviderSelector.selectHighestPriority(candidates, SecurityProvider::priority).orElseThrow();
     }
 
     @Override
@@ -89,6 +101,33 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
     @Override
     protected LoanedBuffer createAlgConfusionTokenBuffer() {
         return TestJwt.builder().kid(TestJwt.TEST_KID).hmacConfusion().toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createEdDsaValidTokenBuffer() {
+        return TestJwt.builder().signedWithEd25519().kid(TestJwt.TEST_ED25519_KID)
+                .claim("scope", "security:read").toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createEdDsaTokenUnderRsaKidBuffer() {
+        return TestJwt.builder().signedWithEd25519().kid(TestJwt.TEST_KID).toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createRs256TokenUnderEdDsaKidBuffer() {
+        return TestJwt.builder().kid(TestJwt.TEST_ED25519_KID).toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createEdDsaSignedTokenNamingRs256Buffer() {
+        return TestJwt.builder().signedWithEd25519().kid(TestJwt.TEST_ED25519_KID)
+                .headerAlgorithm("RS256").toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createRsaTokenUnderUnpinnedAlgorithmBuffer() {
+        return TestJwt.builder().kid(TestJwt.TEST_KID).headerAlgorithm("RS512").toBuffer();
     }
 
     @Override
@@ -182,13 +221,13 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
         private boolean failArmed;
 
         private CommunityRotationHarness() {
-            Map<String, RSAPublicKey> initial = TestJwt.keySet();
+            Map<String, JwsVerificationKey> initial = JwsVerificationKey.rs256All(TestJwt.keySet());
             KeySetSource source = () -> {
                 if (failArmed) {
                     throw new KeySetRefreshException("refresh-failed");
                 }
                 if (newKeySetArmed) {
-                    return Map.of(ROTATED_KID, TestJwt.testPublicKey());
+                    return Map.of(ROTATED_KID, JwsVerificationKey.rs256(TestJwt.testPublicKey()));
                 }
                 return initial;
             };

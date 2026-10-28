@@ -129,6 +129,34 @@ public final class HttpRouter implements HttpHandler, StreamRouteResolver {
     }
 
     /**
+     * Returns the method of the respond-once route {@link #handle} dispatches {@code (method, path)}
+     * to: {@code GET} for a {@code HEAD} request that no {@code HEAD} route matches and a {@code GET}
+     * route does (RFC 9110 §9.3.2), and {@code method} itself otherwise — a registered {@code HEAD}
+     * route is dispatched as {@code HEAD}, and a request nothing matches keeps its own method.
+     *
+     * <p>A decision taken per route, such as admission against a route policy, asks about this method
+     * rather than the request's, so that it is taken for the handler that runs.
+     *
+     * <p>Cost: a method other than {@code HEAD} is answered without resolving anything; a {@code HEAD}
+     * request is resolved as {@link #handle} resolves it, at most twice.
+     *
+     * @param method request method
+     * @param path   request path as received; it may carry a query string, which takes no part in
+     *               matching
+     * @return the method of the route that serves the request
+     * @since 0.13
+     */
+    public HttpMethod routeMethod(HttpMethod method, String path) {
+        if (method != HttpMethod.HEAD) {
+            return method;
+        }
+        String routePath = stripQuery(path);
+        return resolve(HttpMethod.HEAD, routePath) == null && resolve(HttpMethod.GET, routePath) != null
+                ? HttpMethod.GET
+                : HttpMethod.HEAD;
+    }
+
+    /**
      * Creates a new, empty builder for assembling routes before compiling them into a router.
      *
      * @return a new builder
@@ -143,25 +171,14 @@ public final class HttpRouter implements HttpHandler, StreamRouteResolver {
         HttpMethod method = exchange.request().method();
 
         RouteMatch match = resolve(method, path);
-        if (match != null) {
-            dispatch(match, exchange);
-            return;
-        }
-
-        // HEAD → GET fallback per RFC 9110 §9.3.2
-        if (method == HttpMethod.HEAD) {
+        // HEAD → GET fallback per RFC 9110 §9.3.2; routeMethod() states the same rule
+        if (match == null && method == HttpMethod.HEAD) {
             match = resolve(HttpMethod.GET, path);
-            if (match != null) {
-                dispatch(match, exchange);
-                return;
-            }
         }
 
-        notFoundHandler.handle(exchange);
-    }
-
-    private static void dispatch(RouteMatch match, HttpExchange exchange) {
-        if (match.params().isEmpty()) {
+        if (match == null) {
+            notFoundHandler.handle(exchange);
+        } else if (match.params().isEmpty()) {
             match.handler().handle(exchange);
         } else {
             match.handler().handle(new PathParamHttpExchange(exchange, match.params()));

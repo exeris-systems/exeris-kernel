@@ -6,12 +6,14 @@ package eu.exeris.kernel.tck.contract.graph;
 
 import eu.exeris.kernel.spi.graph.GraphDialect;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphHop;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -151,6 +153,65 @@ public abstract class AbstractGraphDialectTck {
             String q3 = dialect.buildMultiHopQuery(follows(), 1, 3);
             String q5 = dialect.buildMultiHopQuery(follows(), 1, 5);
             assertThat(q3).isNotEqualTo(q5);
+        }
+    }
+
+    // =========================================================================
+    // Multi-hop Path Query (GraphPathSpec)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("buildPathQuery()")
+    class BuildPathQuery {
+
+        /**
+         * Groups the assertions for {@code buildPathQuery()}.
+         */
+        BuildPathQuery() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @DisplayName("returns non-blank string for valid hops")
+        void nonBlankForValidHops() {
+            GraphDialect dialect = createDialect();
+            String query = dialect.buildPathQuery(List.of(GraphHop.of(follows()), GraphHop.of(similarTo())));
+            assertThat(query).isNotNull().isNotBlank();
+        }
+
+        @Test
+        @DisplayName("hop order is reflected in query text")
+        void hopOrderReflectedInQueryText() {
+            GraphDialect dialect = createDialect();
+            String q1 = dialect.buildPathQuery(List.of(GraphHop.of(follows()), GraphHop.of(similarTo())));
+            String q1Upper = q1.toUpperCase(Locale.ROOT);
+            assertThat(q1Upper).contains("FOLLOWS").contains("SIMILAR_TO");
+            assertThat(q1Upper.indexOf("FOLLOWS")).isLessThan(q1Upper.indexOf("SIMILAR_TO"));
+
+            String q2 = dialect.buildPathQuery(List.of(GraphHop.of(similarTo()), GraphHop.of(follows())));
+            String q2Upper = q2.toUpperCase(Locale.ROOT);
+            assertThat(q2Upper).contains("FOLLOWS").contains("SIMILAR_TO");
+            assertThat(q2Upper.indexOf("SIMILAR_TO")).isLessThan(q2Upper.indexOf("FOLLOWS"));
+        }
+
+        @Test
+        @DisplayName("different repetition bounds produce different query strings")
+        void differentBoundsProduceDifferentQueries() {
+            GraphDialect dialect = createDialect();
+            String q1 = dialect.buildPathQuery(List.of(new GraphHop(follows(), 1, 2)));
+            String q2 = dialect.buildPathQuery(List.of(new GraphHop(follows(), 1, 3)));
+            assertThat(q1).isNotEqualTo(q2);
+        }
+
+        @Test
+        @DisplayName("identical hops produce identical query strings (deterministic transpilation)")
+        void deterministicTranspilation() {
+            GraphDialect dialect = createDialect();
+            List<GraphHop> hops = List.of(GraphHop.of(follows()), GraphHop.of(similarTo()));
+            String q1 = dialect.buildPathQuery(hops);
+            String q2 = dialect.buildPathQuery(hops);
+            assertThat(q1).isEqualTo(q2);
         }
     }
 

@@ -11,6 +11,10 @@ import java.util.UUID;
  * Immutable request describing a graph traversal: where to start, along which edge type,
  * how deep to go, and what to include in the result.
  *
+ * <p>{@code GraphTraversal(start, edge, d, …)} is equivalent to {@code traversePath} /
+ * {@code streamPathJson} over one hop {@code [1, maxDepth]} of the traversal's edge, so the
+ * descriptor's direction is honoured.
+ *
  * <h2>Valhalla Readiness</h2>
  * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
@@ -20,8 +24,8 @@ import java.util.UUID;
  * @param startNodeId      UUID of the starting node
  * @param edgeDescriptor   the edge type to traverse
  * @param maxDepth         maximum traversal depth (≥ 1)
- * @param includeStartNode whether to include the start node in results
- * @param includePayload   whether to include node payload data in results
+ * @param includeStartNode Deprecated: has no effect — no binding reads it.
+ * @param includePayload   Deprecated: has no effect — no binding reads it.
  *
  * @since 0.5
  */
@@ -29,8 +33,8 @@ public value record GraphTraversal(
         UUID startNodeId,
         GraphEdgeDescriptor edgeDescriptor,
         int maxDepth,
-        boolean includeStartNode,
-        boolean includePayload
+        @Deprecated(since = "0.13") boolean includeStartNode,
+        @Deprecated(since = "0.13") boolean includePayload
 ) {
 
     /** Minimum allowed traversal depth. */

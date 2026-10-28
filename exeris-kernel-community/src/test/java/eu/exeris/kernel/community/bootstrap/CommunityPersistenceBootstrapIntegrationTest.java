@@ -36,6 +36,11 @@ import java.net.Socket;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,12 +48,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Community: Persistence bootstrap integration")
 class CommunityPersistenceBootstrapIntegrationTest {
 
     @Test
-    @DisplayName("KernelBootstrap with persistence subsystem binds engine and executes SELECT 1")
+    @DisplayName("KernelBootstrap with persistence subsystem binds engine and executor, both executing SELECT 1")
     void persistenceSubsystemBindsEngineAndExecutesSimpleQuery() throws Exception {
         String databaseName = "exeris_bootstrap_" + System.nanoTime();
         String previousJdbcUrl = System.getProperty("exeris.persistence.jdbcUrl");
@@ -68,12 +74,21 @@ class CommunityPersistenceBootstrapIntegrationTest {
                     .boot(() -> {
                         assertThat(KernelProviders.PERSISTENCE_PROVIDER.isBound()).isTrue();
                         assertThat(KernelProviders.PERSISTENCE_ENGINE.isBound()).isTrue();
+                        assertThat(KernelProviders.TRANSACTIONAL_EXECUTOR.isBound()).isTrue();
 
                         try (PersistenceConnection connection = KernelProviders.persistenceEngine().openConnection();
                              QueryResult result = connection.executeQuery("SELECT 1")) {
                             assertThat(result.next()).isTrue();
                             assertThat(result.row().getInt(0)).isEqualTo(1);
                         }
+
+                        int viaExecutor = KernelProviders.transactionalExecutor().query(connection -> {
+                            try (QueryResult result = connection.executeQuery("SELECT 1")) {
+                                assertThat(result.next()).isTrue();
+                                return result.row().getInt(0);
+                            }
+                        });
+                        assertThat(viaExecutor).isEqualTo(1);
                     });
         } finally {
             restoreProperty("exeris.persistence.jdbcUrl", previousJdbcUrl);
@@ -84,6 +99,52 @@ class CommunityPersistenceBootstrapIntegrationTest {
 
         assertThat(KernelProviders.PERSISTENCE_PROVIDER.isBound()).isFalse();
         assertThat(KernelProviders.PERSISTENCE_ENGINE.isBound()).isFalse();
+        assertThat(KernelProviders.TRANSACTIONAL_EXECUTOR.isBound()).isFalse();
+    }
+
+    @Test
+    @DisplayName("KernelBootstrap refuses an invalid retry policy before opening any pooled connection")
+    void persistenceSubsystemReadsRetryPolicyFromConfig() throws SQLException {
+        String databaseName = "exeris_bootstrap_retry_" + System.nanoTime();
+        String previousJdbcUrl = System.getProperty("exeris.persistence.jdbcUrl");
+        String previousUsername = System.getProperty("exeris.persistence.username");
+        String previousPassword = System.getProperty("exeris.persistence.password");
+        String previousMaxAttempts = System.getProperty("exeris.persistence.transaction.retry.maxAttempts");
+
+        System.setProperty("exeris.persistence.jdbcUrl", h2Url(databaseName));
+        System.setProperty("exeris.persistence.username", "sa");
+        System.setProperty("exeris.persistence.password", "");
+        // Out of range on purpose: only a subsystem that reads the key can fail on it.
+        System.setProperty("exeris.persistence.transaction.retry.maxAttempts", "0");
+
+        try {
+            assertThatThrownBy(() -> KernelBootstrap.builder()
+                    .selector(BootstrapSelector.forNames("persistence"))
+                    .build()
+                    .boot(() -> { }))
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("maxAttempts must be >= 1");
+        } finally {
+            restoreProperty("exeris.persistence.jdbcUrl", previousJdbcUrl);
+            restoreProperty("exeris.persistence.username", previousUsername);
+            restoreProperty("exeris.persistence.password", previousPassword);
+            restoreProperty("exeris.persistence.transaction.retry.maxAttempts", previousMaxAttempts);
+        }
+
+        assertThat(KernelProviders.TRANSACTIONAL_EXECUTOR.isBound()).isFalse();
+        // stop() never runs for a subsystem whose initialize() threw, so a pool opened before the
+        // refusal would stay open: the probe's own session must be the database's only one.
+        assertThat(openSessions(h2Url(databaseName))).isEqualTo(1);
+    }
+
+    private static int openSessions(String jdbcUrl) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+             Statement statement = connection.createStatement();
+             ResultSet sessions = statement.executeQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.SESSIONS")) {
+            assertThat(sessions.next()).isTrue();
+            return sessions.getInt(1);
+        }
     }
 
     @Test

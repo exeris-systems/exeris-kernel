@@ -13,6 +13,7 @@ slug: adr/ADR-043
 | **Status**      | **ACCEPTED**                                                                                       |
 | **Deciders**    | Arkadiusz Przychocki                                                                               |
 | **Date**        | 2026-06-21                                                                                         |
+| **Revised**     | 2026-09-26 (A1), 2026-10-20 (A2), 2026-10-21 (A1 note), 2026-10-27 (A1 note)                       |
 | **Scope**       | `kernel/transport` (cross-repo obligations: `exeris-sdk`, `exeris-tooling`, `exeris-kernel-enterprise`) |
 | **Owning Repo** | `exeris-kernel`                                                                                    |
 | **Driven By**   | [RFC-2026-06-18](../rfc/RFC-2026-06-18-http-streaming-spi.md) (Kernel HTTP server-push / streaming SPI) |
@@ -121,6 +122,15 @@ that returns a handler it has wrapped gets that nesting from the driver as it st
   `EventSource` against TLS the kernel terminates is served respond-once. Workarounds: terminate
   TLS upstream and speak HTTP/1.1 to the kernel, or, without TLS, set `http.maxVersion=HTTP_1_1`,
   which disables both of those paths to HTTP/2. `http.maxVersion` does not reach ALPN selection.
+  *(2026-10-20: the ALPN half of this limitation is lifted — see
+  [Amendment A2](#amendment-a2-2026-10-20--alpn-selection-honours-httpmaxversion). The stream-route
+  half stands.)*
+  *(2026-10-21: the stream-route half is lifted. Community resolves stream routes over HTTP/2 — TLS
+  with ALPN `h2` and a prior-knowledge preface — and `emit` parks on the stream's and the
+  connection's flow-control windows. The `h2c` upgrade path does not yet consume the client
+  connection preface that follows `101`, so it is not a supported route to HTTP/2.)*
+  *(2026-10-27: the `h2c` upgrade path consumes the client connection preface after `101` and
+  answers the upgrade request on stream 1, so it is a third supported route to HTTP/2.)*
 - The Enterprise native streaming binding, still listed under *What is NOT in scope*, resolves
   through the same interface when it is built. Today the Enterprise HTTP engine serves respond-once
   routes only.
@@ -153,6 +163,16 @@ return and the literal prefix.
 *(On the `preview` branch `StreamResolutionMissAllocationTest` is excluded: on JDK 28 EA its
 result depends on what ran before it in the same JVM, so the miss-allocation cost is not pinned
 there (`PREVIEW-TRACK.md`).)*
+
+## Amendment A2 (2026-10-20) — ALPN selection honours `http.maxVersion`
+
+A1 records that `http.maxVersion` did not reach ALPN selection, so a TLS listener capped at HTTP/1.1
+still negotiated `h2`. That half of the limitation is lifted. A Community TLS listener derives the
+protocols it offers from `HttpConfig#maxVersion`, and the ALPN callback selects only a protocol that
+list names: a listener capped at HTTP/1.1 selects `http/1.1`, and a client that offers only `h2` gets
+no protocol. The stream-route half of the A1 limitation stands: on a connection that negotiates
+HTTP/2, a stream route is still not resolved. The Decision and A1 are otherwise unchanged.
+*(2026-10-21: the stream-route half is lifted as well — see the dated note in A1's Scope.)*
 
 ## Consequences
 

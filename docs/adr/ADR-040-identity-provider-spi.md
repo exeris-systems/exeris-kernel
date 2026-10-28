@@ -1,3 +1,12 @@
+---
+title: "ADR-040: Identity Provider SPI — Pluggable Token Validation + `SecurityProvider` Dispatcher"
+type: adr
+slug: adr/ADR-040
+visibility: public
+owning-repo: exeris-kernel
+status: active
+---
+
 # ADR-040: Identity Provider SPI — Pluggable Token Validation + `SecurityProvider` Dispatcher
 
 | Attribute       | Value                                                                                          |
@@ -5,6 +14,7 @@
 | **Status**      | **ACCEPTED**                                                                                    |
 | **Deciders**    | Arkadiusz Przychocki                                                                            |
 | **Date**        | 2026-06-24                                                                                       |
+| **Amended**     | 2026-10-27 — A1, the key pins the algorithm (RS256, EdDSA/Ed25519), see [Amendments](#amendments) |
 | **Scope**       | kernel/security (per-repo; lockstep cross-repo coordination with `exeris-kernel-enterprise` overlay + downstream `budgetHQ`/`exeris-ai-bridge` consumers) |
 | **Owning Repo** | `exeris-kernel`                                                                                  |
 | **Driven By**   | [RFC-2026-06-08](../rfc/RFC-2026-06-08-identity-provider-spi-shape.md) (ACCEPTED) — Identity Provider SPI Shape |
@@ -86,7 +96,7 @@ public record KeyRotationPolicy(Duration overlapWindow, Duration staleFetchBudge
 2. **No candidate → deny.** `select` returning `null` is a terminal `EX-SEC-2002` deny (reason `no-identity-provider`). Never fail-open.
 3. **`canAttempt` is routing, not trust.** It peeks unverified structure (JWT `iss`, token format) only to choose a provider; it grants nothing. A provider whose `canAttempt` is `true` but whose `authenticate` throws is a deny, with no re-dispatch.
 4. **Storage isolation mapping is kernel-owned and non-overridable.** The `KernelIsolationClaims` → `StorageContext` mapping (the S-P0-07 fail-closed logic: declared-but-unrecognised / malformed isolation claim ⇒ terminal deny; SHARED only on genuinely-absent intent) lives in a **single shared SPI function** `IdentityStorageMapping.fromClaims(VerifiedClaims, UUID subjectId, String tokenType)`. (It sits in `…security.identity` rather than as a method on `KernelIsolationClaims` to avoid a `security ↔ security.identity` package cycle — `KernelIsolationClaims` stays free of any identity-package import.) `ClaimsMapper` maps identity (`PrincipalContext`) **only** — it never produces a `StorageContext`. `IdentityProvider.authenticate` composes `new AuthenticationResult(claimsMapper.map(claims), IdentityStorageMapping.fromClaims(claims, principalId, tokenType))`. No driver re-implements isolation mapping; the fail-closed branch exists in exactly one place.
-5. **Anti-confusion ordering preserved.** The per-driver pipeline keeps the v0.9 `kid → key → alg → signature` order; algorithm is pinned **before** signature verification, never inferred from the token header alone.
+5. **Anti-confusion ordering preserved.** The per-driver pipeline keeps the v0.9 `kid → key → alg → signature` order; algorithm is pinned **before** signature verification, never inferred from the token header alone. _(Amended 2026-10-27: A1 — see Amendments.)_
 
 ### 3. First Community driver — `CommunityOidcIdentityProvider`
 
@@ -130,6 +140,27 @@ Outbound service-to-service propagation stays at **parsed-identity headers** —
 - **PASETO / federation / custom-claim drivers** — each reachable under this contract *after* OIDC-first with no contract change.
 - **`PrincipalContext` shape changes** — additive-only pre-1.0; new mapping needs are met by additive claims via `ClaimsMapper`, not field changes.
 - **Downstream `budgetHQ` integration** — carry-over, cross-repo.
+
+## Amendments
+
+- **A1 — 2026-10-27 — the key pins the algorithm (§2.5).** The Community OIDC driver verifies two JWS algorithms,
+  RS256 over an RSA key and EdDSA over an Ed25519 key, and each verification key carries the one algorithm it is
+  installed for.
+  - **Accepted set.** A JWKS entry is installed when its `use` is absent or `sig`, its `kid` is present, and it is either an
+    RSA key whose `alg` is absent or RS256, or an `OKP` key on `Ed25519` whose `alg` is absent, `EdDSA` or `Ed25519`.
+    Every other entry is skipped and the load continues. A `kid` that two such entries publish is installed for
+    neither; a skipped entry does not make a `kid` ambiguous; a supported key with invalid
+    material fails the load. A header spelling the algorithm `Ed25519` is accepted as `EdDSA`.
+  - **Per-key rule.** The pin is derived from the JWK's own description when the key is installed. A token header must
+    equal the algorithm of the key its `kid` selects before any verifier runs, else the token is denied (`EX-SEC-2002`,
+    `signature-invalid`). The header never selects a key and never selects a verifier, so an algorithm a key was not
+    published for is unreachable through it. The keys of an `RSAPublicKey` map are pinned to RS256.
+  - **TCK obligation.** `AbstractSecurityProviderTck.PerKeyAlgorithmPinContract` accepts an EdDSA token under its
+    Ed25519 key and denies the four crossings: an EdDSA token under an RSA key's `kid`, an RS256 token under an Ed25519
+    key's `kid`, an Ed25519-signed token whose header names RS256, and an RSA-signed token under an algorithm its key is
+    not pinned to. The hooks default to existing fixtures, so a binding that verifies no EdDSA token stays conformant.
+  - **Out of scope.** `ES*`, `PS*` and `Ed448`; an allow-list of algorithms, which belongs to config wiring; an EdDSA
+    key in the static-key API.
 
 ## Cross-references
 

@@ -83,7 +83,8 @@ final class NativeTcpStreamPendingWriteTest {
         LoanedBuffer plain = allocator.allocateNetwork(bytes.length);
         MemorySegment.copy(MemorySegment.ofArray(bytes), 0, plain.segment(), 0, bytes.length);
         NativeTcpStreamPendingWrite.TlsContext ctx =
-                new NativeTcpStreamPendingWrite.TlsContext(engine, new Object(), placeholder);
+                new NativeTcpStreamPendingWrite.TlsContext(engine, new Object(), placeholder,
+                        new java.util.concurrent.atomic.AtomicBoolean());
         return new NativeTcpStreamPendingWrite(plain, bytes.length, ctx, (src, off, len) -> len);
     }
 

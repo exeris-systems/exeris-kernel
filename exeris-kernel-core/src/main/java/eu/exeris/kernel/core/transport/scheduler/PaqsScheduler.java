@@ -8,6 +8,7 @@ import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.transport.jfr.PaqsHandlerFailureEvent;
 import eu.exeris.kernel.core.transport.jfr.StreamAcceptedEvent;
 import eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.transport.StreamHandler;
 import eu.exeris.kernel.spi.transport.StreamPriority;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -383,9 +384,11 @@ public final class PaqsScheduler implements AutoCloseable {
      * Executes the stream handler within the spawned Virtual Thread.
      *
      * <p>Binds the {@link TransportScopes} ScopedValues and guarantees cleanup in
-     * the {@code finally} block. Exception handling is intentionally minimal:
-     * a system logger warning is issued (no heap allocation for logs with {@code isLoggable}
-     * guard) and the stream is force-closed.
+     * the {@code finally} block. Exception handling is intentionally minimal: the stream is
+     * force-closed on any throwable; a peer-closed signal is recorded as {@code PEER_CLOSED} and
+     * logged at DEBUG; every other throwable emits {@link PaqsHandlerFailureEvent} and logs a
+     * WARNING (an {@link Error} logs at ERROR and is rethrown). Logs are guarded by
+     * {@code isLoggable}, so a disabled level allocates nothing.
      *
      * @param stream       the stream to handle
      * @param priority     the stream's priority
@@ -410,20 +413,51 @@ public final class PaqsScheduler implements AutoCloseable {
         } catch (Error error) { //NOPMD AvoidCatchingGenericException — outcome must be set before rethrow
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
             PaqsHandlerFailureEvent.emit(streamId, engineName, error.getClass().getName(), PHASE_HANDLER);
+            // Stream id, engine and class mirror PaqsHandlerFailureEvent. The message and stack trace stay
+            // out of the log on purpose: a handler's exception message may carry request or user data.
+            if (LOG.isLoggable(System.Logger.Level.ERROR)) {
+                LOG.log(System.Logger.Level.ERROR, "Stream handler raised an Error"
+                                + " (streamId={0}, engine={1}, exception={2})",
+                        String.valueOf(streamId), engineName, error.getClass().getName());
+            }
             closeStreamBestEffort(stream, null, false);
             throw error;
         } catch (Throwable t) { //NOPMD AvoidCatchingGenericException,AvoidCatchingThrowable
             // VT stream boundary isolation
-            outcome = StreamLifecycleEvent.OUTCOME_ERROR;
-            PaqsHandlerFailureEvent.emit(streamId, engineName, t.getClass().getName(), PHASE_HANDLER);
-            closeStreamBestEffort(stream, t, true);
-            if (LOG.isLoggable(System.Logger.Level.WARNING)) {
-                LOG.log(System.Logger.Level.WARNING, "Stream handler failed internally (VT boundary isolation)");
+            if (isPeerClosedSignal(t)) {
+                outcome = StreamLifecycleEvent.OUTCOME_PEER_CLOSED;
+                closeStreamBestEffort(stream, null, false);
+                if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+                    LOG.log(System.Logger.Level.DEBUG,
+                            "Stream closed by the peer while its handler ran (streamId={0}, engine={1})",
+                            String.valueOf(streamId), engineName);
+                }
+            } else {
+                outcome = StreamLifecycleEvent.OUTCOME_ERROR;
+                PaqsHandlerFailureEvent.emit(streamId, engineName, t.getClass().getName(), PHASE_HANDLER);
+                closeStreamBestEffort(stream, t, true);
+                // Same fields as PaqsHandlerFailureEvent; no message or stack trace, see the Error branch.
+                if (LOG.isLoggable(System.Logger.Level.WARNING)) {
+                    LOG.log(System.Logger.Level.WARNING,
+                            "Stream handler failed internally (VT boundary isolation)"
+                                    + " (streamId={0}, engine={1}, exception={2})",
+                            String.valueOf(streamId), engineName, t.getClass().getName());
+                }
             }
         } finally {
             admissionController.onStreamCompleted();
             StreamLifecycleEvent.emit(streamId, priorityName, outcome, System.nanoTime() - startNs);
         }
+    }
+
+    /**
+     * Whether a handler's exit is a routine disconnect. Only the thrown object itself is examined:
+     * a layer that wrapped the transport's signal has made it its own failure, and treating the
+     * wrapper as a disconnect would hide a genuine failure that follows one. Protocol-level closed
+     * signals are not transport types and are not classified here.
+     */
+    private static boolean isPeerClosedSignal(Throwable thrown) {
+        return thrown instanceof TransportStreamClosedException closed && closed.isPeerClosed();
     }
 
     @SuppressWarnings("java:S1181")

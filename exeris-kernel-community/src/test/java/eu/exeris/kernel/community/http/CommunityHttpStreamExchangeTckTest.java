@@ -106,6 +106,11 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
     }
 
     @Override
+    protected int egressCreditWindowBytes() {
+        return 16 * 1024;
+    }
+
+    @Override
     protected boolean supportsAuthExpiryProbe() {
         return true;
     }
@@ -166,22 +171,19 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
 
     private static final class LoopbackStreamScenario implements StreamScenario {
 
-        private final TransportEngine serverEngine;
-        private final Socket client;
         private final LeakTrackingAllocator emitAllocator;
-        private final SseClientReader reader;
         private final AtomicReference<Throwable> handlerError = new AtomicReference<>();
         private final CountDownLatch handlerDone = new CountDownLatch(1);
         private final AtomicReference<Thread> emitterThread = new AtomicReference<>();
+        // Assigned once, on the test thread, after the engine is running and the client has connected.
+        // The server-side stream handler never reads them: it can fire the instant the connection is
+        // accepted, before they are set, so it touches only the fields above, which exist from construction.
+        private TransportEngine serverEngine;
+        private Socket client;
+        private SseClientReader reader;
 
-        private LoopbackStreamScenario(TransportEngine serverEngine,
-                                       Socket client,
-                                       LeakTrackingAllocator emitAllocator,
-                                       SseClientReader reader) {
-            this.serverEngine = serverEngine;
-            this.client = client;
+        private LoopbackStreamScenario(LeakTrackingAllocator emitAllocator) {
             this.emitAllocator = emitAllocator;
-            this.reader = reader;
         }
 
         @SuppressWarnings("PMD.CloseResource") // server engine + socket owned and closed in close().
@@ -189,21 +191,19 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
             int port = nextFreePort();
             LeakTrackingAllocator emitAllocator = new LeakTrackingAllocator(ALLOCATOR);
             CommunityHttpStreamDispatcher dispatcher = new CommunityHttpStreamDispatcher(emitAllocator);
+            LoopbackStreamScenario scenario = new LoopbackStreamScenario(emitAllocator);
 
-            TransportEngine serverEngine = createServerEngine(port);
-            LoopbackStreamScenario[] self = new LoopbackStreamScenario[1];
+            TransportEngine engine = createServerEngine(port);
             StreamHandler streamHandler = serverStream ->
-                    self[0].runHandler(dispatcher, handler, serverStream, authDeadlineEpochMillis);
-            serverEngine.setStreamHandler(streamHandler);
-            serverEngine.setConnectionHandler(connection -> { });
-            serverEngine.start();
+                    scenario.runHandler(dispatcher, handler, serverStream, authDeadlineEpochMillis);
+            engine.setStreamHandler(streamHandler);
+            engine.setConnectionHandler(connection -> { });
+            engine.start();
+            scenario.serverEngine = engine;
 
             Socket clientSocket = connectClient(port);
-            SseClientReader readerInstance = SseClientReader.start(clientSocket);
-
-            LoopbackStreamScenario scenario =
-                    new LoopbackStreamScenario(serverEngine, clientSocket, emitAllocator, readerInstance);
-            self[0] = scenario;
+            scenario.client = clientSocket;
+            scenario.reader = SseClientReader.start(clientSocket);
             return scenario;
         }
 

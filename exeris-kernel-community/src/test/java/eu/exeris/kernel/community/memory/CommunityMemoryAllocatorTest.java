@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.ValueLayout;
 import java.nio.file.Files;
@@ -627,4 +628,78 @@ class CommunityMemoryAllocatorTest {
     }
 
     private final AtomicLong totalAllocated = new AtomicLong(0);
+
+    // =========================================================================
+    // Pressure budget — the denominator of the utilisation signal, not a cap
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Pressure budget")
+    @Timeout(60)
+    class PressureBudget {
+
+        private static final long BUDGET = 1_024L * 1_024L;
+        private static final long KIB = 1_024L;
+
+        private MemoryAllocator budgeted;
+
+        @BeforeEach
+        void openBudgeted() {
+            budgeted = new CommunityMemoryProvider().createAllocator(new MemoryProviderConfig(
+                    BUDGET,
+                    CONFIG.networkOffHeapThreshold(),
+                    CONFIG.carrierCount(),
+                    CONFIG.leakDetection(),
+                    CONFIG.jfrEnabled()));
+        }
+
+        @AfterEach
+        void closeBudgeted() {
+            budgeted.close();
+        }
+
+        @Test
+        @DisplayName("idle: the whole budget is free and utilisation is 0")
+        void idle() {
+            MemoryStats stats = budgeted.stats();
+
+            assertThat(stats.totalBytes()).isEqualTo(BUDGET);
+            assertThat(stats.freeBytes()).isEqualTo(BUDGET);
+            assertThat(stats.utilization()).isZero();
+        }
+
+        @Test
+        @DisplayName("holding 768 KiB: free is the remainder and utilisation is 0.75")
+        void held() {
+            try (LoanedBuffer ignored = budgeted.allocateInfrastructure(768 * KIB)) {
+                MemoryStats stats = budgeted.stats();
+
+                assertThat(stats.totalBytes()).isEqualTo(BUDGET);
+                assertThat(stats.allocatedBytes()).isEqualTo(768 * KIB);
+                assertThat(stats.freeBytes()).isEqualTo(256 * KIB);
+                assertThat(stats.utilization()).isEqualTo(0.75);
+                assertThat(stats.allocatedBytes() + stats.freeBytes()).isEqualTo(stats.totalBytes());
+            }
+        }
+
+        @Test
+        @DisplayName("over the budget: allocation is not refused, and the snapshot reads fully utilised")
+        void overBudget() {
+            try (LoanedBuffer ignored = budgeted.allocateInfrastructure(1_536 * KIB)) {
+                MemoryStats stats = budgeted.stats();
+
+                assertThat(stats.totalBytes()).isEqualTo(stats.allocatedBytes());
+                assertThat(stats.freeBytes()).isZero();
+                assertThat(stats.utilization()).isEqualTo(1.0);
+            }
+        }
+
+        @Test
+        @DisplayName("releasing the buffer returns the budget")
+        void released() {
+            budgeted.allocateInfrastructure(768 * KIB).close();
+
+            assertThat(budgeted.stats().freeBytes()).isEqualTo(BUDGET);
+        }
+    }
 }

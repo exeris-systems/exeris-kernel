@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.core.http.http2.Http2FlowController;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
@@ -25,6 +26,14 @@ import java.lang.foreign.MemorySegment;
  * who must then close it, or {@link #close()} releases it; after either, the instance no longer
  * owns a buffer, even though {@link #detachBody} leaves the field referencing the one it gave away.
  */
+// Retained suppressions:
+// - TooManyMethods / CyclomaticComplexity: one request under assembly needs its accessors, the body
+//   append/detach/close lifecycle and the send-window credit it holds for the response; the nested
+//   BufferReservation counts toward the class total.
+@SuppressWarnings({
+        "PMD.TooManyMethods",
+        "PMD.CyclomaticComplexity"
+})
 /* default */ final class Http2RequestStreamState implements AutoCloseable {
     private static final int INITIAL_BODY_BUFFER_BYTES = 1024;
 
@@ -33,6 +42,9 @@ import java.lang.foreign.MemorySegment;
     private LoanedBuffer bodyBuffer;
     private boolean bodyDetached;
     private int bodyBytes;
+    private long pendingSendWindowIncrement;
+    private final Http2FlowController receiveWindow =
+            new Http2FlowController(Http2FlowController.DEFAULT_WINDOW_SIZE);
 
     /* default */ Http2RequestStreamState(int streamId, Http2DecodedRequest request) {
         this.streamId = streamId;
@@ -49,6 +61,60 @@ import java.lang.foreign.MemorySegment;
 
     /* default */ int bodyBytes() {
         return bodyBytes;
+    }
+
+    /**
+     * Returns the send-window credit the peer granted this stream while its request was still
+     * arriving, which the response stream starts with.
+     */
+    /* default */ long pendingSendWindowIncrement() {
+        return pendingSendWindowIncrement;
+    }
+
+    /**
+     * Accumulates a WINDOW_UPDATE that arrived before the response stream exists.
+     *
+     * @param increment            the window increment
+     * @param peerInitialWindowSize the peer's current initial window size, which the response stream
+     *                             will start from
+     * @return {@code false} when the credit would push the stream's window past the maximum, so the
+     *         caller resets the stream with FLOW_CONTROL_ERROR; {@code true} after adding it
+     */
+    /* default */ boolean addSendWindowIncrement(int increment, int peerInitialWindowSize) {
+        if (pendingSendWindowIncrement + increment + peerInitialWindowSize
+                > Http2FlowController.MAX_WINDOW_SIZE) {
+            return false;
+        }
+        pendingSendWindowIncrement += increment;
+        return true;
+    }
+
+    /**
+     * Charges {@code bytes} of the peer's DATA frame, padding included, to this stream's receive
+     * window.
+     *
+     * @return {@code false} when the frame exceeds the window the server has granted, so the caller
+     *         resets the stream with FLOW_CONTROL_ERROR
+     */
+    /* default */ boolean consumeReceiveWindow(int bytes) {
+        return receiveWindow.consume(bytes);
+    }
+
+    /**
+     * Raises the receive window back to {@code target} once it has fallen to half of it or less, so a
+     * peer is credited in batches rather than once per frame.
+     *
+     * @param target the window the stream may be offered
+     * @return the increment to advertise, or {@code 0} when no credit is due
+     */
+    /* default */ int replenishReceiveWindow(long target) {
+        long window = receiveWindow.windowSize();
+        if (target <= window || window > target / 2) {
+            return 0;
+        }
+        int increment = (int) (target - window);
+        receiveWindow.increment(increment);
+        return increment;
     }
 
     /* default */ void appendBody(MemoryAllocator allocator,

@@ -171,8 +171,8 @@ The Mechanism column is what each strategy adds, not all it issues. **Every stra
 whether or not its own isolation reads them — and publishes `""` when the context declares none. Both
 names are published as constants on the persistence SPI (`ConnectionInterceptor.SESSION_KEY_TENANT_ID`,
 `SESSION_KEY_SHARED_SCOPE`) so a generator or migration tool can reference them instead of retyping
-them: a policy naming a key the runtime never publishes returns zero rows and refuses every write,
-which is a hard failure with nothing pointing at its cause.
+them: a policy naming a key the runtime never publishes sees it absent on every statement, and the
+reference policy's raising tenant arm then fails every statement against the table.
 
 **Publishing the keys is the kernel's half; enforcing them is the deployment's, and `ENABLE` alone
 does not enforce.** The kernel ships no RLS policy and cannot introspect one. A conforming policy —
@@ -181,6 +181,135 @@ SECURITY` **and** `FORCE ROW LEVEL SECURITY`, because PostgreSQL exempts a table
 policies unless the table is forced. An application connecting as the role that owns its tables (the
 default in every quick-start) otherwise gets a policy that is enabled, listed in `pg_policies`, and
 never applied: no error, and other tenants' rows in every read.
+
+**A role that bypasses RLS is refused (ADR-012 §4c.4, since 0.13).** A role with `SUPERUSER` or
+`BYPASSRLS` skips every policy, `FORCE`d ones included, so isolation would rest on application code
+alone. When `RlsConnectionInterceptor` is registered, the Community engine reads its role's `pg_roles`
+row once per pool and refuses a bypassing role with `EX-PERS-5009` (`providerName`, `roleName`,
+`attribute`). The remedies are `ALTER ROLE … NOSUPERUSER NOBYPASSRLS` or the explicit consent
+`persistence.rlsAllowBypassRole=true`, which turns the refusal into an ERROR log line and a
+`eu.exeris.kernel.persistence.RlsBypassRole` JFR event on every boot. The check covers PostgreSQL only
+(detected through the driver's product name). It runs at registration, after migrations and pool
+warm-up, which therefore run as the connecting role; the kernel's own tables carry no policy. Tenant
+pools share the shared pool's credentials and are covered by its probe. A dedicated pool may carry other
+credentials, so it is probed before it is first used and refused at its first request, and the refusal is
+remembered. A probe that cannot run is refused with `EX-PERS-5001`, even with the consent. Not detected:
+a later `SET ROLE`, and the table-owner exemption of a table that is not `FORCE`'d.
+
+### Writes pin the scope tag (ADR-012 §4c.2, since 0.13)
+
+The reference owner policy pins the shared-scope tag of a written row as well as its owner, so a row's
+own column never grants visibility that no verified token carried:
+
+```sql
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON table_name
+  USING (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id')))
+  WITH CHECK (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))
+              AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
+
+CREATE POLICY shared_scope_read ON table_name FOR SELECT
+  USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''));
+```
+
+- **Scoped by token only.** A written row is tenant-private or carries the scope the request published;
+  an insert or update tagging a row with any other scope fails, and so does tagging a row from a request
+  that published no scope.
+- **`''` and `NULL` are always admissible.** Both are tenant-private; `NULL` needs a nullable tag column,
+  and `COALESCE` is what keeps a `NULL` tag from evaluating the check to `NULL`.
+- **Un-sharing is admitted.** An owner may re-tag its own row to `''` from a request that does not carry
+  the row's scope, because narrowing visibility widens nothing.
+- **Keeping a tag from a request without the scope is refused.** `WITH CHECK` sees only the new row, so
+  an owner whose request lacks scope `S` cannot update a row tagged `S` and leave the tag in place.
+
+Moving a row from a scope the request does not hold into the scope it publishes is admitted by this
+policy, for the same reason. A per-deployment trigger comparing old and new rows can refuse both that
+and the keep-tag case; the kernel ships no such trigger, and the matrix TCK pins neither.
+
+The tenant arm shown is the `TEXT` form, and it calls the function the next subsection defines. Update
+`tenant_isolation` on an existing deployment with `ALTER POLICY` (see `MIGRATION.md`).
+
+#### On `uuid` columns
+
+A `uuid` owner and a `uuid` tag column take this form of the same two policies:
+
+```sql
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON table_name
+  USING (tenant_id = current_setting('exeris.tenant_id', true)::uuid)
+  WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)::uuid
+              AND (shared_scope IS NULL
+                   OR shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid));
+
+CREATE POLICY shared_scope_read ON table_name FOR SELECT
+  USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid);
+```
+
+- **`NULL` is the only private tag.** A `uuid` column cannot hold `''`, so the check has no `COALESCE`.
+  A published scope `S` admits a row tagged `NULL` or `S`; a request that published no scope admits
+  `NULL` only; re-tagging to `NULL` is admitted, so un-sharing works as on `TEXT`.
+- **The `TEXT` tag check does not transfer.** Installing `COALESCE(shared_scope, '') IN ('', ...)` on a
+  `uuid` column fails at `CREATE POLICY`, before any write: PostgreSQL casts the `''` literal to `uuid`
+  and answers SQLSTATE `22P02`, `invalid input syntax for type uuid: ""` (measured on PostgreSQL 16).
+- **The tenant arm is the unguarded cast.** `''` is not a uuid, so a tenant-less context raises `22P02`,
+  reported as `EX-PERS-5003`, with no helper function. Guarding it with `NULLIF(..., '')` makes a
+  tenant-less read return an empty result, which the matrix refuses; a tenant-less write is refused
+  either way, because the guarded arm yields `NULL` and the check fails with `42501`.
+- **A published scope that is not a uuid fails closed.** Every row the policy evaluates raises `22P02`.
+- **Bound by** `CommunityPersistenceSharedScopeUuidIT`, which runs `AbstractSharedScopeAccessMatrixTck`
+  on `uuid` keys and binds them with `PersistenceStatement.bindUuid`, without a SQL cast.
+
+### An absent tenant raises (ADR-012 §4c.3, since 0.13)
+
+The kernel publishes `exeris.tenant_id` as `''` for a context that declares no tenant
+(`ImmutableStorageContext.GLOBAL`, a `permitAll()` route, `TransactionOrchestrator`'s default) and does
+not refuse such a context: most of them touch no scoped table, and the kernel cannot tell which
+statements will. What `''` yields is the policy's decision, and the reference policy decides that a
+statement against a scoped table **fails** rather than returning an empty result. A mis-scoped read
+that looks like a read of an empty table is the failure this rules out, and so is a tenant-less write
+that a plain `tenant_id = current_setting(...)` check admits as a row owned by the empty tenant, which
+every later tenant-less request reads back.
+
+On a `TEXT` tenant column the deployment installs this function. The kernel does not install it:
+
+```sql
+CREATE FUNCTION public.exeris_required_setting(key text) RETURNS text
+  LANGUAGE plpgsql STABLE AS $$
+DECLARE v text := current_setting(key, true);
+BEGIN
+  IF v IS NULL OR v = '' THEN
+    RAISE EXCEPTION 'session key % is not published', key USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN v;
+END $$;
+-- USING / WITH CHECK (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id')))
+```
+
+- **The policy names the function with its schema.** A session's `search_path` can put a schema the
+  tenant role writes to ahead of `public` (the SEPARATED_SCHEMA strategy sets `<schema>, public`), and an
+  unqualified name would resolve to whatever function of that name the role created there. Install it
+  where the tenant role cannot create objects, and reference it qualified.
+- **The failure is `EX-PERS-5003`** with SQLSTATE `42501` and a message that names the key.
+- **On a `uuid` column the unguarded cast does the same job:**
+  `tenant_id = current_setting('exeris.tenant_id', true)::uuid` raises
+  `invalid input syntax for type uuid` on `''`, reported as `EX-PERS-5003`. Do not guard the cast with
+  `NULLIF(..., '')`: that turns the error back into an empty result.
+- **The shared-scope arm does not raise.** An absent scope is the legitimate tenant-private request, so
+  `NULLIF(current_setting('exeris.shared_scope', true), '')` matches nothing.
+- **Kernel-owned tables are unaffected.** They carry no policy, so system paths that touch only them
+  never meet the function.
+- **Conformance.** Raising is a MUST for a policy that claims conformance, not a deployment choice:
+  `AbstractSharedScopeAccessMatrixTck` and `PersistenceIsolationLeakTck` each assert that a read and a
+  write from a tenant-less context fail with `EX-PERS-5003`, with a control that succeeds under a tenant.
+- **A read of a table with no rows does not raise.** The function runs when a row is evaluated, so a
+  `SELECT` that reaches none returns an empty result. A tenant-less `INSERT` always raises, because
+  `WITH CHECK` is evaluated for the new row. A zero-row `UPDATE` or `DELETE` has not been measured.
+- **Not measured.** The uncorrelated `(SELECT ...)` is meant to let the planner evaluate the function
+  once per statement rather than per row; neither that nor its cost has been measured.
 
 Placement decides which connection a request lands on; it does not decide what the previous borrower
 left in the session. `set_config(..., false)` is session-scoped, so with `persistence.perTenantPooling`
@@ -200,9 +329,8 @@ connection, every later call reuses it, and `box.release()` in the handler's
 
 ### The promise is scoped to `PROMPT` routes (ADR-077, since 0.12)
 
-The qualifier is new and the behaviour it qualifies is not: `PROMPT` is what every
-`RouteRequirement` factory returns, so a route that declares nothing gets exactly the paragraph
-above.
+`PROMPT` is what every `RouteRequirement` factory returns, so a route that declares nothing
+gets exactly the paragraph above.
 
 A route that **blocks** can say so — `RouteRequirement.authenticated().longRunning()` — and then no
 session is bound at all. Each persistence call acquires and releases through the engine, landing on
@@ -244,8 +372,9 @@ events on those threads look like a finding when it is a property of where the i
 `ConnectionHold` is emitted at the pool return itself, so every acquire has a matching hold whoever
 asked.
 
-Two fields make the residency apportionable, and both are sampled **at acquire**, not at release —
-the returning thread is not necessarily the acquiring one:
+Three fields make the residency apportionable and say how it ended. `withinRequestScope` and
+`acquiredOnVirtualThread` are sampled **at acquire**, not at release — the returning thread is not
+necessarily the acquiring one:
 
 | Field | Meaning |
 |---|---|
@@ -267,15 +396,15 @@ second tenant must not be served the first tenant's session.
 **Both `openConnection()` overloads MUST derive that key from the same source.**
 The no-arg overload resolves `KernelProviders.storageContextOrSystem()` and
 delegates to the context overload; it does not key the session `shared` on its
-own. Until v0.12 it did, and the damage was not confined to connection counts:
+own. Two overloads deriving the key from different sources would have consequences
+beyond connection counts:
 
-- Any request touching both overloads mismatched by construction. A Saga does:
+- Any request touching both overloads would mismatch by construction. A Saga does:
   the flow snapshot store, the outbox adapter and the event log all call the
-  no-arg overload while repositories arrive through the context one. Measured
-  on a v0.11 benchmark, 2.0 bypasses per request session.
-- The fallback ran **no** `ConnectionInterceptor`. `RlsConnectionInterceptor`
+  no-arg overload while repositories arrive through the context one.
+- A bypass connection would run **no** `ConnectionInterceptor`. `RlsConnectionInterceptor`
   publishes its keys with session-scoped `set_config(..., false)`, which
-  survives pool checkin, so that connection arrived carrying the *previous
+  survives pool checkin, so that connection would arrive carrying the *previous
   borrower's* tenant: a cross-tenant read under RLS, and a write judged by the
   wrong `WITH CHECK`.
 
@@ -337,10 +466,15 @@ genuinely deep queue. Setting `queueDepthAllowanceRatio=0` recovers the strict p
 | `persistence.admission.earlyGuardBandHeadroomRatio` | `0.15` | headroom fraction for early guard-band reject |
 | `persistence.admission.earlyGuardBandHeadroomCap` | `3` | absolute cap on the early guard-band window |
 
-**Tier split (per the `@Dynamic` contract):** Community resolves these once at bootstrap and does
-not hot-reload (`ConfigProvider.watch` is a no-op); Enterprise swaps the live config atomically on
-file change. The thresholds live entirely in Community (`CommunityAdmissionConfig`) — no SPI field
-is added, so The Wall is untouched.
+**Resolution and reload:** `CommunityAdmissionConfig.CURRENT` is a `@Dynamic` `volatile` field,
+resolved from `persistence.admission.*` at bootstrap by `CommunityPersistenceSubsystem`, which also
+registers a watch callback that re-resolves the record. The Community `ConfigProvider` reads system
+properties and environment variables only, and the callback re-reads through it, so in practice the
+thresholds are fixed for the life of the process. The callback is registered with `KernelConfigRegistry`
+(through `RegistryBackedConfigProvider`) for the exact key `persistence.admission` in `persistence.json`,
+so it fires only when that file changes a line keyed exactly `persistence.admission`; editing a
+`persistence.admission.<name>` threshold in the file does not fire it, whatever provider is bound. The thresholds live entirely in Community (`CommunityAdmissionConfig`) — no SPI
+field is added, so The Wall is untouched.
 
 ### HTTP Integration: 503 Service Unavailable
 
@@ -386,6 +520,7 @@ shed) are covered by the Community admission tests.
 | `EX-PERS-5006` | Interceptor Initialization Error | `[0] String interceptorClass, [1] String isolationKey`            |
 | `EX-PERS-5007` | No Provider on Classpath         | `[0] String message` — **Fatal:** add a persistence provider implementation jar |
 | `EX-PERS-5008` | RowCursor Type Outside Accessor Domain (since 0.12, ADR-080 §2) | `[0] String declaredTypeName, [1] Integer columnIndex, [2] String accessor` |
+| `EX-PERS-5009` | Role Bypasses Row-Level Security (since 0.13, ADR-012 §4c.4) | `[0] String providerName, [1] String roleName, [2] String attribute` |
 
 **Privacy note for `EX-PERS-5001`:** The `sanitizedConnectionUrl` field MUST have the `user:password@` userinfo
 segment stripped before capture. Emitting raw credentials constitutes a CWE-532 violation. See
@@ -461,6 +596,26 @@ PersistenceProvider provider = BootstrapProviderSelector.loadHighestPriority(
                 "No PersistenceProvider found on classpath. Add a persistence provider jar."
         ));
 ```
+
+### 5. Transaction Boundary from the Kernel Slot (since 0.13)
+
+Whenever persistence is bootstrapped, the kernel binds a `TransactionalExecutor` over the shared
+engine to `KernelProviders.TRANSACTIONAL_EXECUTOR`, next to `PERSISTENCE_ENGINE` and for the same
+scope. Code that needs a transaction boundary reads it instead of constructing a
+`TransactionOrchestrator` of its own; a constructor parameter remains the way to supply a different
+executor, for example in a unit test.
+
+```java
+KernelProviders.transactionalExecutor().executeManaged(conn ->
+        conn.prepare("INSERT INTO events (id, data) VALUES ($1, $2)")
+            .bindString(0, id).bindBytes(1, payload).executeUpdate());
+```
+
+The executor retries PostgreSQL `40001` and `40P01` according to
+`persistence.transaction.retry.maxAttempts` (default `1`, a single attempt) and
+`persistence.transaction.retry.baseDelayMs` (default `50`, doubling per retry). A retry runs the
+whole callback again, so enable it only for work whose side effects stay inside the transaction.
+
 ---
 
 
@@ -475,7 +630,7 @@ thread. The following guidance applies:
 | **Pool size formula**          | `cores × 2 + effective_spindle_count` (PgBouncer rule). For NVMe-backed PostgreSQL: `cores × 2`. Ignore VT count entirely — pool size is a DB resource limit, not a thread limit. |
 | **Typical range**              | 10–50 connections per JVM instance. Do NOT scale pool size proportionally to VT count (millions of VTs with 50 connections = correct; 1M connections = PostgreSQL crash). |
 | **Overflow behaviour**         | When pool is exhausted, the JDBC driver blocks the VT (parking, not pinning — see VT Pinning Check below). If the acquisition timeout fires, `EX-PERS-5002` is thrown with `rawArgs[1]=timeoutMs`. |
-| **HikariCP minimum config**    | `maximumPoolSize`: bounded (see formula); `connectionTimeout` (`persistence.connectionTimeoutMs`): 30 000 ms default; `idleTimeout` (`persistence.idleTimeoutMs`): 600 000 ms default; `keepaliveTime`: 30 000 ms (hardcoded, not operator-tunable); `validationTimeout`: 5 000 ms (hardcoded, not operator-tunable). |
+| **HikariCP minimum config**    | `maximumPoolSize`: bounded (see formula); `connectionTimeout` (`persistence.connectionTimeoutMs`): 250 ms default, and a value below 250 is refused at engine construction; `idleTimeout` (`persistence.idleTimeoutMs`): 600 000 ms default; `maxLifetime` (`persistence.maxLifetimeMs`): 1 800 000 ms default; `keepaliveTime`: 30 000 ms (hardcoded, not operator-tunable); `validationTimeout`: 5 000 ms (hardcoded, not operator-tunable). |
 | **Connection validation**      | Stale connections (idle timeout, PostgreSQL failover, `tcp_keepalive_time` breach) are detected via HikariCP's `keepaliveTime` heartbeat. A new connection is acquired transparently. If the pool cannot obtain a connection within `connectionTimeoutMs`: `EX-PERS-5002`. A query-time failure translates by SQLSTATE class, e.g. `08006` (connection failure) to `EX-PERS-5003`. |
 
 > **Anti-pattern:** `maximumPoolSize=1000` in a 10-core Kubernetes pod. This creates 1000 PostgreSQL
@@ -492,7 +647,7 @@ are the responsibility of the application layer or a dedicated migration tool.
 
 > **Exception — internal kernel tables:** The Community tier includes an opt-in migration path
 > (`persistence.runMigrations=true`) that executes built-in SQL scripts to create internal kernel
-> tables (`exeris_outbox`, `exeris_outbox_dlq`, `exeris_saga_state` since 0.7). This applies only to
+> tables (`exeris_outbox`, `exeris_outbox_dlq`, `exeris_saga_state` since 0.7, `exeris_event_log` since 0.10). This applies only to
 > Kernel-owned tables and is explicitly disabled by default. The migration list is maintained in
 > `CommunityPersistenceEngine.MIGRATION_RESOURCES`; new internal tables follow the
 > `db/migration/V{version}__{name}.sql` naming convention. The runner is intentionally minimal
@@ -501,14 +656,13 @@ are the responsibility of the application layer or a dedicated migration tool.
 
 ### Apply-once is the runner's property, not the SQL's (since 0.12, ADR-073)
 
-Until v0.12 the runner executed **every** script on **every** boot and recorded nothing. Re-running
-was harmless only because every author had written `CREATE TABLE IF NOT EXISTS` — counted, not
-assumed: 14 DDL statements across six scripts, all 14 guarded. The first migration that cannot be
-written that way breaks it, and the shapes are ordinary: a data backfill re-applies **silently**
-(healthy boot, wrong data), a constraint tightening fails the second boot outright.
+Re-running every script on every boot is harmless only while every migration is written
+`CREATE TABLE IF NOT EXISTS`. The first migration that cannot be written that way breaks it, and
+the shapes are ordinary: a data backfill re-applies **silently** (healthy boot, wrong data), a
+constraint tightening fails the second boot outright.
 
-`exeris_schema_history` now records one row per applied migration — version, script, checksum,
-timestamp. Three rules follow:
+`exeris_schema_history` therefore records one row per applied migration — version, script, checksum,
+timestamp (`applied_at`). Three rules follow:
 
 | Rule | Behaviour |
 |---|---|
@@ -616,7 +770,7 @@ infinite retry storms.
 - **Pool Exhaustion:** `EX-PERS-5002` is thrown with correct `rawArgs` when all connections are in use.
 - **No Provider:** `EX-PERS-5007` is thrown at bootstrap when no `PersistenceProvider` is on the classpath.
 
-**TCK abstract class set (10 named here):** `AbstractPersistenceEngineTck`, `AbstractPersistenceProviderTck`, `AbstractPersistenceEngineAdmissionControlTck`, `AbstractOutboxGuaranteeTck`, `AbstractEventStoreTck`, `AbstractEntityCodecTck`, `PersistenceCarrierPinningTck`, `PersistenceIsolationLeakTck`, `PersistenceZeroAllocTck`, `AbstractRowCursorThroughputBenchmark` (JMH, lives in `tck/perf`, not `tck/contract/persistence`). The `tck/contract/persistence` package itself holds 14 `*Tck` classes; four are not named above: `AbstractConnectionInterceptorInitTck`, `AbstractRowCursorTck`, `AbstractSharedScopeAccessMatrixTck`, `AbstractTransactionalExecutorTck`.
+**TCK abstract class set (10 named here):** `AbstractPersistenceEngineTck`, `AbstractPersistenceProviderTck`, `AbstractPersistenceEngineAdmissionControlTck`, `AbstractOutboxGuaranteeTck`, `AbstractEventStoreTck`, `AbstractEntityCodecTck`, `PersistenceCarrierPinningTck`, `PersistenceIsolationLeakTck`, `PersistenceZeroAllocTck`, `AbstractRowCursorThroughputBenchmark` (JMH, lives in `tck/perf`, not `tck/contract/persistence`). The `tck/contract/persistence` package itself holds 15 `*Tck` classes; six are not named above: `AbstractConnectionInterceptorInitTck`, `AbstractRowCursorTck`, `AbstractRowCursorTypeSetTck`, `AbstractRlsBypassRoleCheckTck`, `AbstractSharedScopeAccessMatrixTck`, `AbstractTransactionalExecutorTck`.
 
 ---
 
@@ -632,6 +786,7 @@ no unauthorized data ever reaches the application layer and no unguarded mutatio
 
 ## Owning ADRs
 
+- [ADR-012](../adr/ADR-012-security-trust-model-upgrade-for-resource-server-validation-and-fail-closed-runtime.md) — Security Trust Model Upgrade (row-level-security reference policy, bypass-role boot check)
 - [ADR-022](../adr/ADR-022-persistence-spi-extension-instant-binders.md) — Persistence SPI Extension — Instant Binders and Readers
 - [ADR-035](../adr/ADR-035-persistence-admission-control-tunability.md) — Persistence Admission Control Tunability and Small-Pool Recalibration
 - [ADR-073](../adr/ADR-073-schema-history-ledger.md) — The migration runner gets a schema-history ledger, and stops relying on every migration being idempotent

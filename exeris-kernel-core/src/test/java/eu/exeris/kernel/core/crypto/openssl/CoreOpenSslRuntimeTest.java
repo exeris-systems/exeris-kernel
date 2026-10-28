@@ -13,6 +13,9 @@ import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.Optional;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -30,6 +33,10 @@ class CoreOpenSslRuntimeTest {
 
     private static final SymbolLookup EMPTY_LOOKUP =
             symbol -> (symbol == null || symbol.isEmpty()) ? Optional.empty() : Optional.empty();
+
+    // Synthetic stand-in with the cleanse downcall's exact type; these tests never invoke it.
+    private static final MethodHandle NO_CLEANSE =
+            MethodHandles.empty(MethodType.methodType(void.class, long.class, long.class));
 
     @Test
     @DisplayName("handles() returns the exact carrier injected at construction")
@@ -124,6 +131,6 @@ class CoreOpenSslRuntimeTest {
     private static CoreOpenSslRuntime newRuntime(SymbolLookup sslLookup,
                                                  SymbolLookup cryptoLookup,
                                                  CoreSslHandles handles) {
-        return new CoreOpenSslRuntime(Linker.nativeLinker(), sslLookup, cryptoLookup, handles);
+        return new CoreOpenSslRuntime(Linker.nativeLinker(), sslLookup, cryptoLookup, handles, NO_CLEANSE);
     }
 }

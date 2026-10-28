@@ -7,7 +7,6 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.transport.TransportStream;
 
@@ -66,7 +65,7 @@ final class CommunityHttpH2cUpgradeDetector {
      * configured {@link HttpConfig#maxVersion()} allows HTTP/2 negotiation.
      */
     /* default */ boolean isH2cEnabled() {
-        return config.h2cUpgradeEnabled() && supportsHttp2(config.maxVersion());
+        return config.h2cUpgradeEnabled() && config.maxVersion().supportsMultiplexing();
     }
 
     /**
@@ -85,7 +84,7 @@ final class CommunityHttpH2cUpgradeDetector {
                                                      HttpHandler handler,
                                                      ProcessingState state,
                                                      long totalBytes) {
-        if (!supportsHttp2(config.maxVersion())) {
+        if (!config.maxVersion().supportsMultiplexing()) {
             return false;
         }
         LoanedBuffer aggregate = state.aggregate();
@@ -122,10 +121,23 @@ final class CommunityHttpH2cUpgradeDetector {
      * the request hot path.
      */
     /* default */ static boolean isHttp2PriorKnowledgePreface(MemorySegment segment, long totalBytes) {
-        if (totalBytes < HTTP2_PRIOR_KNOWLEDGE_PREFACE.length) {
-            return false;
-        }
-        for (int index = 0; index < HTTP2_PRIOR_KNOWLEDGE_PREFACE.length; index++) {
+        return totalBytes >= HTTP2_PRIOR_KNOWLEDGE_PREFACE.length && isPrefaceOrPrefix(segment, totalBytes);
+    }
+
+    /** The number of bytes in the HTTP/2 client connection preface. */
+    /* default */ static int prefaceLength() {
+        return HTTP2_PRIOR_KNOWLEDGE_PREFACE.length;
+    }
+
+    /**
+     * Returns {@code true} when the first {@code min(availableBytes, preface length)} bytes of
+     * {@code segment} equal the same-length prefix of the HTTP/2 connection preface, so a preface
+     * that arrives in several reads is accepted piece by piece and a wrong byte is refused as soon
+     * as it is seen.
+     */
+    /* default */ static boolean isPrefaceOrPrefix(MemorySegment segment, long availableBytes) {
+        int comparable = (int) Math.min(availableBytes, HTTP2_PRIOR_KNOWLEDGE_PREFACE.length);
+        for (int index = 0; index < comparable; index++) {
             byte actual = segment.get(ValueLayout.JAVA_BYTE, index);
             if (actual != HTTP2_PRIOR_KNOWLEDGE_PREFACE[index]) {
                 return false;
@@ -154,10 +166,6 @@ final class CommunityHttpH2cUpgradeDetector {
             }
         }
         return hasUpgradeH2c && hasConnectionUpgrade;
-    }
-
-    private static boolean supportsHttp2(HttpVersion maxVersion) {
-        return maxVersion == HttpVersion.HTTP_2 || maxVersion == HttpVersion.HTTP_3;
     }
 
     private static boolean containsCsvTokenIgnoreCase(String headerValue, String token) {

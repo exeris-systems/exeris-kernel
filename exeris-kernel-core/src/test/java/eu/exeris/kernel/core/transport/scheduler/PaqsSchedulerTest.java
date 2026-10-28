@@ -9,6 +9,7 @@ import eu.exeris.kernel.core.memory.ResourceArbiterTestHelper;
 import eu.exeris.kernel.core.memory.WatermarkLevel;
 import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.transport.TransportScopes;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LeakDetectionMode;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -17,19 +18,32 @@ import eu.exeris.kernel.spi.memory.MemoryStats;
 import eu.exeris.kernel.spi.transport.StreamPriority;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.Supplier;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -431,6 +445,292 @@ class PaqsSchedulerTest {
         private static void signalAndFail(CountDownLatch latch) {
             latch.countDown();
             throw new RuntimeException("simulated handler failure");
+        }
+    }
+
+    // =========================================================================
+    // Handler failure log record
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Handler failure log record")
+    class HandlerFailureLog {
+
+        private static final String SECRET = "tenant-secret-4f9a";
+
+        /** Error type distinct from every JDK one, so the class name in the record is unambiguous. */
+        private static final class HandlerAssertionError extends AssertionError {
+            private static final long serialVersionUID = 1L;
+
+            HandlerAssertionError(String message) {
+                super(message);
+            }
+        }
+
+        private List<String> capture(Runnable action, List<Level> levels) {
+            Logger logger = Logger.getLogger(PaqsScheduler.class.getName());
+            List<LogRecord> records = new CopyOnWriteArrayList<>();
+            Handler handler = new Handler() {
+                @Override public void publish(LogRecord r) { records.add(r); }
+                @Override public void flush() { /* in memory */ }
+                @Override public void close() { /* in memory */ }
+            };
+            SimpleFormatter formatter = new SimpleFormatter();
+            logger.addHandler(handler);
+            try {
+                action.run();
+            } finally {
+                logger.removeHandler(handler);
+            }
+            List<String> messages = new ArrayList<>();
+            for (LogRecord r : records) {
+                levels.add(r.getLevel());
+                messages.add(formatter.formatMessage(r));
+            }
+            return messages;
+        }
+
+        private PaqsScheduler synchronousScheduler(eu.exeris.kernel.spi.transport.StreamHandler handler) {
+            return new PaqsScheduler(buildController(WatermarkLevel.NORMAL), new StreamLoadShedder(ENGINE),
+                    handler, s -> StreamPriority.NORMAL, ENGINE, (name, task) -> task.run());
+        }
+
+        @Test
+        @DisplayName("an isolated handler exception logs one WARNING with stream id, engine and class, not the message")
+        void isolatedExceptionLogsFieldsWithoutMessage() {
+            PaqsScheduler sut = synchronousScheduler(stream -> {
+                throw new IllegalStateException(SECRET);
+            });
+            List<Level> levels = new ArrayList<>();
+
+            List<String> messages = capture(() -> sut.schedule(stubStream(4242L, new AtomicBoolean())), levels);
+
+            assertThat(levels).containsExactly(Level.WARNING);
+            assertThat(messages).singleElement().satisfies(m -> assertThat(m)
+                    .contains("4242", ENGINE, "java.lang.IllegalStateException")
+                    .doesNotContain(SECRET));
+        }
+
+        @Test
+        @DisplayName("a handler Error logs one ERROR with stream id, engine and class, and is rethrown")
+        void errorLogsFieldsAndIsRethrown() {
+            PaqsScheduler sut = synchronousScheduler(stream -> {
+                throw new HandlerAssertionError(SECRET);
+            });
+            List<Level> levels = new ArrayList<>();
+            AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+            List<String> messages = capture(() -> {
+                try {
+                    sut.schedule(stubStream(4343L, new AtomicBoolean()));
+                } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — records what escaped
+                    thrown.set(t);
+                }
+            }, levels);
+
+            assertThat(thrown.get()).isInstanceOf(HandlerAssertionError.class);
+            assertThat(levels).containsExactly(Level.SEVERE);
+            assertThat(messages).singleElement().satisfies(m -> assertThat(m)
+                    .contains("4343", ENGINE, HandlerAssertionError.class.getName())
+                    .doesNotContain(SECRET));
+        }
+    }
+
+    // =========================================================================
+    // Closed-stream signal classification
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Closed-stream signal classification")
+    class PeerClosedClassification {
+
+        private static final String LIFECYCLE_EVENT = "eu.exeris.kernel.core.transport.StreamLifecycle";
+        private static final String FAILURE_EVENT = "eu.exeris.kernel.core.transport.PaqsHandlerFailure";
+
+        /** What one scheduled stream left behind: log records, JFR events and the close count. */
+        private record Observed(List<Level> levels, List<String> messages,
+                                List<RecordedEvent> lifecycle, List<RecordedEvent> failures,
+                                int closeCalls) { }
+
+        private TransportConnection connection(boolean open) {
+            return (TransportConnection) Proxy.newProxyInstance(
+                    TransportConnection.class.getClassLoader(), new Class<?>[] {TransportConnection.class},
+                    (proxy, method, args) -> {
+                        if ("isOpen".equals(method.getName())) {
+                            return open;
+                        }
+                        throw new UnsupportedOperationException(method.getName());
+                    });
+        }
+
+        private TransportStream writeThrowingStream(long id, Supplier<RuntimeException> onWrite,
+                                                    boolean connectionOpen, AtomicInteger closeCalls) {
+            TransportConnection connection = connection(connectionOpen);
+            return new TransportStream() {
+                @Override public int read(MemorySegment target, int maxBytes) { return -1; }
+                @Override public void write(MemorySegment source, int length) { throw onWrite.get(); }
+                @Override public void queueWrite(LoanedBuffer buffer, int length) { throw onWrite.get(); }
+                @Override public long streamId() { return id; }
+                @Override public boolean isBidirectional() { return true; }
+                @Override public boolean isClientInitiated() { return true; }
+                @Override public TransportConnection connection() { return connection; }
+                @Override public boolean hasPendingData() { return false; }
+                @Override public void close() { closeCalls.incrementAndGet(); }
+            };
+        }
+
+        private Observed run(long id, TransportStream stream, AtomicInteger closeCalls,
+                             eu.exeris.kernel.spi.transport.StreamHandler handler) throws InterruptedException {
+            PaqsScheduler sut = new PaqsScheduler(buildController(WatermarkLevel.NORMAL),
+                    new StreamLoadShedder(ENGINE), handler, s -> StreamPriority.NORMAL, ENGINE,
+                    (name, task) -> task.run());
+            Queue<RecordedEvent> events = new ConcurrentLinkedQueue<>();
+            Logger logger = Logger.getLogger(PaqsScheduler.class.getName());
+            List<LogRecord> records = new CopyOnWriteArrayList<>();
+            Handler logHandler = new Handler() {
+                @Override public void publish(LogRecord r) { records.add(r); }
+                @Override public void flush() { /* in memory */ }
+                @Override public void close() { /* in memory */ }
+            };
+            // Level.ALL makes System.Logger DEBUG (JUL FINE) loggable, so an absent DEBUG record is a
+            // measured absence, not a level that was never going to fire.
+            Level savedLevel = logger.getLevel();
+            try (RecordingStream rs = new RecordingStream()) {
+                rs.enable(LIFECYCLE_EVENT);
+                rs.enable(FAILURE_EVENT);
+                rs.onEvent(LIFECYCLE_EVENT, e -> addIfFor(events, e, id));
+                rs.onEvent(FAILURE_EVENT, e -> addIfFor(events, e, id));
+                AtomicReference<CountDownLatch> flushed = new AtomicReference<>(new CountDownLatch(1));
+                rs.onFlush(() -> flushed.get().countDown());
+                rs.startAsync();
+                assertThat(flushed.get().await(10, TimeUnit.SECONDS))
+                        .as("the recording stream must be live before the stream is scheduled").isTrue();
+
+                logger.setLevel(Level.ALL);
+                logger.addHandler(logHandler);
+                try {
+                    sut.schedule(stream);
+                } finally {
+                    logger.removeHandler(logHandler);
+                    logger.setLevel(savedLevel);
+                }
+
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                while (System.nanoTime() < deadline
+                        && events.stream().noneMatch(e -> LIFECYCLE_EVENT.equals(e.getEventType().getName()))) {
+                    LockSupport.parkNanos(5_000_000L);
+                }
+                // Both events are committed on this thread, the failure first, so one further flush
+                // cannot leave a failure event undelivered.
+                flushed.set(new CountDownLatch(1));
+                assertThat(flushed.get().await(10, TimeUnit.SECONDS))
+                        .as("a flush after the lifecycle event").isTrue();
+            }
+            SimpleFormatter formatter = new SimpleFormatter();
+            List<Level> levels = new ArrayList<>();
+            List<String> messages = new ArrayList<>();
+            for (LogRecord r : records) {
+                levels.add(r.getLevel());
+                messages.add(formatter.formatMessage(r));
+            }
+            List<RecordedEvent> lifecycle = new ArrayList<>();
+            List<RecordedEvent> failures = new ArrayList<>();
+            for (RecordedEvent e : events) {
+                (LIFECYCLE_EVENT.equals(e.getEventType().getName()) ? lifecycle : failures).add(e);
+            }
+            return new Observed(levels, messages, lifecycle, failures, closeCalls.get());
+        }
+
+        private static void addIfFor(Queue<RecordedEvent> events, RecordedEvent e, long id) {
+            if (e.getLong("streamId") == id) {
+                events.add(e);
+            }
+        }
+
+        @Test
+        @DisplayName("a handler ending with the peer-closed signal is PEER_CLOSED, logs DEBUG and emits no failure event")
+        @Timeout(value = 20, unit = TimeUnit.SECONDS)
+        void peerClosedSignalIsQuiet() throws InterruptedException {
+            AtomicInteger closes = new AtomicInteger();
+            // The connection reports open while the stream throws the signal: classification is by
+            // the thrown type, not by state.
+            TransportStream stream = writeThrowingStream(8801L, TransportStreamClosedException::peerClosed,
+                    true, closes);
+
+            Observed seen = run(8801L, stream, closes, s -> s.write(MemorySegment.NULL, 0));
+
+            assertThat(seen.lifecycle()).singleElement()
+                    .satisfies(e -> assertThat(e.getString("outcome")).isEqualTo("PEER_CLOSED"));
+            assertThat(seen.failures()).isEmpty();
+            assertThat(seen.levels()).containsExactly(Level.FINE);
+            assertThat(seen.messages()).singleElement()
+                    .satisfies(m -> assertThat(m).contains("8801", ENGINE));
+            assertThat(seen.closeCalls()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("a handler failure after the peer closed is still a failure")
+        @Timeout(value = 20, unit = TimeUnit.SECONDS)
+        void failureAfterPeerClosedIsStillAFailure() throws InterruptedException {
+            AtomicInteger closes = new AtomicInteger();
+            TransportStream stream = writeThrowingStream(8802L, TransportStreamClosedException::peerClosed,
+                    false, closes);
+
+            Observed seen = run(8802L, stream, closes, s -> {
+                try {
+                    s.write(MemorySegment.NULL, 0);
+                } catch (TransportStreamClosedException closed) {
+                    throw new IllegalArgumentException("handler-bug");
+                }
+            });
+
+            assertThat(seen.lifecycle()).singleElement()
+                    .satisfies(e -> assertThat(e.getString("outcome")).isEqualTo("ERROR"));
+            assertThat(seen.failures()).singleElement().satisfies(e -> assertThat(e.getString("exceptionClass"))
+                    .isEqualTo("java.lang.IllegalArgumentException"));
+            assertThat(seen.levels()).containsExactly(Level.WARNING);
+            assertThat(seen.messages()).singleElement().satisfies(m -> assertThat(m)
+                    .contains("8802", ENGINE, "java.lang.IllegalArgumentException"));
+        }
+
+        @Test
+        @DisplayName("a failure that wraps the peer-closed signal is still a failure")
+        @Timeout(value = 20, unit = TimeUnit.SECONDS)
+        void wrappedPeerClosedSignalIsStillAFailure() throws InterruptedException {
+            AtomicInteger closes = new AtomicInteger();
+            TransportStream stream = writeThrowingStream(8803L, TransportStreamClosedException::peerClosed,
+                    true, closes);
+
+            Observed seen = run(8803L, stream, closes, s -> {
+                try {
+                    s.write(MemorySegment.NULL, 0);
+                } catch (TransportStreamClosedException closed) {
+                    throw new IllegalStateException("wrapper", closed);
+                }
+            });
+
+            assertThat(seen.lifecycle()).singleElement()
+                    .satisfies(e -> assertThat(e.getString("outcome")).isEqualTo("ERROR"));
+            assertThat(seen.failures()).singleElement().satisfies(e -> assertThat(e.getString("exceptionClass"))
+                    .isEqualTo("java.lang.IllegalStateException"));
+            assertThat(seen.levels()).containsExactly(Level.WARNING);
+        }
+
+        @Test
+        @DisplayName("a locally closed signal is still a failure")
+        @Timeout(value = 20, unit = TimeUnit.SECONDS)
+        void locallyClosedSignalIsStillAFailure() throws InterruptedException {
+            AtomicInteger closes = new AtomicInteger();
+            TransportStream stream = writeThrowingStream(8804L, TransportStreamClosedException::locallyClosed,
+                    true, closes);
+
+            Observed seen = run(8804L, stream, closes, s -> s.write(MemorySegment.NULL, 0));
+
+            assertThat(seen.lifecycle()).singleElement()
+                    .satisfies(e -> assertThat(e.getString("outcome")).isEqualTo("ERROR"));
+            assertThat(seen.failures()).singleElement().satisfies(e -> assertThat(e.getString("exceptionClass"))
+                    .isEqualTo(TransportStreamClosedException.class.getName()));
+            assertThat(seen.levels()).containsExactly(Level.WARNING);
         }
     }
 

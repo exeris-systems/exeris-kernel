@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-09
+last-verified: 2026-10-28
 ---
 
 # WebSocket Subsystem — A Duplex Wire the Platform's Own Tools Can Embed
@@ -140,14 +140,25 @@ frame seen so far. A `fill()` that does not need to grow **allocates nothing**. 
 `MemorySegment.copy` into a larger loan and releases the old one; partial frames are compacted to
 the front of the same segment rather than into a new one.
 
-*Egress* (`CommunityWebSocketEgress`) holds one outbound buffer and a `ReentrantLock`. The lock is
-the concurrency contract: **any thread may call `writeText`, `writeFrame` or `sendCloseOnce`**, and
-the lock orders them to one writer at a time. A write against sufficient existing capacity
-allocates nothing.
+*Egress* (`CommunityWebSocketEgress`) takes **one pooled network buffer per frame**, encodes the frame
+into it and hands it to the transport through `queueWrite`, which owns it from then on and releases
+it once the frame's bytes have left the stream's outbound queue. A `ReentrantLock` orders the
+enqueue: **any thread may call `writeText`, `writeFrame` or `sendCloseOnce`**, and frames reach the
+transport in the lock's order, so two messages never interleave.
 
-**Backpressure parks the virtual thread; it never queues on the heap.** A slow peer therefore costs
-a parked carrier-free thread rather than unbounded memory, which is the whole reason a duplex wire
-is affordable here (ADR-084 §7).
+**A slow peer parks `send`; it never queues on the heap and never stalls the receive path.** Data
+frames are admitted against a credit: the bytes handed to the transport and not yet released, against
+`transport.maxQueuedWriteBytes`. A frame is admitted while that count is below the bound, so one
+frame larger than the bound still goes out when nothing is outstanding. A `send` without credit
+parks the virtual thread **without holding the egress lock** and resumes when the transport releases
+bytes; concurrent senders take turns, and every sender on the connection waits behind a peer that
+has stopped reading. Control frames (pong, close) never wait for credit: the frame loop answers a
+ping or echoes a close while a `send` is parked, which is why the lock is never held across a wait
+on the peer. With `transport.maxQueuedWriteBytes = -1` a `send` never waits. A `send` parked when
+the connection closes throws `WebSocketClosedException`; an interrupted one throws
+`IllegalStateException` with its interrupt status restored. A slow peer costs a parked
+carrier-free thread rather than unbounded memory, which is the whole reason a duplex wire is
+affordable here (ADR-084 §7).
 
 The message-size ceiling is enforced, not advisory: a message over `maxMessageBytes` closes the
 connection with `MESSAGE_TOO_BIG` and is **never truncated and delivered**. Truncation would hand a
@@ -200,15 +211,20 @@ default:
 | `websocket.port` | `8081` | RFC 6455 defines no default; an enabled endpoint must be told where |
 | `websocket.maxConnections` | `1024` | |
 | `websocket.idleTimeoutMillis` | **60 s** | |
-| `websocket.keepAliveIntervalMillis` | **20 s** | The engine pings; a handler never has to |
+| `websocket.keepAliveIntervalMillis` | **20 s** | Validated (positive, below `idleTimeoutMillis`) but **not honoured** by the Community engine: it sends no server-initiated pings, and answers a client's `PING` with a `PONG`. A dead peer is reclaimed by `idleTimeoutMillis` |
 | `websocket.maxMessageBytes` | **1 MiB** | |
 
 **`allowedOrigins` is the one an operator must set before a browser can connect**, and leaving it
 alone is the refusing default rather than an oversight (ADR-084 §6).
 
-**There is no TLS key, because `WebSocketConfig` carries no TLS seam yet.** A browser on `https://`
-cannot open `ws://`, so a browser-facing deployment terminates `wss://` at a proxy in front of the
-kernel today. ADR-084 §11 records the seam as required and additive — it is configuration, so it can
+**There is no `websocket.*` TLS key, because `WebSocketConfig` carries no TLS seam yet.** The
+listener's transport takes its certificate material from the ambient `transport.certPath` and
+`transport.keyPath` keys (falling back to `network.certPath` and `network.keyPath`) when a
+configuration is bound; a listener that holds certificate material serves TLS and offers ALPN
+`http/1.1` alone, so a `wss://` connection never selects `h2`. An engine embedded with no
+configuration bound serves plaintext. A browser on `https://` cannot open `ws://`, so a browser-facing
+deployment either supplies that material or terminates `wss://` at a proxy in front of the kernel.
+ADR-084 §11 records the dedicated seam as required and additive — it is configuration, so it can
 arrive without changing the handler surface.
 
 The subsystem is named `websocket`, sits in phase `RUNTIME` and declares `dependsOn("memory")` — it
@@ -256,8 +272,7 @@ requires a kernel scope fails the shared suite instead of passing every wire-lev
 
 **What is not yet covered is the bootstrapped path's own wiring.** Nothing opens a client connection
 against an engine the `websocket` subsystem started, and nothing asserts a handshake handler supplied
-into a boot reaching that engine. Both need a socket-level fixture, and both are carry-over in the
-v0.12.0 notes.
+into a boot reaching that engine. Both need a socket-level fixture.
 
 ## Telemetry
 

@@ -7,21 +7,15 @@ package eu.exeris.kernel.core.crypto.openssl;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
-import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalInt;
-
-import static java.lang.foreign.ValueLayout.ADDRESS;
-import static java.lang.foreign.ValueLayout.JAVA_INT;
-import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 /**
  * Core: "Pure function" that loads OpenSSL and resolves the shared TLS 1.3 runtime.
@@ -64,6 +58,15 @@ public final class CoreOpenSslLoader {
     public static final int SSL_VERIFY_PEER    = 1;
     /** {@code SSL_CTRL_SET_TLSEXT_HOSTNAME = 55}, the {@code SSL_ctrl} command that sets SNI. */
     public static final int SSL_CTRL_SET_TLSEXT_HOSTNAME = 55;
+    /**
+     * {@code SSL_CTRL_SET_MIN_PROTO_VERSION = 123}, the {@code SSL_CTX_ctrl} command behind the
+     * {@code SSL_CTX_set_min_proto_version} macro.
+     */
+    public static final int SSL_CTRL_SET_MIN_PROTO_VERSION = 123;
+    /** {@code TLS1_2_VERSION = 0x0303}. */
+    public static final int TLS1_2_VERSION = 0x0303;
+    /** {@code TLS1_3_VERSION = 0x0304}. */
+    public static final int TLS1_3_VERSION = 0x0304;
     /** {@code TLSEXT_NAMETYPE_host_name = 0}, the only SNI name type. */
     public static final int TLSEXT_NAMETYPE_HOST_NAME = 0;
     /** {@code X509_V_OK = 0} — the {@code SSL_get_verify_result} of a verified peer. */
@@ -200,78 +203,60 @@ public final class CoreOpenSslLoader {
                     + "or install libssl3/libssl4.");
         }
 
-        SymbolLookup lookup = ssl.lookup().or(crypto.lookup());
+        Lookups lookups     = new Lookups(ssl.lookup().or(crypto.lookup()), ssl.lookup(), crypto.lookup());
+        SymbolLookup lookup = lookups.merged();
         Linker linker       = Linker.nativeLinker();
 
         OpenSslVersion version = verifyOpenSslVersion(linker, lookup);
         assertSameMajor(linker, ssl.lookup(), crypto.lookup());
 
         CoreSslHandles.CtxHandles ctx = new CoreSslHandles.CtxHandles(
-                req(linker, lookup, "TLS_server_method",
-                        FunctionDescriptor.of(JAVA_LONG)),
-                req(linker, lookup, "TLS_client_method",
-                        FunctionDescriptor.of(JAVA_LONG)),
-                req(linker, lookup, "SSL_CTX_new_ex",
-                        FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG)),
-                req(linker, lookup, "SSL_CTX_free",
-                        FunctionDescriptor.ofVoid(JAVA_LONG)),
-                req(linker, lookup, "SSL_CTX_use_certificate_file",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT)),
-                req(linker, lookup, "SSL_CTX_use_PrivateKey_file",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT)),
-                req(linker, lookup, "SSL_CTX_check_private_key",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
-                req(linker, lookup, "SSL_CTX_set_verify",
-                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_INT, ADDRESS)),
-                opt(linker, lookup, "SSL_CTX_set_alpn_protos",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT)),
-                opt(linker, lookup, "SSL_CTX_set_alpn_select_cb",
-                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG, JAVA_LONG)));
+                bind(linker, lookups, OpenSslDowncall.TLS_SERVER_METHOD),
+                bind(linker, lookups, OpenSslDowncall.TLS_CLIENT_METHOD),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_NEW_EX),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_FREE),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_USE_CERTIFICATE_FILE),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_USE_CERTIFICATE_CHAIN_FILE),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_USE_PRIVATEKEY_FILE),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_CHECK_PRIVATE_KEY),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_SET_VERIFY),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_SET_ALPN_PROTOS),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_SET_ALPN_SELECT_CB),
+                withLongs(bind(linker, lookups, OpenSslDowncall.SSL_CTX_CTRL),
+                        MethodType.methodType(long.class, long.class, int.class, long.class, long.class)));
 
         // Emit the "successful load" JFR event only AFTER SSL_CTX_new_ex is actually bound
-        // (single-phase, guarded inside OpenSslLoadEvent). Emitting before req(...,
+        // (single-phase, guarded inside OpenSslLoadEvent). Emitting before bind(...,
         // "SSL_CTX_new_ex", ...) could surface a "success" event ahead of a binding that
         // could (theoretically) throw CryptoBootstrapException for a missing symbol.
         OpenSslLoadEvent.emit(version.major(), version.minor(), version.text(),
                 "SSL_CTX_new_ex", ssl.path(), crypto.path());
 
         CoreSslHandles.HandshakeHandles handshake = new CoreSslHandles.HandshakeHandles(
-                req(linker, lookup, "SSL_new",
-                        FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)),
-                req(linker, lookup, "SSL_free",
-                        FunctionDescriptor.ofVoid(JAVA_LONG)),
-                req(linker, lookup, "SSL_accept",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
-                req(linker, lookup, "SSL_connect",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
-                req(linker, lookup, "SSL_do_handshake",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)));
+                bind(linker, lookups, OpenSslDowncall.SSL_NEW),
+                bind(linker, lookups, OpenSslDowncall.SSL_FREE),
+                bind(linker, lookups, OpenSslDowncall.SSL_ACCEPT),
+                bind(linker, lookups, OpenSslDowncall.SSL_CONNECT),
+                bind(linker, lookups, OpenSslDowncall.SSL_DO_HANDSHAKE));
 
         CoreSslHandles.IoHandles ioHandles = new CoreSslHandles.IoHandles(
-                req(linker, lookup, "SSL_read",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT)),
-                req(linker, lookup, "SSL_write",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT)),
-                req(linker, lookup, "SSL_shutdown",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
-                req(linker, lookup, "SSL_get_shutdown",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
-                req(linker, lookup, "SSL_get_error",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_INT)),
-                opt(linker, lookup, "SSL_get0_alpn_selected",
-                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG, JAVA_LONG)),
-                opt(linker, lookup, "SSL_get_current_cipher",
-                        FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)),
-                opt(linker, lookup, "SSL_CIPHER_get_name",
-                        FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)));
+                bind(linker, lookups, OpenSslDowncall.SSL_READ),
+                bind(linker, lookups, OpenSslDowncall.SSL_WRITE),
+                bind(linker, lookups, OpenSslDowncall.SSL_SHUTDOWN),
+                bind(linker, lookups, OpenSslDowncall.SSL_GET_SHUTDOWN),
+                bind(linker, lookups, OpenSslDowncall.SSL_GET_ERROR),
+                bind(linker, lookups, OpenSslDowncall.SSL_GET0_ALPN_SELECTED),
+                bind(linker, lookups, OpenSslDowncall.SSL_GET_CURRENT_CIPHER),
+                bind(linker, lookups, OpenSslDowncall.SSL_CIPHER_GET_NAME));
 
         CoreSslHandles.ErrorQueueHandles errorQueue = new CoreSslHandles.ErrorQueueHandles(
-                req(linker, crypto.lookup(), "ERR_clear_error", FunctionDescriptor.ofVoid()));
+                bind(linker, lookups, OpenSslDowncall.ERR_CLEAR_ERROR));
 
         CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles, errorQueue,
-                peerVerificationHandles(linker, ssl.lookup(), crypto.lookup()),
-                trustStoreHandles(linker, crypto.lookup()));
-        return new CoreOpenSslRuntime(linker, ssl.lookup(), crypto.lookup(), handles);
+                peerVerificationHandles(linker, lookups),
+                trustStoreHandles(linker, lookups));
+        MethodHandle cleanse = bind(linker, lookups, OpenSslDowncall.OPENSSL_CLEANSE);
+        return new CoreOpenSslRuntime(linker, ssl.lookup(), crypto.lookup(), handles, cleanse);
     }
 
     /**
@@ -279,49 +264,31 @@ public final class CoreOpenSslLoader {
      * from 3.0.0 through 4.0; {@code SSL_set1_host}, which 4.0 deprecates, is not used.
      */
     private static CoreSslHandles.PeerVerificationHandles peerVerificationHandles(
-            Linker linker, SymbolLookup ssl, SymbolLookup crypto) {
-        ValueLayout cLong = cLong(linker);
+            Linker linker, Lookups lookups) {
         return new CoreSslHandles.PeerVerificationHandles(
-                req(linker, ssl, "SSL_CTX_set1_cert_store",
-                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG)),
-                req(linker, ssl, "SSL_get0_param",
-                        FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)),
-                req(linker, crypto, "X509_VERIFY_PARAM_set1_host",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG)),
-                req(linker, crypto, "X509_VERIFY_PARAM_set_hostflags",
-                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_INT)),
-                req(linker, crypto, "X509_VERIFY_PARAM_set1_ip",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG)),
-                withLongs(req(linker, ssl, "SSL_ctrl",
-                                FunctionDescriptor.of(cLong, JAVA_LONG, JAVA_INT, cLong, JAVA_LONG)),
+                bind(linker, lookups, OpenSslDowncall.SSL_CTX_SET1_CERT_STORE),
+                bind(linker, lookups, OpenSslDowncall.SSL_GET0_PARAM),
+                bind(linker, lookups, OpenSslDowncall.X509_VERIFY_PARAM_SET1_HOST),
+                bind(linker, lookups, OpenSslDowncall.X509_VERIFY_PARAM_SET_HOSTFLAGS),
+                bind(linker, lookups, OpenSslDowncall.X509_VERIFY_PARAM_SET1_IP),
+                withLongs(bind(linker, lookups, OpenSslDowncall.SSL_CTRL),
                         MethodType.methodType(long.class, long.class, int.class, long.class, long.class)),
-                withLongs(req(linker, ssl, "SSL_get_verify_result",
-                                FunctionDescriptor.of(cLong, JAVA_LONG)),
+                withLongs(bind(linker, lookups, OpenSslDowncall.SSL_GET_VERIFY_RESULT),
                         MethodType.methodType(long.class, long.class)),
-                withLongs(req(linker, crypto, "X509_verify_cert_error_string",
-                                FunctionDescriptor.of(JAVA_LONG, cLong)),
+                withLongs(bind(linker, lookups, OpenSslDowncall.X509_VERIFY_CERT_ERROR_STRING),
                         MethodType.methodType(long.class, long.class)));
     }
 
-    private static CoreSslHandles.TrustStoreHandles trustStoreHandles(Linker linker, SymbolLookup crypto) {
+    private static CoreSslHandles.TrustStoreHandles trustStoreHandles(Linker linker, Lookups lookups) {
         return new CoreSslHandles.TrustStoreHandles(
-                req(linker, crypto, "X509_STORE_new", FunctionDescriptor.of(JAVA_LONG)),
-                req(linker, crypto, "X509_STORE_free", FunctionDescriptor.ofVoid(JAVA_LONG)),
-                req(linker, crypto, "X509_STORE_set_default_paths",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
-                req(linker, crypto, "X509_STORE_load_file",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG)),
-                req(linker, crypto, "X509_get_default_cert_file", FunctionDescriptor.of(JAVA_LONG)),
-                req(linker, crypto, "X509_get_default_cert_dir", FunctionDescriptor.of(JAVA_LONG)),
-                req(linker, crypto, "X509_get_default_cert_file_env", FunctionDescriptor.of(JAVA_LONG)),
-                req(linker, crypto, "X509_get_default_cert_dir_env", FunctionDescriptor.of(JAVA_LONG)));
-    }
-
-    /**
-     * The platform's C {@code long}: 64 bits on LP64 Linux and macOS, 32 bits on LLP64 Windows.
-     */
-    private static ValueLayout cLong(Linker linker) {
-        return (ValueLayout) linker.canonicalLayouts().get("long");
+                bind(linker, lookups, OpenSslDowncall.X509_STORE_NEW),
+                bind(linker, lookups, OpenSslDowncall.X509_STORE_FREE),
+                bind(linker, lookups, OpenSslDowncall.X509_STORE_SET_DEFAULT_PATHS),
+                bind(linker, lookups, OpenSslDowncall.X509_STORE_LOAD_FILE),
+                bind(linker, lookups, OpenSslDowncall.X509_GET_DEFAULT_CERT_FILE),
+                bind(linker, lookups, OpenSslDowncall.X509_GET_DEFAULT_CERT_DIR),
+                bind(linker, lookups, OpenSslDowncall.X509_GET_DEFAULT_CERT_FILE_ENV),
+                bind(linker, lookups, OpenSslDowncall.X509_GET_DEFAULT_CERT_DIR_ENV));
     }
 
     /**
@@ -379,8 +346,8 @@ public final class CoreOpenSslLoader {
      */
     private static OpenSslVersion verifyOpenSslVersion(Linker linker, SymbolLookup lookup) {
         long versionNum = invokeVersionNum(linker, lookup);
-        int major       = invokeVersionInt(linker, lookup, "OPENSSL_version_major");
-        int minor       = invokeVersionInt(linker, lookup, "OPENSSL_version_minor");
+        int major       = invokeVersionInt(linker, lookup, OpenSslDowncall.OPENSSL_VERSION_MAJOR);
+        int minor       = invokeVersionInt(linker, lookup, OpenSslDowncall.OPENSSL_VERSION_MINOR);
         assertSupported(major, minor, versionNum);
         return new OpenSslVersion(major, minor, readVersionText(linker, lookup));
     }
@@ -444,8 +411,8 @@ public final class CoreOpenSslLoader {
      *                                  the crypto-side major ({@code EX-NET-2002})
      */
     private static void assertSameMajor(Linker linker, SymbolLookup ssl, SymbolLookup crypto) {
-        OptionalInt sslMajor = optVersionInt(linker, ssl, "OPENSSL_version_major");
-        int cryptoMajor      = invokeVersionInt(linker, crypto, "OPENSSL_version_major");
+        OptionalInt sslMajor = optVersionInt(linker, ssl, OpenSslDowncall.OPENSSL_VERSION_MAJOR);
+        int cryptoMajor      = invokeVersionInt(linker, crypto, OpenSslDowncall.OPENSSL_VERSION_MAJOR);
         if (sslMajor.isPresent()) {
             assertSameMajor(sslMajor.getAsInt(), cryptoMajor);
         }
@@ -480,8 +447,7 @@ public final class CoreOpenSslLoader {
     }
 
     private static long invokeVersionNum(Linker linker, SymbolLookup lookup) {
-        MethodHandle handle = opt(linker, lookup, "OpenSSL_version_num",
-                FunctionDescriptor.of(JAVA_LONG));
+        MethodHandle handle = link(linker, lookup, OpenSslDowncall.OPENSSL_VERSION_NUM);
         if (handle == null) {
             throw new CryptoBootstrapException(PROVIDER,
                     "OpenSSL_version_num symbol not found — library may not be OpenSSL 3.x/4.x.");
@@ -500,8 +466,8 @@ public final class CoreOpenSslLoader {
      * symbol is not findable via {@code lookup} (e.g. a non-transitive link topology where the
      * crypto-resident symbol is not visible through the ssl handle), instead of throwing.
      */
-    private static OptionalInt optVersionInt(Linker linker, SymbolLookup lookup, String symbol) {
-        MethodHandle handle = opt(linker, lookup, symbol, FunctionDescriptor.of(JAVA_INT));
+    private static OptionalInt optVersionInt(Linker linker, SymbolLookup lookup, OpenSslDowncall probe) {
+        MethodHandle handle = link(linker, lookup, probe);
         if (handle == null) {
             return OptionalInt.empty();
         }
@@ -509,27 +475,26 @@ public final class CoreOpenSslLoader {
             return OptionalInt.of((int) handle.invokeExact());
         } catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
             FfmErrors.rethrowIfError(throwable);
-            throw new CryptoBootstrapException(PROVIDER, symbol + " invocation failed", throwable);
+            throw new CryptoBootstrapException(PROVIDER, probe.symbol() + " invocation failed", throwable);
         }
     }
 
-    private static int invokeVersionInt(Linker linker, SymbolLookup lookup, String symbol) {
-        MethodHandle handle = opt(linker, lookup, symbol, FunctionDescriptor.of(JAVA_INT));
+    private static int invokeVersionInt(Linker linker, SymbolLookup lookup, OpenSslDowncall probe) {
+        MethodHandle handle = link(linker, lookup, probe);
         if (handle == null) {
             throw new CryptoBootstrapException(PROVIDER,
-                    symbol + " symbol not found — library may not be OpenSSL 3.x/4.x.");
+                    probe.symbol() + " symbol not found — library may not be OpenSSL 3.x/4.x.");
         }
         try {
             return (int) handle.invokeExact();
         } catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
             FfmErrors.rethrowIfError(throwable);
-            throw new CryptoBootstrapException(PROVIDER, symbol + " invocation failed", throwable);
+            throw new CryptoBootstrapException(PROVIDER, probe.symbol() + " invocation failed", throwable);
         }
     }
 
     private static String readVersionText(Linker linker, SymbolLookup lookup) {
-        MethodHandle handle = opt(linker, lookup, "OpenSSL_version",
-                FunctionDescriptor.of(ADDRESS, JAVA_INT));
+        MethodHandle handle = link(linker, lookup, OpenSslDowncall.OPENSSL_VERSION);
         if (handle == null) {
             return "";
         }
@@ -623,20 +588,33 @@ public final class CoreOpenSslLoader {
     // Handle factory helpers
     // =========================================================================
 
-    private static MethodHandle req(Linker linker, SymbolLookup lookup,
-                                    String sym, FunctionDescriptor desc) {
-        Optional<MemorySegment> addr = lookup.find(sym);
-        if (addr.isEmpty()) {
-            throw new CryptoBootstrapException(PROVIDER,
-                    "Required OpenSSL symbol not found: " + sym);
-        }
-        return linker.downcallHandle(addr.get(), desc);
+    /**
+     * The three symbol scopes a {@link OpenSslDowncall.Library} selects between: the merged
+     * runtime lookup, {@code libssl} alone and {@code libcrypto} alone.
+     */
+    private value record Lookups(SymbolLookup merged, SymbolLookup ssl, SymbolLookup crypto) {
     }
 
-    private static MethodHandle opt(Linker linker, SymbolLookup lookup,
-                                    String sym, FunctionDescriptor desc) {
-        return lookup.find(sym)
-                .map(addr -> linker.downcallHandle(addr, desc))
-                .orElse(null);
+    /**
+     * Binds {@code downcall} in the library its table row names. A {@code REQUIRED} row whose symbol is
+     * absent fails the load; an {@code OPTIONAL} row yields {@code null}.
+     */
+    private static MethodHandle bind(Linker linker, Lookups lookups, OpenSslDowncall downcall) {
+        SymbolLookup scope = downcall.library().select(lookups.merged(), lookups.ssl(), lookups.crypto());
+        MethodHandle handle = link(linker, scope, downcall);
+        if (handle == null && downcall.resolution() == OpenSslDowncall.Resolution.REQUIRED) {
+            throw new CryptoBootstrapException(PROVIDER,
+                    "Required OpenSSL symbol not found: " + downcall.symbol());
+        }
+        return handle;
+    }
+
+    /**
+     * Links {@code downcall} against {@code lookup}, or returns {@code null} when the symbol is absent.
+     * Used directly by the version probes, whose absence carries a probe-specific diagnosis.
+     */
+    private static MethodHandle link(Linker linker, SymbolLookup lookup, OpenSslDowncall downcall) {
+        Optional<MemorySegment> addr = lookup.find(downcall.symbol());
+        return addr.isEmpty() ? null : linker.downcallHandle(addr.get(), downcall.descriptor());
     }
 }

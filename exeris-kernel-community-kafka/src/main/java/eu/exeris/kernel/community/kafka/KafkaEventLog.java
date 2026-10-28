@@ -141,7 +141,7 @@ final class KafkaEventLog {
         return true;
     }
 
-    private static Properties consumerProps(KafkaEventConfig config) {
+    /* default */ static Properties consumerProps(KafkaEventConfig config) {
         Properties props = new Properties();
         props.put("bootstrap.servers",         config.bootstrapServers());
         props.put("group.id",                  "exeris-eventlog-scan-" + UUID.randomUUID());

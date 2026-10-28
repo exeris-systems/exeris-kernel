@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -161,6 +162,41 @@ class BootstrapProviderSelectorTest {
                     BootstrapProviderSelector.selectFrom(Stream.empty(), BY_PRIORITY, null))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("availabilityFilter");
+        }
+    }
+
+    @Nested
+    @DisplayName("selectHighestPriority over held candidates")
+    class SelectHighestPriorityContract {
+
+        @Test
+        @DisplayName("Highest priority wins in either candidate order; equal priorities break by class name")
+        void highestPriorityWinsInEitherOrder() {
+            FakeProvider low = new LowPriorityAvailable();
+            FakeProvider a = new HighPriorityAvailableA();
+            FakeProvider b = new HighPriorityAvailableB();
+
+            assertThat(BootstrapProviderSelector.selectHighestPriority(List.of(low, a), FakeProvider::priority))
+                    .containsSame(a);
+            assertThat(BootstrapProviderSelector.selectHighestPriority(List.of(a, low), FakeProvider::priority))
+                    .containsSame(a);
+            assertThat(BootstrapProviderSelector.selectHighestPriority(List.of(b, a), FakeProvider::priority))
+                    .containsSame(b);
+            assertThat(BootstrapProviderSelector.selectHighestPriority(List.of(a, b), FakeProvider::priority))
+                    .containsSame(b);
+        }
+
+        @Test
+        @DisplayName("Empty candidates -> empty Optional; null arguments rejected")
+        void emptyAndNullGuards() {
+            assertThat(BootstrapProviderSelector.<FakeProvider>selectHighestPriority(
+                    List.of(), FakeProvider::priority)).isEmpty();
+            assertThatThrownBy(() -> BootstrapProviderSelector.selectHighestPriority(null, FakeProvider::priority))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("candidates");
+            assertThatThrownBy(() -> BootstrapProviderSelector.<FakeProvider>selectHighestPriority(List.of(), null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("priority");
         }
     }
 }

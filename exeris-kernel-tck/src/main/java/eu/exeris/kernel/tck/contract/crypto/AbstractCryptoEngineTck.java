@@ -14,6 +14,8 @@ import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.tck.support.TckTlsMaterial;
+import eu.exeris.kernel.tck.support.TckTlsServerHandshake;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +23,9 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
+import java.nio.channels.SocketChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,6 +61,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   <li>Provider name is non-null and non-blank.</li>
  *   <li>{@code priority()} is non-negative for every tier, and exactly {@code 0} for
  *       Community. No test here pins an Enterprise value.</li>
+ *   <li>{@link CryptoProviderConfig#minimumTlsVersion()} is the handshake floor: at the default
+ *       ({@code TLSv1.3}) a server engine refuses a peer limited to TLS 1.2 and serves a TLS 1.3
+ *       peer; at {@code TLSv1.2} it serves a TLS 1.2 peer; a value the provider does not serve
+ *       fails engine creation. Judged on the wire against a JDK JSSE peer — see
+ *       {@link #honoursMinimumTlsVersion()} and {@link #bindToSocket(TlsEngine, SocketChannel)}.</li>
  * </ol>
  *
  * <p>The three Community-only checks above are skipped via
@@ -157,6 +167,44 @@ public abstract class AbstractCryptoEngineTck {
      */
     protected boolean requiresExternalBindBeforeHandshake() {
         return false;
+    }
+
+
+    /**
+     * Returns {@code true} if the provider under test builds its TLS context from the
+     * {@link CryptoProviderConfig} it is given, and so applies
+     * {@link CryptoProviderConfig#minimumTlsVersion()} as the handshake floor.
+     *
+     * <p>Default: {@code true}. Override to {@code false} only for a binding whose provider hands
+     * out engines over a context it did not build from the configuration; the three
+     * minimum-version tests are then skipped via
+     * {@link org.junit.jupiter.api.Assumptions#assumeTrue} and reported as aborted, never passed.
+     *
+     * @return {@code true} if the minimum-version tests apply to this binding
+     * @since 0.13
+     */
+    protected boolean honoursMinimumTlsVersion() {
+        return true;
+    }
+
+    /**
+     * Binds a server engine to the accepted socket of a loopback connection, so that
+     * {@link TlsEngine#beginHandshake(LoanedBuffer)} can then run the handshake on it.
+     *
+     * <p>Default: throws {@link UnsupportedOperationException}, so that a binding which has not
+     * implemented the bind <em>fails</em> the minimum-version tests rather than skipping them.
+     * A binding whose engine is fd-owned implements it by handing the channel's descriptor to
+     * its engine; a binding whose engine needs no transport binding implements it as a no-op and
+     * has its handshake driven by {@code beginHandshake}.
+     *
+     * @param engine  an engine created by {@link #createProvider()}, server side
+     * @param channel the accepted, blocking channel of the connection to handshake on
+     * @throws UnsupportedOperationException if the binding does not implement the bind
+     * @since 0.13
+     */
+    protected void bindToSocket(TlsEngine engine, SocketChannel channel) {
+        throw new UnsupportedOperationException(
+                "bindToSocket(TlsEngine, SocketChannel) is not implemented by this binding");
     }
 
     // =========================================================================
@@ -574,6 +622,114 @@ public abstract class AbstractCryptoEngineTck {
                     .as("wrap() and unwrap() MUST throw different exception types to preserve " +
                             "the one-code-one-schema invariant (EX-NET-2001 vs EX-NET-2003)")
                     .isNotEqualTo(wrapExType);
+        }
+    }
+
+    // =========================================================================
+    // minimumTlsVersion — the handshake floor
+    // =========================================================================
+
+    private static final String TLS_1_2 = "TLSv1.2";
+
+    /**
+     * Verifies that a server engine built with the default floor ({@code minimumTlsVersion}
+     * unset, which the config defaults to {@code TLSv1.3}) refuses a peer limited to TLS 1.2 and
+     * completes the handshake with a peer that offers TLS 1.3.
+     *
+     * @throws Exception if the loopback fixture fails
+     */
+    @Test
+    @DisplayName("minimumTlsVersion: the default floor refuses a TLSv1.2-only peer and serves TLSv1.3")
+    public final void defaultFloorRefusesTls12AndServesTls13() throws Exception {
+        assumeHonoursMinimumTlsVersion();
+        TckTlsServerHandshake.Outcome refused = serverVersus(null, TLS_1_2);
+        assertThat(refused.engineCompleted())
+                .as("a server engine at the default floor MUST NOT complete a handshake with a TLSv1.2-only peer")
+                .isFalse();
+        assertThat(refused.peerProtocol())
+                .as("the TLSv1.2-only peer MUST NOT have negotiated a session")
+                .isNull();
+        assertThat(refused.peerFailure())
+                .as("the TLSv1.2-only peer MUST have seen the handshake fail")
+                .isNotNull();
+
+        TckTlsServerHandshake.Outcome served = serverVersus(null, CryptoProviderConfig.TLS_1_3);
+        assertThat(served.engineCompleted())
+                .as("a server engine at the default floor MUST complete a handshake with a TLSv1.3 peer")
+                .isTrue();
+        assertThat(served.peerProtocol()).isEqualTo(CryptoProviderConfig.TLS_1_3);
+    }
+
+    /**
+     * Verifies that a server engine built with {@code minimumTlsVersion = "TLSv1.2"} completes
+     * the handshake with a peer limited to TLS 1.2.
+     *
+     * @throws Exception if the loopback fixture fails
+     */
+    @Test
+    @DisplayName("minimumTlsVersion: a TLSv1.2 floor serves a TLSv1.2-only peer")
+    public final void tls12FloorServesTls12Peer() throws Exception {
+        assumeHonoursMinimumTlsVersion();
+        TckTlsServerHandshake.Outcome served = serverVersus(TLS_1_2, TLS_1_2);
+        assertThat(served.engineCompleted())
+                .as("a server engine at a TLSv1.2 floor MUST complete a handshake with a TLSv1.2-only peer")
+                .isTrue();
+        assertThat(served.peerProtocol()).isEqualTo(TLS_1_2);
+    }
+
+    /**
+     * Verifies that a {@code minimumTlsVersion} the provider does not serve fails engine creation
+     * with {@link CryptoBootstrapException}, rather than being mapped to a default floor.
+     *
+     * @throws Exception if the certificate fixture fails
+     */
+    @Test
+    @DisplayName("minimumTlsVersion: an unsupported value fails engine creation")
+    public final void unsupportedMinimumTlsVersionFailsEngineCreation() throws Exception {
+        assumeHonoursMinimumTlsVersion();
+        Path directory = Files.createTempDirectory("exeris-tck-tls");
+        try {
+            TckTlsMaterial material = TckTlsMaterial.generateInto(directory);
+            for (String unsupported : List.of("TLSv1.4", "1.3", "SSLv3")) {
+                CryptoProviderConfig config = serverConfig(material, unsupported);
+                assertThatThrownBy(() -> provider.createTlsEngine(config).close())
+                        .as("createTlsEngine(minimumTlsVersion=%s) MUST throw CryptoBootstrapException", unsupported)
+                        .isInstanceOf(CryptoBootstrapException.class);
+            }
+        } finally {
+            TckTlsServerHandshake.deleteRecursively(directory);
+        }
+    }
+
+    private void assumeHonoursMinimumTlsVersion() {
+        assumeTrue(honoursMinimumTlsVersion(),
+                "Skipped: this binding declares honoursMinimumTlsVersion() == false — its provider "
+                        + "does not build the TLS context from CryptoProviderConfig");
+    }
+
+    private static CryptoProviderConfig serverConfig(TckTlsMaterial material, String minimumTlsVersion) {
+        return new CryptoProviderConfig(CryptoProviderConfig.Protocol.TCP_TLS,
+                material.certificate(), material.privateKey(),
+                List.of(), 0, false, minimumTlsVersion);
+    }
+
+    /**
+     * Handshakes a server engine configured with {@code floor} against a JSSE client that enables
+     * only {@code peerProtocol}, over loopback.
+     */
+    private TckTlsServerHandshake.Outcome serverVersus(String floor, String peerProtocol) throws Exception {
+        Path directory = Files.createTempDirectory("exeris-tck-tls");
+        try {
+            TckTlsMaterial material = TckTlsMaterial.generateInto(directory);
+            try (TlsEngine engine = provider.createTlsEngine(serverConfig(material, floor))) {
+                TckTlsServerHandshake.Outcome outcome = TckTlsServerHandshake.run(
+                        engine, material, peerProtocol, allocator, this::bindToSocket);
+                assertThat(outcome.timedOut()).as("the handshake must end, completed or refused").isFalse();
+                assertThat(outcome.fixtureFailure()).as("the fixture's own peers").isNull();
+                return outcome;
+            }
+        } finally {
+            TckTlsServerHandshake.deleteRecursively(directory);
         }
     }
 }

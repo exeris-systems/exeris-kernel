@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Timeout;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Handler;
@@ -40,6 +41,7 @@ class JfrPinningMonitorClassInitSelfTest {
     private static final long CLINIT_MILLIS = 200L;
 
     private static final AtomicBoolean INITIALISED = new AtomicBoolean();
+    private static final CountDownLatch CLINIT_ENTERED = new CountDownLatch(1);
 
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS)
@@ -129,9 +131,11 @@ class JfrPinningMonitorClassInitSelfTest {
 
     private static void touchSlowClassFromTwoVirtualThreads() throws InterruptedException {
         Thread first = Thread.ofVirtual().name("self-test-clinit-owner").start(SlowInit::touch);
-        // Long enough for the first thread to be inside the static initialiser, so the second one
+        // Wait until the first thread is inside the static initialiser so the second thread
         // waits on it rather than racing to run it.
-        Thread.sleep(CLINIT_MILLIS / 4);
+        assertThat(CLINIT_ENTERED.await(10, TimeUnit.SECONDS))
+                .withFailMessage("the first thread did not enter class initialisation in time")
+                .isTrue();
         Thread second = Thread.ofVirtual().name("self-test-clinit-waiter").start(SlowInit::touch);
         first.join();
         second.join();
@@ -141,6 +145,7 @@ class JfrPinningMonitorClassInitSelfTest {
     private static final class SlowInit {
 
         static {
+            CLINIT_ENTERED.countDown();
             try {
                 Thread.sleep(CLINIT_MILLIS);
             } catch (InterruptedException _) {

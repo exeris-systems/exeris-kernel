@@ -54,7 +54,15 @@ public interface HttpRoutePolicy {
     /**
      * Returns what the given route requires of the caller.
      *
-     * @param method the request method; never {@code null}
+     * <p>The kernel asks about the route a request is dispatched to, which is not always the
+     * request-target as sent. The query component is removed. A {@code HEAD} request that the kernel's
+     * router serves from the {@code GET} route, because no {@code HEAD} route matches it
+     * (RFC 9110 §9.3.2), is asked as {@code GET}: the {@code GET} handler is what runs, so the
+     * {@code GET} requirement is what governs it, and a {@code HEAD} rule for that path is not
+     * consulted. A {@code HEAD} request dispatched to a registered {@code HEAD} route is asked as
+     * {@code HEAD}, as is any {@code HEAD} request behind a root handler other than that router.
+     *
+     * @param method the method of the route the request is dispatched to; never {@code null}
      * @param path   the request path, without query string; never {@code null}
      * @return the requirement; never {@code null}
      */

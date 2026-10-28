@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntSupplier;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,33 +54,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * real orchestrator applies to production subsystems.
  *
  * <h2>Usage</h2>
- * {@snippet lang="java" :
- * class CommunityGracefulShutdownTest extends AbstractGracefulShutdownTck {
- *     @Override
- *     protected KernelHandle buildAndStartKernel() {
- *         var order = new java.util.concurrent.CopyOnWriteArrayList<String>();
- *         var transportEngine   = new CommunityTransportEngine(...);
- *         var persistenceEngine = new CommunityPersistenceEngine(...);
- *         var flowEngine        = new CoreFlowEngine(...);
- *         var eventsEngine      = new CommunityEventEngine(...);
- *         transportEngine.start(); persistenceEngine.start();
- *         flowEngine.start();      eventsEngine.start();
+ * <p>A binding supplies real {@code Subsystem}s whose {@code stop()} closes a {@link TrackedEngine},
+ * boots them through the kernel's real bootstrap, and passes an {@code orchestratorShutdown} that
+ * triggers the shipped stop path. The Core binding {@code CoreGracefulShutdownTckTest} is the
+ * reference: six stub subsystems in a linear dependency chain, a transport fake that drains its
+ * queued work into a persistence fake only when it closes, and a boot thread held inside
+ * {@code kernelMain} until the test releases it.
  *
- *         var transport   = new TrackedEngine("Transport",   transportEngine).withObservedOrder(order);
- *         var persistence = new TrackedEngine("Persistence", persistenceEngine).withObservedOrder(order);
- *         var flow        = new TrackedEngine("Flow",        flowEngine).withObservedOrder(order);
- *         var events      = new TrackedEngine("Events",      eventsEngine).withObservedOrder(order);
- *
- *         return new KernelHandle(
- *             transport, persistence, flow, events, null, null,
- *             () -> transportEngine.enqueue("ping"),
- *             () -> persistenceEngine.eventStore(conn).pollPending(Integer.MAX_VALUE).size(),
- *             () -> { transport.close(); persistence.close(); flow.close(); events.close(); },
- *             order
- *         );
- *     }
- * }
- * }
+ * <p>The drain assertion is meaningful only when {@code requestSender} returns before its write is
+ * durable; a synchronous sender holds the confirmed-write count equal to the sent count whatever
+ * order the engines close in.
  *
  * @since 0.5
  * @see AbstractBootstrapOrchestratorTck
@@ -275,8 +260,22 @@ public abstract class AbstractGracefulShutdownTck {
                 LockSupport.parkNanos(
                         TimeUnit.MILLISECONDS.toNanos(10));
             }
+            if (!allClosed()) {
+                throw new AssertionError("Engines not closed within 10 s of the shutdown trigger: "
+                        + unclosedEngineNames());
+            }
 
             return List.copyOf(observedOrder);
+        }
+
+        /** Returns the names of the non-null {@link TrackedEngine}s that have not closed. */
+        private List<String> unclosedEngineNames() {
+            return engines().filter(e -> !e.isClosed()).map(TrackedEngine::name).toList();
+        }
+
+        private Stream<TrackedEngine> engines() {
+            return Stream.of(transport, persistence, flow, events, graph, memory)
+                    .filter(Objects::nonNull);
         }
 
         /** Returns {@code true} when every non-null {@link TrackedEngine} has been closed. */
@@ -323,6 +322,11 @@ public abstract class AbstractGracefulShutdownTck {
         public TrackedEngine withObservedOrder(CopyOnWriteArrayList<String> list) {
             this.observedOrder = list;
             return this;
+        }
+
+        /** Returns {@code true} when this engine appends to exactly {@code list} (identity). */
+        boolean recordsInto(List<String> list) {
+            return observedOrder == list;  // NOPMD CompareObjectsWithEquals - list identity is the contract
         }
 
         /**
@@ -374,6 +378,15 @@ public abstract class AbstractGracefulShutdownTck {
     @BeforeEach
     final void setUp() {
         kernel = buildAndStartKernel();
+        assertThat(kernel.observedOrder())
+                .as("The handle must carry the shared observed-order list")
+                .isNotNull();
+        assertThat(kernel.engines().count())
+                .as("A binding must supply at least two tracked engines, or no ordering can be observed")
+                .isGreaterThanOrEqualTo(2);
+        kernel.engines().forEach(engine -> assertThat(engine.recordsInto(kernel.observedOrder()))
+                .as("Engine '%s' must be bound to the handle's observed-order list", engine.name())
+                .isTrue());
     }
 
     @AfterEach

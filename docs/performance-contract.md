@@ -43,10 +43,16 @@ This is where Exeris implements the **"No Waste Compute"** philosophy.
 
 | Metric (SLI)            | Target (SLO)    | Breach Threshold | Rationale                               |
 |:------------------------|:----------------|:-----------------|:----------------------------------------|
-| **Telemetry Overhead**  | > 10M ops/s     | < 5M ops/s       | `BinaryGlassBox` JMH validation         |
+| **Telemetry Overhead**  | > 10M ops/s     | < 5M ops/s       | Enterprise binary Glass-Box sink (not in this repository); the in-repository JMH `AbstractTelemetrySinkBenchmark` states ≥ 2M ops/s for the JFR sink and ≥ 5M ops/s for the Enterprise ring-buffer sink |
 | **Kernel Overhead**     | < 500 µs        | > 1 ms           | Read to Virtual Thread Mount latency    |
 | **GC Pause (P99)**      | < 1 ms          | > 5 ms           | ZGC Generational validation             |
 | **Allocation Rate**     | **0 B / req**   | > 65 B / req     | Strict zero-allocation on hot path      |
+
+Allocation is asserted per subsystem by the suites built on `AbstractSubsystemZeroAllocTck`: zero
+`eu.exeris.*` allocations per iteration when a binding sets `supportsZeroGcHotPath()`, otherwise a
+per-iteration budget the suite sets (default 5; `CryptoZeroAllocTck` sets 8, though its only binding in
+this repository asserts zero on the `OffHeapTlsEngine` guard path). No merge gate holds the latency, pause
+or throughput targets; the JMH benchmarks in this repository assert nothing, and none measures GC pause.
 
 ---
 
@@ -59,7 +65,7 @@ Under **GraalVM native-image (SubstrateVM)** the contract is **different, not br
 **Consequences for benchmarking and claims:**
 
 - The targets in §2.1–§2.2 apply on **HotSpot/C2** (the *throughput tier*). Any benchmark asserting the zero-allocation or RPS-per-core claims **MUST** run on HotSpot/C2 and record the JIT tier. A native-image measurement of these specific claims is **out of contract** and must not be presented as a refutation of them.
-- **native-image is the *edge/lightweight tier*** — fast startup without warmup, small footprint, small image — a separately-scoped performance profile, not a regression of this one. Its enablement is a post-1.0 gated track (see ROADMAP "Road to 1.0" §"Scope Discipline & Declared Stances" — the Native-image / GraalVM stance).
+- **native-image is the *edge/lightweight tier*** — fast startup without warmup, small footprint, small image — a separately-scoped performance profile, not a regression of this one. From 0.13 it is supported as an opt-in build under [ADR-103](adr/ADR-103-native-image-opt-in-build.md), with the kernel's metadata shipped in its jars; it is not supported on 0.12 and earlier artifacts. The HotSpot/C2 pin above is unchanged by it, and native-image startup and footprint figures are published as edge-tier measurements, not as SLOs.
 
 Scoping the contract to the execution tier it was measured on **defends the claim**: an unscoped "zero-alloc" assertion benchmarked under native-image would read as false when it is merely measured against the wrong contract.
 
@@ -84,8 +90,8 @@ Exeris runtime enforces per-request latency and fairness bounds via SPI-level ad
 When Persistence pool(s) reach saturation:
 
 1. HTTP dispatcher calls `PersistenceEngine.canServiceRequest()`
-2. If false (no capacity), HTTP responds **503 Service Unavailable**
-3. Client retries after advertised Retry-After header (1–10 seconds)
+2. If false (no capacity), HTTP responds **503 Service Unavailable** with `Retry-After: 1`; if the admission check itself throws, the 503 carries `Retry-After: 10` (`CommunityHttpRequestDispatcher.dispatch`)
+3. Client retries after the advertised Retry-After delay
 
 This prevents unchecked thread proliferation and pool queuing:
 - **Before:** Threads park on exhausted pool → fairness inversion → cascading latency spike
@@ -93,24 +99,23 @@ This prevents unchecked thread proliferation and pool queuing:
 
 ### Tier Differences
 
-**Community:** Conservative HikariCP-based gating
-- Rejects if: `idle == 0 AND queue forming`
-- Rejects if: `active >= (maxPoolSize * 0.9)`
-- Latency: <1ms per check
-- Implementation: Direct HikariCP `getNumIdle()` / `getNumActive()` query
+**Community:** HikariCP-based gating (ADR-035), `CommunityPersistenceAdmissionController`
+- Reads the pool's active, idle and pending-acquire counts from the Hikari pool MXBean
+- Sheds only once pending acquires exceed an allowance of `ceil(maxPoolSize × queueDepthAllowanceRatio)`; the ratio defaults to `8.0` (`persistence.admission.queueDepthAllowanceRatio`), and `0` restores shedding on the first queued acquire
+- Past the allowance it rejects when: `active / maxPoolSize >= 0.90`; or `active / maxPoolSize >= 0.85` with little headroom left or sustained fairness stress; or no idle connection remains (the ratios are defaults of `persistence.admission.*` keys read by `CommunityAdmissionConfig`)
+- Below the allowance a request is admitted and waits on the connection-acquire timeout
 
-**Enterprise:** Predictive native gating
+**Enterprise:** Predictive native gating (design target; the Enterprise tier is not in this repository)
 - May reject before absolute saturation using io_uring metric telemetry
 - Adapts admission curve to workload pattern (exponential backoff)
-- Latency: <500µs per check (measured via native probes)
+- Latency target: <500µs per check
 - Implementation: Native driver poll of SQE availability + queue depth heuristic
 
 ### Observability
 
 JFR events (when enabled via profile):
-- `PersistenceAdmissionGate` (custom event, if profiling enabled): admitted yes/no, queue depth, active connections
+- `AdmissionDecisionEvent` (`eu.exeris.kernel.persistence.AdmissionDecision`): admitted yes/no, queue depth, saturation, fairness ratio, queue-depth and queue-wait p95, decision reason; `PersistenceAdmissionStageEvent` carries the queue-enter, queue-wait and admission stages
 - Standard `ThreadPark` events: significantly reduced (proof of starvation elimination)
-- Standard `HttpResponse` events: occasional 503 responses visible (expected under saturation)
 
 ### Compliance Proof
 
@@ -128,8 +133,18 @@ JFR events (when enabled via profile):
 
 ## 3. Resilience (Load Shedding)
 
-The Kernel must protect itself. Memory bounds are non-negotiable.
+The Kernel must protect itself. Memory bounds are non-negotiable. The levels below are the contract;
+the enforcement in this repository is stated beside each.
 
-- **Warning (L0):** Queue > 2,000 requests.
+- **Warning (L0):** Queue > 2,000 requests. Carried as `ScalingContext.free().maxQueueDepth()`, a value
+  a caller passes to `ResourceArbiter`; no kernel code path measures a request queue against it.
 - **Saturated (L1):** Queue > 5,000 requests → Trigger Backpressure (`H3_EXCESSIVE_LOAD` or HTTP `503`).
-- **Starved (L2):** Carrier Thread blocked > 50 ms → Kill Task (`EX-RUN-3002`).
+  Concurrently admitted streams are capped per engine by `AdmissionController` at
+  `transport.paqs.maxActiveStreams` (default `TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS`, 5,000; `-1`
+  for none). `H3_EXCESSIVE_LOAD` is the documented response to the `SHEDDING` watermark, but no code in
+  this repository sends it. The Community watermark moves only when `memory.offHeapBudgetBytes` is
+  set, and the arbiter answers `ALLOW` for 30 s after each carrier start. The HTTP `503` is
+  the persistence admission gate above.
+- **Starved (L2):** Carrier Thread blocked > 50 ms → Kill Task (`EX-RUN-3002`). Target only: `EX-RUN-3002`
+  is a registered code with a `CarrierPinnedJfrEvent`, and no kernel code measures carrier blocking or
+  kills a task. Carrier pinning is asserted from JFR recordings by `AbstractCarrierPinningTck`.

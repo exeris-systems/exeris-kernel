@@ -136,14 +136,11 @@ public final class KernelErrorCodes {
     public static final String EX_BOOT_0002 = "EX-BOOT-0002";
 
     /**
-     * Kernel bootstrap sequence aborted: a mandatory subsystem did not complete initialization
-     * within a deadline.
+     * Kernel bootstrap sequence aborted: a subsystem's {@code initialize()} did not return within
+     * the initialization deadline.
      *
-     * <p><b>Reserved.</b> No kernel code path raises this code: the orchestrator imposes no
-     * deadline on {@code initialize()} or {@code start()}, so a subsystem that never returns holds
-     * the boot until it does. No exception is constructed with the code and no event records it.
-     * It publishes no {@code rawArgs} layout, because a layout with no thrower is a promise nothing
-     * checks; the layout is defined together with the first thrower.
+     * <p>Raised as {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemInitDeadlineException}.
+     * {@code rawArgs}: {@code [0] String subsystemName}, {@code [1] long deadlineMs}.
      */
     public static final String EX_BOOT_0003 = "EX-BOOT-0003";
 
@@ -327,6 +324,35 @@ public final class KernelErrorCodes {
      * thrower is a promise nothing checks; the layout is defined together with the first thrower.
      */
     public static final String EX_NET_4007 = "EX-NET-4007";
+
+    /**
+     * A read or write on a {@link eu.exeris.kernel.spi.transport.TransportStream} that is closed
+     * because its remote endpoint ended it, or because the transport tore it down without a local
+     * {@code close()} or {@code reset()} request. Thrown as
+     * {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException#peerClosed()}.
+     *
+     * <p>The first side to end the stream decides the code: a stream the peer ended and this endpoint
+     * then closed reports this code, not {@link #EX_NET_4009}, and a stream this endpoint closed first
+     * reports {@link #EX_NET_4009} even if the remote end is observed afterwards.
+     *
+     * <p><b>rawArgs:</b> none. The thrower is an {@link IllegalStateException} subclass, not an
+     * {@link ExerisKernelException}; the stream identity travels with the caller's own record.
+     *
+     * @implNote The kernel's Core transport records a stream handler that ends with this code as the
+     *           JFR event {@code eu.exeris.kernel.core.transport.StreamLifecycle} with
+     *           {@code outcome} {@code PEER_CLOSED}, and does not count it as a handler failure.
+     */
+    public static final String EX_NET_4008 = "EX-NET-4008";
+
+    /**
+     * A read or write on a {@link eu.exeris.kernel.spi.transport.TransportStream} that was closed
+     * through this endpoint — {@code close()}, {@code reset(long)}, or the parent connection's
+     * {@code close()} — with no remote end observed first. Thrown as
+     * {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException#locallyClosed()}.
+     *
+     * <p><b>rawArgs:</b> none, for the reason given on {@link #EX_NET_4008}.
+     */
+    public static final String EX_NET_4009 = "EX-NET-4009";
 
     // -----------------------------------------------------------------------
     // EX-HTTP – HTTP codec subsystem (HTTP/1.1, HTTP/2, HPACK, Huffman)
@@ -679,6 +705,28 @@ public final class KernelErrorCodes {
      */
     public static final String EX_PERS_5008 = "EX-PERS-5008";
 
+    /**
+     * The connected database role bypasses row-level security while the RLS interceptor is
+     * installed (ADR-012 §4c.4).
+     *
+     * <p>A role that is {@code SUPERUSER} or has {@code BYPASSRLS} skips every policy, including
+     * {@code FORCE}d ones, so tenant isolation would rest on application code alone. The remedy is a
+     * role change ({@code ALTER ROLE … NOSUPERUSER NOBYPASSRLS}) or the explicit consent
+     * {@code persistence.rlsAllowBypassRole=true}, which downgrades the refusal to an error log line
+     * and a JFR event on every boot.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} roleName (the role the pool connects as)</li>
+     *   <li>index 2 – {@code String} attribute ({@code "SUPERUSER"}, {@code "BYPASSRLS"} or
+     *                                {@code "SUPERUSER,BYPASSRLS"})</li>
+     * </ul>
+     *
+     * @since 0.13
+     */
+    public static final String EX_PERS_5009 = "EX-PERS-5009";
+
     // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
     // -----------------------------------------------------------------------
@@ -768,7 +816,7 @@ public final class KernelErrorCodes {
     public static final String EX_GRPH_5004 = "EX-GRPH-5004";
 
     /**
-     * Excessive allocation detected: graph driver exceeded pre-defined churn threshold.
+     * Excessive allocation: a graph driver exceeded its churn budget. Reserved; no kernel code path emits it.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
@@ -900,7 +948,12 @@ public final class KernelErrorCodes {
      *           {@code "interrupted"} — the publishing thread was interrupted while waiting for
      *           queue space, no cause is attached, and the thread's interrupt status is left set;
      *           {@code "unregistered-type"} — the descriptor's ordinal is not registered with the
-     *           engine's registry, and no cause is attached.
+     *           engine's registry, and no cause is attached; {@code "unregistered-isolation-key"} —
+     *           the publishing thread is bound to a storage context whose isolation key is not
+     *           registered in {@link eu.exeris.kernel.spi.events.EventEngine#isolationRegistry()}, and
+     *           no cause is attached; {@code "isolation-mismatch"} — the descriptor's isolation
+     *           ordinal is non-zero and does not equal the ordinal of the bound context's key, or no
+     *           context is bound, and no cause is attached.
      * @since 0.12
      */
     public static final String EX_EVENT_6009 = "EX-EVENT-6009";
@@ -936,10 +989,30 @@ public final class KernelErrorCodes {
      * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#subscriptionRejected(String)}.
      *
      * @implNote The kernel's in-memory bus raises it when the type is not registered in the
-     *           {@code EventRegistry}; register the type before subscribing.
+     *           {@code EventRegistry}; register the type before subscribing. A scoped subscription
+     *           ({@link eu.exeris.kernel.spi.events.EventBus#subscribeScoped}) is refused on the same
+     *           code, with the same single-element layout, when no storage context is bound, the
+     *           bound isolation key is empty, the key is not registered, or the bus does not support
+     *           scoped subscriptions.
      * @since 0.12
      */
     public static final String EX_EVENT_6011 = "EX-EVENT-6011";
+
+    /**
+     * Isolation key registry conflict: an isolation key was registered with a different ordinal than
+     * the one it already holds, or an ordinal was registered for a different key (ADR-101).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} isolationKey  (the key being registered)</li>
+     *   <li>index 1 – {@code int}    ordinal       (the ordinal being registered)</li>
+     * </ul>
+     * <p>No cause is set. Raised by
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventRegistryException#isolationKeyConflict(String, int)}.
+     *
+     * @since 0.13
+     */
+    public static final String EX_EVENT_6012 = "EX-EVENT-6012";
 
     // -----------------------------------------------------------------------
     // EX-FLOW – Flow Engine / Saga Orchestration subsystem
@@ -1297,6 +1370,177 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_JOB_9004 = "EX-JOB-9004";
+
+    // -----------------------------------------------------------------------
+    // EX-LIC – Licensing / Execution Contract
+    // -----------------------------------------------------------------------
+
+    /**
+     * The license manifest cannot be accepted: it could not be read, is not valid JSON or UTF-8, breaks
+     * the v1 schema of ADR-088 §1, or its Ed25519 signature does not verify.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} manifest source (file path, or {@code classpath:license-manifest.json}),
+     *       when the manifest could not be read or exceeds 64 KiB; no rawArgs otherwise — the message
+     *       names the field or rule</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0001 = "EX-LIC-0001";
+
+    /**
+     * Unknown license issuer key ID: the manifest's {@code issuer.keyId} names no trusted issuer key. A missing
+     * {@code issuer} block or {@code keyId} is a schema violation, {@code EX-LIC-0001}.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0002 = "EX-LIC-0002";
+
+    /**
+     * License manifest expired beyond the permitted grace period: the evaluation instant is after
+     * {@code validUntil + gracePeriodDays}.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} contractId</li>
+     *   <li>index 1 – {@code Instant} validUntil</li>
+     *   <li>index 2 – {@code int} gracePeriodDays</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0003 = "EX-LIC-0003";
+
+    /**
+     * Capability not entitled under the active execution contract (HARD enforcement breach).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} capabilityId</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0004 = "EX-LIC-0004";
+
+    /**
+     * No license manifest was found, and code on the classpath declares an {@code EntitlementRequirement}.
+     * Raised in every environment, development included.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} environment</li>
+     *   <li>index 1 – {@code List<String>} required capabilities, sorted</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0005 = "EX-LIC-0005";
+
+    /**
+     * License manifest not yet valid: the evaluation instant precedes {@code validFrom}. The grace
+     * period never applies to this edge.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} contractId</li>
+     *   <li>index 1 – {@code Instant} validFrom</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0006 = "EX-LIC-0006";
+
+    /**
+     * The active execution contract does not authorize the declared environment (HARD enforcement breach).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} environment</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0007 = "EX-LIC-0007";
+
+    /**
+     * An {@code EntitlementRequirement} on the classpath breaks its contract: it cannot be loaded or
+     * instantiated, throws, or returns {@code null}, an empty set, an identifier that is not a capability
+     * identifier or a {@code null} entitlement class, or declares one identifier under two classes. Raised
+     * by the contract gate before any subsystem is initialized, in every environment.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} provider class name, or the service name when the provider could not
+     *       be loaded; for an identifier declared under two classes, the second provider</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0008 = "EX-LIC-0008";
+
+    /**
+     * An environment lies outside the scope of the issuer key that signed the manifest: an
+     * {@code execution.environments} value the key may not entitle, or the declared environment of the
+     * running kernel. A scope breach is {@code HARD}; no enforcement rule softens it.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code List<String>} environments outside the key's scope, sorted</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0009 = "EX-LIC-0009";
+
+    /**
+     * The manifest's validity lies outside what the issuer key allows: {@code issuer.issuedAt} is missing,
+     * {@code execution.validFrom} precedes it, the licence mode is {@code PERPETUAL_INTERNAL} or has no
+     * {@code validUntil}, or the span from {@code issuedAt} to {@code validUntil} plus the grace period is
+     * longer than the key's maximum. The message names the rule.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code Instant} issuedAt, or {@code null} when the manifest carries none</li>
+     *   <li>index 2 – {@code Instant} the last instant the manifest boots, {@code validUntil} plus the
+     *       grace period, or {@code Instant.MAX} when it has no end</li>
+     *   <li>index 3 – {@code long} the key's maximum validity in days</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0010 = "EX-LIC-0010";
+
+    /**
+     * The manifest's workload envelope is above the ceiling of the issuer key that signed it, or absent,
+     * which reads as unlimited.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code long} maxThroughputRps as read, {@code Long.MAX_VALUE} when absent</li>
+     *   <li>index 2 – {@code int} maxConnections as read, {@code Integer.MAX_VALUE} when absent</li>
+     *   <li>index 3 – {@code int} growthAllowancePercent as read, {@code 0} when absent</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0011 = "EX-LIC-0011";
+
+    /**
+     * A declared {@code EntitlementRequirement} is of a class the issuer key that signed the manifest may
+     * not entitle. The check covers every declared requirement, whether or not the manifest lists its
+     * capabilities.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code String} entitlement class identifier</li>
+     *   <li>index 2 – {@code String} class name of the provider that declares the requirement</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0012 = "EX-LIC-0012";
+
+    /**
+     * An issuer key with a workload ceiling, a developer key, signed a manifest whose enforcement rule for
+     * {@code capability} or {@code environment} is below {@code HARD}. A developer licence cannot soften
+     * the checks that keep it out of production.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     *   <li>index 1 – {@code String} rule name, {@code capability} or {@code environment}</li>
+     *   <li>index 2 – {@code String} enforcement level as read</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0013 = "EX-LIC-0013";
 
     // -----------------------------------------------------------------------
     // EX-UNK – no code of its own

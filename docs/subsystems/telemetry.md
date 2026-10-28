@@ -116,8 +116,8 @@ exceptional failure states, not normal operation.
 ## Error Code Registry
 
 Every `ExerisKernelException` subclass MUST declare its `rawArgs` binary layout in a Javadoc comment
-**and** register its error code in `KernelErrorCodes`. The table below is the human-readable index —
-`KernelErrorCodes.java` is the source of truth for the binary decoder.
+**and** register its error code in `KernelErrorCodes`. The table below indexes a subset of the codes —
+`KernelErrorCodes.java` is the source of truth for the binary decoder and lists every code.
 
 ```
 EX-MEM-1001  Off-heap exhausted             rawArgs[0]=long requestedBytes,    [1]=long availableBytes
@@ -125,7 +125,7 @@ EX-MEM-1002  Buffer leak detected           (no rawArgs — JFR-only: BufferLeak
 EX-MEM-1003  Peek-view ownership misuse     (no rawArgs — JFR-only: PeekViewMisuse event fields errorCode, callerMethod)
 EX-BOOT-0001 DAG cycle detected             (no rawArgs — the exception is a plain RuntimeException; JFR CircularDependencyDetected field cycleMembers is one ", "-joined String)
 EX-BOOT-0002 Subsystem lifecycle failure    rawArgs[0]=String subsystemName,    [1]=Phase phase,            [2]=String detail
-EX-BOOT-0003 Bootstrap deadline exceeded    (reserved — raised by no kernel code path; no rawArgs layout)
+EX-BOOT-0003 Bootstrap deadline exceeded    rawArgs[0]=String subsystemName,    [1]=long deadlineMs
 EX-BOOT-0004 Memory provider bootstrap      rawArgs[0]=String providerName,     [1]=long requestedBytes
 EX-BOOT-3001 Telemetry provider failure     rawArgs[0]=String providerName,     [1]=String reason
 EX-NET-2001  TLS wrap/handshake failure     rawArgs[0]=int nativeErrorCode,     [1]=String detail          (a client refusal's detail names what [0] holds; see crypto.md → Error Codes)
@@ -138,6 +138,8 @@ EX-NET-4004  Transport engine bootstrap     rawArgs[0]=String transportName,    
 EX-NET-4005  Transport engine start         rawArgs[0]=String transportName,    [1]=int port
 EX-NET-4006  PAQS load shedding             rawArgs[0]=String transportName,    [1]=long streamId          (exception carrier only — the JFR StreamShedEvent for this code has its own typed fields; see the JFR Events table)
 EX-NET-4007  Buffer exhaustion              (reserved — raised by no kernel code path; no rawArgs layout)
+EX-NET-4008  Transport stream closed by peer (no rawArgs — IllegalStateException subclass)
+EX-NET-4009  Transport stream closed locally (no rawArgs — IllegalStateException subclass)
 EX-SEC-2001  PrincipalContext missing        (no rawArgs)
 EX-SEC-2002  Token validation failure       rawArgs[0]=String tokenType,        [1]=String failureReason
 EX-RUN-3002  Carrier pinned                 rawArgs[0]=long blockTimeMs,        [1]=String carrierThreadName
@@ -145,9 +147,10 @@ EX-EVENT-6001 Generic event failure         (no rawArgs — the diagnostic is ge
 EX-EVENT-6002 Bus queue overflow            rawArgs[0]=String eventType,        [1]=long queueDepth,        [2]=long queueCapacity
 EX-EVENT-6003 Registry conflict             rawArgs[0]=String eventType,        [1]=int ordinal
 EX-EVENT-6004 Provider boot failure         rawArgs[0]=String providerName,     [1]=String reason           ← intentional duplicate of EX-FLOW-7001 schema; different subsystem domain
-EX-EVENT-6009 Bus publish failure           rawArgs[0]=int eventTypeOrdinal,    [1]=String reason           (reason: delivery-failed | interrupted | unregistered-type)
+EX-EVENT-6009 Bus publish failure           rawArgs[0]=int eventTypeOrdinal,    [1]=String reason           (reason: delivery-failed | interrupted | unregistered-type | unregistered-isolation-key | isolation-mismatch)
 EX-EVENT-6010 Event handlers failed         rawArgs[0]=int eventTypeOrdinal,    [1]=int failedHandlerCount  (handler exceptions in getSuppressed())
 EX-EVENT-6011 Subscription rejected         rawArgs[0]=String eventType
+EX-EVENT-6012 Isolation key conflict        rawArgs[0]=String isolationKey,     [1]=int ordinal
 EX-FLOW-7001 Provider boot failure          rawArgs[0]=String providerName,     [1]=String reason           ← intentional duplicate of EX-EVENT-6004 schema; different subsystem domain
 EX-FLOW-7002 Lifecycle / schedule fail      rawArgs[0]=String engineName,       [1]=String phase,           [2]=String staticReasonCode, [3]=int contextVal   (phase WAKE: [3]=long idMost, [4]=long idLeast)
 EX-FLOW-7003 Step execution failure         rawArgs[0]=String defName,          [1]=long idMost,            [2]=long idLeast,            [3]=int stepIdx, [4]=String reason, [5]=String causeType
@@ -214,6 +217,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 
 | Event Class             | When Emitted                                    | Key Fields                                            |
 |:------------------------|:------------------------------------------------|:------------------------------------------------------|
+| `BootstrapJfrEvents.SubsystemInitDeadlineExceededEvent` *(eu.exeris.kernel.core.bootstrap.jfr; JFR event name `eu.exeris.kernel.bootstrap.SubsystemInitDeadlineExceeded`)* | Emitted by the initialization-deadline watchdog when a subsystem's `initialize()` runs past its deadline (EX-BOOT-0003), while `initialize()` may still be blocked | `subsystemName`, `deadlineMs`, `errorCode` |
 | `TelemetryJfrEvents.KernelLifecycleJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Kernel bootstrap, subsystem lifecycle (including completion of each subsystem `initialize()`), warnings, and errors | `errorCode`, `level`, `component`, `message` |
 | `CommunityAllocationEvent` *(implemented, community module; `eu.exeris.kernel.community.memory.CommunityAllocationEvent`)* | Community-tier buffer allocation (when `jfrEnabled=true`, sampled) | `allocationBytes`, `totalCount` |
 | `TelemetryJfrEvents.MemoryExhaustionJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On every `MemoryExhaustedException` (EX-MEM-1001) | `errorCode`, `requestedBytes`, `availableBytes`, `component` |
@@ -229,13 +233,14 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `TlsHandshakeEvent` | Start and end of TLS handshake | `sslPtr`, `mode`, `protocol`, `cipher`, `negotiatedAlpn`, `durationNanos` |
 | `TlsHandshakeFailureEvent` *(JFR event name `eu.exeris.kernel.tls.HandshakeFailure`)* | A handshake step failed, or a completed client handshake was refused because verification failed | `sslPtr`, `mode`, `errorCode` (`EX-NET-2001`), `failureReason` (OpenSSL's text for a verification failure), `sslErrorCode`, `verifyResult` (`X509_V_*` for a client that expected a peer, else `-1`) |
 | `TransportTlsClientPostureEvent` *(community module; JFR event name `eu.exeris.kernel.transport.TransportTlsClientPosture`; since 0.12.0)* | Once per `CLIENT` or `DUAL` carrier, when it is built: what its outbound connections do | `transportMode`, `requirement` (`AMBIENT`, `PLAINTEXT`, `VERIFIED`: what the carrier's owner required), `posture` (`VERIFIED`, `PLAINTEXT_DECLINED`, `PLAINTEXT_NO_CRYPTO_PROVIDER`, `PLAINTEXT_NO_LISTENER_MATERIAL`, `PLAINTEXT_REQUIRED`, `REFUSED_FOREIGN_PROVIDER`, `REFUSED_DECLINED`, `REFUSED_NO_CRYPTO_PROVIDER`), `trustSource`, `configBound`, `defaultCertFile`, `defaultCertDir`, `defaultTrustPresent` |
-| `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
-| `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
+| `DynamicReloadEvent.DynamicFieldReloadedEvent` *(eu.exeris.kernel.core.config.jfr; JFR event name `eu.exeris.kernel.config.DynamicFieldReloaded`)* | A `@Dynamic` config field is atomically updated from a file change | `file`, `key`, `durationUs` |
+| `DynamicReloadEvent.DynamicReloadFailedEvent` *(eu.exeris.kernel.core.config.jfr; JFR event name `eu.exeris.kernel.config.DynamicReloadFailed`)* | A `@Dynamic` reload fails (`EX-CFG-1003`); the previous value is kept | `file`, `key`, `reason` |
+| `OutboxDlqEvent` *(eu.exeris.kernel.core.events.jfr)* | An outbox entry is moved to the dead-letter store after its retries are exhausted or a retry fails unrecoverably | `eventType`, `streamIdHigh`, `streamIdLow`, `reason`, `retryCount` |
 | `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |
 | `TelemetryJfrEvents.KernelMetricJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr; JFR event name `eu.exeris.kernel.telemetry.KernelMetric`)* | Emitted on `increment()` / `gauge()` calls | `metricName`, `metricType (COUNTER/GAUGE)`, `value` |
 | `TelemetryJfrEvents.KernelLatencyJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr; JFR event name `eu.exeris.kernel.telemetry.KernelLatency`)* | Emitted on `latency()` calls | `metricName`, `nanoseconds` |
 | `CommunityEventQueueOverflowEvent` *(eu.exeris.kernel.events.CommunityEventQueueOverflow; community module, since v0.8 Sprint 5 — EVENT-111)* | `CommunityEventQueue.push` refuses a fail-fast publish because the queue is at capacity (paired with `EX-EVENT-6002`) | `engineName`, `eventType`, `queueDepth`, `queueCapacity` |
-| `KafkaPublishFailedEvent` *(eu.exeris.kernel.events.kafka.PublishFailed; community-kafka module, pkg-private, since v0.8 Sprint 5 — JFR-091)* | `KafkaEventEngine.KafkaPublishBus` `publish` / `publishAndAwait` catch block, before wrapping as `EventBusException` (`EX-EVENT-6009`, reason `delivery-failed`). Payload bytes NEVER logged (Glass-Box secret-safe). | `engineName`, `topic`, `eventTypeOrdinal`, `publishMode`, `exceptionClass`, `exceptionMessage` |
+| `KafkaPublishFailedEvent` *(eu.exeris.kernel.events.kafka.PublishFailed; community-kafka module, pkg-private, since v0.8 Sprint 5 — JFR-091)* | `KafkaEventEngine.KafkaPublishBus` `publish` / `publishAndAwait` catch block, before wrapping as `EventBusException` (`EX-EVENT-6009`, reason `delivery-failed`); and the `publish` send callback, for a send the producer completes exceptionally after `publish` has returned (`publishMode` `"publishAsync"`, no exception thrown). Payload bytes NEVER logged (Glass-Box secret-safe). | `engineName`, `topic`, `eventTypeOrdinal`, `publishMode`, `exceptionClass`, `exceptionMessage` |
 | `FlowSnapshotSaveFailedEvent` *(eu.exeris.kernel.flow.FlowSnapshotSaveFailed; community module, public, since v0.8 Sprint 5 — JFR-091)* | `JdbcFlowSnapshotStore.save` non-OCC `PersistenceProviderException` rollback path. OCC race losers continue to emit `OptimisticLockConflictEvent` (no overlap). | `engineName`, `sqlState` (`SQLSTATE_UNKNOWN` sentinel when no `SQLException` in cause chain), `exceptionClass`, `exceptionMessage` |
 | `CommunityBlobFailures.BlobIsolationDeniedEvent` *(eu.exeris.kernel.storage.BlobIsolationDenied; community module, pkg-private, since v0.11 — ADR-056)* | A blob operation is refused because the ambient `StorageContext` carries no isolation key, or because a resolved path would leave the tenant directory. Object keys NEVER recorded (they can carry application data). Cold path, `@StackTrace(false)`, single-phase commit. | `providerName`, `operation`, `reason` (`no-isolation-key` / `path-escape`), `strategy` |
 | `CommunityBlobFailures.BlobTransferFailedEvent` *(eu.exeris.kernel.storage.BlobTransferFailed; community module, pkg-private, since v0.11 — ADR-056)* | A Community blob store fails an I/O operation (init / upload / download / stat / delete), or a remote store refuses the request. Emitted from the same choke point that builds the exception, so the two cannot drift. | `providerName`, `operation`, `container`, `exceptionClass`, `exceptionMessage`, `remoteStatus` (`0` when the failure was local) |
@@ -250,16 +255,11 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `CommunityConnectionIdleTimeoutEvent` *(eu.exeris.kernel.transport.CommunityConnectionIdleTimeout; community module, pkg-private, since v0.12)* | `NativeTcpIdleReaper` reclaimed a connection that moved no bytes for `transport.idleTimeoutMillis`. It is the **only** signal that the timeout did anything: no handler runs, and at the peer the reset is indistinguishable from any other — so without it an operator who lowers the limit cannot tell whether it took effect or the traffic changed. Both the observed idle span and the configured limit are carried, because the ratio is the diagnostic: spans clustered just past the limit mean a fleet trimmed on a threshold, spans far past it mean dead peers. No threshold is baked in. One event per reclaimed connection; no peer identity. | `streamId`, `reactorIndex`, `idleMillis`, `configuredTimeoutMillis` |
 | `CommunityKernelDiagnosticsEvent` *(eu.exeris.kernel.diagnostics.KernelDiagnostics; community module, pkg-private, since v0.9 — ADR-033 §EP step 8)* | One INFO audit event per out-of-process `KernelDiagnostics` call (codes `EX-DIAG-1001..1005`, where `EX-DIAG-1005` is the `getJvmErgonomics()` runtime-ergonomics snapshot), so operators can audit who introspected the kernel. Cold path, `@StackTrace(false)`, single-phase commit. | `errorCode`, `method` |
 
-> **Four of the TLS rows above were marked "not yet implemented" until 0.12, and have been emitted
-> since 0.5.0.** `TlsHandshakeEvent` carries `@since 0.5`; all four are committed from
-> `TlsStateMachine` / `OffHeapTlsEngine`, with `CommunityTlsHandshakeEvent` on the Community path.
-> Their field lists were wrong too — `TlsHandshakeEvent` was documented with a `sessionId` that does
-> not exist and without `sslPtr`, `mode` and `negotiatedAlpn`, and `TlsPhaseTransitionEvent` with an
-> `sslPtr` it does not carry: it names the transition, and the state machine's identity is the
-> engine's, not a field on every phase change. Glass-Box is this project's headline
-> observability claim, so a contract document under-reporting which of its events exist is a defect
-> in the claim rather than in the prose. `ConfigHotReloadEvent`, `OutboxDlqTransferEvent` and
-> `SagaLifecycleEvent` are genuinely absent.
+> The four TLS rows above are committed from `TlsStateMachine` / `OffHeapTlsEngine`, with
+> `CommunityTlsHandshakeEvent` on the Community path. `TlsPhaseTransitionEvent` names the transition;
+> the state machine's identity is the engine's, not a field on every phase change. `SagaLifecycleEvent`
+> is absent: no kernel code commits an event of that name.
+
 ### JFR Event Pattern (Zero-Allocation)
 
 ```java
@@ -309,20 +309,20 @@ or `isEnabled()` guard inside the method runs after the class has already initia
 not the JFR registration.
 
 **A nested name warms its holder too.** JLS 12.4.1: initialising `Outer$Inner` does not initialise
-`Outer`. Where the emit helper sits on the holder — 33 of the kernel's 35 nested event classes — the
+`Outer`. Where the emit helper sits on the holder — nearly all of the kernel's nested event classes — the
 first emit therefore still ran the holder's `<clinit>` on a virtual thread, including the
 `EventType.getEventType(...)` registration `AdmissionDecisionEvent` and
 `PersistenceAdmissionStageEvent` cache in a static field. `JfrEventWarmup` walks the declaring chain
 with `Class.getDeclaringClass()` and initialises it outermost-first, which is the order the first
 emit would have taken.
 
-Two catalogues carry the answer, and every event class in the kernel is in exactly one of their
+Three catalogues carry the answer, and every event class in the kernel is in exactly one of their
 buckets:
 
 | | |
 |:--|:--|
-| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 48 warmed, 43 deliberately cold |
-| `CommunityJfrEventCatalogue` (`eu.exeris.kernel.community.telemetry`) | 34 event classes — 30 warmed, 4 deliberately cold |
+| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 97 event classes — 50 warmed, 47 deliberately cold |
+| `CommunityJfrEventCatalogue` (`eu.exeris.kernel.community.telemetry`) | 36 event classes — 32 warmed, 4 deliberately cold |
 | `KafkaJfrEventCatalogue` (`eu.exeris.kernel.community.kafka`) | 3 event classes — all warmed, in two groups because the driver has two seams: `kafka-engine` warms at `KafkaEventEngine.start()`, `kafka-appender` at `KafkaEventStreamAppender` construction. The driver ships its own catalogue and its own guard, because the Community guard runs in the module it depends on and cannot see it |
 
 A class is **warmed** when a virtual thread can reach it on a path that produces it concurrently —
@@ -347,8 +347,9 @@ share a reason and one sentence covering both was false for six of the seven:
   `Subsystem` reports the name `telemetry`, so there is no start to hang a warm-up off. A host that
   stands the sinks up initialises them where it builds them.
 
-The seam itself is a v0.13 slice, alongside the telemetry bootstrap that would call `createSinks` —
-until something in the kernel stands the sink stack up, there is nothing here to warm from.
+The seam itself is not implemented: it belongs to the telemetry bootstrap that would call
+`createSinks` (tracked in `docs/ROADMAP.md`, *Telemetry: a contract for events the kernel did not
+define*). Until something in the kernel stands the sink stack up, there is nothing here to warm from.
 
 `JfrCommitDropEvent` was in this bucket and should not have been: it
 fires from `JfrEventCommitter.offer` when the ring overflows, on the same request virtual thread as
@@ -406,13 +407,17 @@ construction in the PAQS unit tests. The Kafka driver warms its three events at
 catalogues are built.
 
 The catalogues hold fully-qualified **names**, not class literals: two thirds of the kernel's event
-classes are package-private, so no single class can name them otherwise, and widening 66 classes to
+classes are package-private, so no single class can name them otherwise, and widening every one of them to
 `public` to hold a warm-up list would be the worse change. Each catalogue resolves its names through
 its own module's class loader, because a driver's events ship in the driver's artifact.
 `JfrEventCatalogueCoverageTest` is what makes names safe — it resolves every one and matches the
 union of both buckets against the event classes each module actually declares, so a new event class
 that nobody classified fails the build, and so does a name left behind by a rename, a group keyed on
-a subsystem name nothing reports, and a subsystem that never warms.
+a subsystem name nothing reports, and a subsystem that never warms. Beyond warm-up safety, catalogue
+names feed native-image reachability metadata generation: each module's reachability guard computes
+the transitive enclosing-class closure for every catalogued event name and registers the resulting
+types in `reachability-metadata.json`, ensuring complete JFR metadata under GraalVM without manual
+reflection tables.
 
 ---
 
@@ -539,7 +544,7 @@ The Community baseline ships pull because it adds zero new runtime dependencies 
 | `gauge(name, value)` | `gauge` | `name <last_value>` |
 | `latency(name, nanoseconds)` | `summary` | `name_count <count>` + `name_sum <sum>` (no quantiles in baseline) |
 
-Latency without quantiles is intentional — streaming quantile sketches add allocation pressure on the hot path. Operators compute averages via PromQL: `rate(name_sum[1m]) / rate(name_count[1m])`. Quantile support is tracked as a 0.8+ enhancement once a low-allocation sketch (e.g., DDSketch) is selected.
+Latency without quantiles is intentional — streaming quantile sketches add allocation pressure on the hot path. Operators compute averages via PromQL: `rate(name_sum[1m]) / rate(name_count[1m])`. Quantiles are not implemented; they wait on a low-allocation sketch (e.g., DDSketch).
 
 ### Naming sanitisation
 

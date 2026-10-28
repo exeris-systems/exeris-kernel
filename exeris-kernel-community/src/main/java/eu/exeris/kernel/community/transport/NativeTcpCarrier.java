@@ -9,17 +9,22 @@ import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.crypto.tls.TlsFailureDetail;
 import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
+import eu.exeris.kernel.core.memory.MemoryMaintenanceTask;
 import eu.exeris.kernel.core.memory.ResourceArbiter;
+import eu.exeris.kernel.core.memory.WatermarkLevel;
 import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
 import eu.exeris.kernel.core.transport.scheduler.PaqsScheduler;
 import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
+import eu.exeris.kernel.spi.contract.ContractKernelProviders;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.ConnectionHandler;
@@ -44,6 +49,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 /**
@@ -108,6 +114,8 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private static final System.Logger LOG = System.getLogger(NativeTcpCarrier.class.getName());
 
+    /** How often a server-mode carrier re-samples its allocator for the level its admission arbiter reads. */
+    private static final long WATERMARK_REFRESH_INTERVAL_MS = 1_000L;
     private static final long ACCEPT_RETRY_BASE_MILLIS = 25L;
     private static final long ACCEPT_RETRY_MAX_MILLIS = 1_000L;
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
@@ -145,7 +153,18 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final AtomicLong activeStreams = new AtomicLong();
     private final AtomicLong totalAccepted = new AtomicLong();
     private final AtomicLong refusedConnections = new AtomicLong();
+    /** Connections the workload gate refused; kept apart because {@link #refusedConnections} reports the ceiling. */
+    private final AtomicLong gateRefusedConnections = new AtomicLong();
     private final AtomicLong acceptFaults = new AtomicLong();
+
+    /**
+     * The developer-licence gate every inbound connection is admitted through. Read once from the
+     * kernel scope in {@link #start()}, which runs inside it: the acceptor and reactor threads are
+     * platform threads that inherit no binding, so a read there would find none and admit everything.
+     */
+    private final AtomicReference<WorkloadAdmission> workloadAdmission =
+            new AtomicReference<>(WorkloadAdmission.UNGATED);
+    private final AtomicBoolean workloadAdmissionEnforced = new AtomicBoolean();
 
     @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile StreamHandler streamHandler;
@@ -166,6 +185,12 @@ public final class NativeTcpCarrier implements TransportEngine {
     private volatile Thread acceptorThread;
     @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile PaqsScheduler paqs;
+    /** The manager the arbiter reads and the task that refreshes it; each {@link #start()} builds both afresh. */
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
+    private volatile WatermarkManager watermarkManager;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
+    private volatile MemoryMaintenanceTask watermarkRefresh;
+    private volatile long watermarkRefreshIntervalMs = WATERMARK_REFRESH_INTERVAL_MS;
     private final List<NativeTcpReactor> reactors = new ArrayList<>();
     private final AtomicInteger nextReactorIndex = new AtomicInteger(0);
 
@@ -280,8 +305,16 @@ public final class NativeTcpCarrier implements TransportEngine {
             CommunityJfrEventCatalogue.warmHotPath("transport");
 
             if (serverRole) {
+                WorkloadAdmission admission = ContractKernelProviders.workloadAdmission();
+                workloadAdmission.set(admission);
+                workloadAdmissionEnforced.set(admission.enforced());
                 initPaqs();
                 startServerRuntime();
+                // After the listener is up: a start that fails to bind leaves no refresh thread to clean up.
+                MemoryMaintenanceTask refresh = MemoryMaintenanceTask.watermarkRefreshOnly(
+                        watermarkManager, watermarkRefreshIntervalMs);
+                watermarkRefresh = refresh;
+                refresh.start();
             } else {
                 // CLIENT mode: there is no acceptor/PAQS, but outbound channels still need a reactor
                 // to drive non-blocking ingress and egress (TCK-064). Stand up the reactor loop(s)
@@ -289,6 +322,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 startClientRuntime();
             }
         } catch (RuntimeException ex) {
+            stopWatermarkRefresh();
             running.set(false);
             throw ex;
         }
@@ -321,8 +355,10 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
         if (!running.compareAndSet(true, false)) {
             // Not running — nothing to drain, and `draining` must not stay raised or the reactors of a
-            // subsequent start() would never be allowed to exit.
+            // subsequent start() would never be allowed to exit. An async failure clears `running`
+            // without passing Phase 3, so the refresh thread is released here too.
             draining.set(false);
+            stopWatermarkRefresh();
             return;
         }
 
@@ -373,7 +409,19 @@ public final class NativeTcpCarrier implements TransportEngine {
                 reactor.join(2_000L);
             }
 
+            // After the reactors: admission reads the level for as long as they can accept a stream.
+            stopWatermarkRefresh();
             closeSelectorAndChannels();
+        }
+    }
+
+    /** Stops and forgets the refresh task, if any; idempotent. The null records absence. */
+    @SuppressWarnings("PMD.NullAssignment")
+    private void stopWatermarkRefresh() {
+        MemoryMaintenanceTask refresh = watermarkRefresh;
+        watermarkRefresh = null;
+        if (refresh != null) {
+            refresh.stop();
         }
     }
 
@@ -466,7 +514,9 @@ public final class NativeTcpCarrier implements TransportEngine {
                     tlsEngine,
                     () -> requestWriteInterest(connectedChannel),
                     () -> onStreamClosed(connectedChannel),
-                    backend.socketHandles());
+                    backend.socketHandles(),
+                    NativeTcpHandshakeBackoff.PARK,
+                    config.maxQueuedWriteBytes());
             if (tlsEngine instanceof CommunityTlsEngine) {
                 stream.markTlsBoundFromCarrier();
             }
@@ -558,7 +608,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
         // Both refusal paths, not just the PAQS one. A caller reading totalRejected is asking "is
         // this server turning work away", and an accept-time refusal is the most total form of that.
-        long rejected = refusedConnections.get();
+        long rejected = refusedConnections.get() + gateRefusedConnections.get();
         PaqsScheduler localPaqs = paqs;
         if (localPaqs != null) {
             rejected += localPaqs.loadShedder().shedCount();
@@ -616,6 +666,28 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /* default */ boolean isRunning() {
         return running.get();
+    }
+
+    /** Test seam: the refresh interval; refused once running. */
+    /* default */ void watermarkRefreshIntervalMs(long intervalMs) {
+        if (running.get()) {
+            throw new IllegalStateException("Cannot change the watermark refresh interval after start()");
+        }
+        if (intervalMs <= 0) {
+            throw new IllegalArgumentException("intervalMs must be > 0");
+        }
+        this.watermarkRefreshIntervalMs = intervalMs;
+    }
+
+    /** The level the admission arbiter reads; {@code NORMAL} before the first server start. */
+    /* default */ WatermarkLevel watermarkLevel() {
+        WatermarkManager manager = watermarkManager;
+        return manager == null ? WatermarkLevel.NORMAL : manager.currentLevel();
+    }
+
+    /* default */ boolean watermarkRefreshRunning() {
+        MemoryMaintenanceTask refresh = watermarkRefresh;
+        return refresh != null && refresh.isRunning();
     }
 
     /**
@@ -690,8 +762,13 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void initPaqs() {
-        WatermarkManager watermarkManager = new WatermarkManager(allocator);
-        ResourceArbiter arbiter = new ResourceArbiter(watermarkManager);
+        WatermarkManager manager = new WatermarkManager(allocator);
+        // The arbiter reads a cached level. Without a first sample here, an engine started under
+        // memory pressure would admit until the first periodic refresh.
+        manager.refresh();
+        // Built under the TimeSource bound by this start(), which times the arbiter's startup grace.
+        ResourceArbiter arbiter = new ResourceArbiter(manager);
+        this.watermarkManager = manager;
         AdmissionController admissionController =
                 new AdmissionController(arbiter, config.maxActiveStreams());
         StreamLoadShedder shedder = new StreamLoadShedder(engineName());
@@ -963,13 +1040,19 @@ public final class NativeTcpCarrier implements TransportEngine {
             NativeTcpConnection connection = null;
             NativeTcpStream stream = null;
             boolean slotReserved = false;
+            WorkloadAdmission admittedBy = null;
             boolean streamBound = false;
             boolean connectionManagedByStreamLifecycle = false;
             try {
-                slotReserved = tryReserveConnectionSlot();
+                // The workload gate decides first and the connection is closed untouched: no byte is
+                // written and no handshake starts, so a refused connection costs the peer nothing to
+                // read and the carrier nothing to unwind.
+                WorkloadAdmission gateInForce = workloadAdmission.get();
+                GateOutcome gate = admitThroughGate(gateInForce);
+                admittedBy = admittingGate(gate, gateInForce);
+                slotReserved = gate != GateOutcome.REFUSED && tryReserveConnectionSlot();
                 if (!slotReserved) {
-                    recordRefusal();
-                    closeQuietly(currentChannel);
+                    refuseAtAccept(currentChannel, gate);
                     acceptedChannel = acceptOne();
                     continue;
                 }
@@ -985,20 +1068,68 @@ public final class NativeTcpCarrier implements TransportEngine {
                 connection.bindSingleStream(stream);
                 streamBound = true;
                 beforeAcceptedRegistration.run();
-                ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
-                // Registered: the slot is released by the stream's close from here on, not by the
-                // finally below. A refused registration leaves it to the finally.
+                ChannelRuntimeRegistry.ChannelRuntimeState runtime =
+                        registerRuntime(stream, currentChannel, admittedBy);
+                // Registered: the slot and the admission are released by the stream's close from here
+                // on, not by the finally below. A refused registration leaves them to the finally.
                 connectionManagedByStreamLifecycle = true;
                 registerConnection(connection, stream, currentChannel, runtime);
             } catch (RuntimeException exception) {
                 recordAcceptFault(exception);
                 releaseFailedAccept(currentChannel, connection, stream, streamBound);
             } finally {
-                if (slotReserved && !connectionManagedByStreamLifecycle) {
-                    activeConnections.decrementAndGet();
+                if (!connectionManagedByStreamLifecycle) {
+                    releaseUnmanaged(slotReserved, admittedBy);
                 }
             }
             acceptedChannel = acceptOne();
+        }
+    }
+
+    /** What the workload gate decided for one accepted connection. */
+    private enum GateOutcome {
+        /** The gate is not enforced; the connection is not counted against it. */
+        NOT_ENFORCED,
+        /** The gate admitted the connection, which now holds one admission. */
+        ADMITTED,
+        /** The gate refused the connection, which holds nothing. */
+        REFUSED
+    }
+
+    /** The gate that holds the connection's admission, or {@code null} when the connection holds none. */
+    private static WorkloadAdmission admittingGate(GateOutcome outcome, WorkloadAdmission gateInForce) {
+        return outcome == GateOutcome.ADMITTED ? gateInForce : null;
+    }
+
+    private GateOutcome admitThroughGate(WorkloadAdmission gateInForce) {
+        if (!workloadAdmissionEnforced.get()) {
+            return GateOutcome.NOT_ENFORCED;
+        }
+        if (gateInForce.tryAdmitConnection()) {
+            return GateOutcome.ADMITTED;
+        }
+        gateRefusedConnections.incrementAndGet();
+        return GateOutcome.REFUSED;
+    }
+
+    /** Closes an accepted connection the gate or the connection ceiling refused, before it is touched. */
+    private void refuseAtAccept(SocketChannel channel, GateOutcome gate) {
+        if (gate != GateOutcome.REFUSED) {
+            recordRefusal();
+        }
+        closeQuietly(channel);
+    }
+
+    /**
+     * Releases what an accepted connection holds when its setup ended before a stream took ownership of
+     * the slot and the admission; the admission goes back to the gate that granted it.
+     */
+    private void releaseUnmanaged(boolean slotReserved, WorkloadAdmission admittedBy) {
+        if (slotReserved) {
+            activeConnections.decrementAndGet();
+        }
+        if (admittedBy != null) {
+            admittedBy.connectionClosed();
         }
     }
 
@@ -1073,7 +1204,9 @@ public final class NativeTcpCarrier implements TransportEngine {
                     tlsEngine,
                     () -> requestWriteInterest(channel),
                     () -> onStreamClosed(channel),
-                    backend.socketHandles());
+                    backend.socketHandles(),
+                    NativeTcpHandshakeBackoff.PARK,
+                    config.maxQueuedWriteBytes());
             if (tlsEngine instanceof CommunityTlsEngine) {
                 stream.markTlsBoundFromCarrier();
             }
@@ -1185,6 +1318,12 @@ public final class NativeTcpCarrier implements TransportEngine {
         return channelRuntimeRegistry.registerRuntime(stream, channel, ENGINE_NOT_RUNNING);
     }
 
+    private ChannelRuntimeRegistry.ChannelRuntimeState registerRuntime(NativeTcpStream stream,
+                                                                       SocketChannel channel,
+                                                                       WorkloadAdmission admittedBy) {
+        return channelRuntimeRegistry.registerRuntime(stream, channel, ENGINE_NOT_RUNNING, admittedBy);
+    }
+
     private ChannelRuntimeRegistry.ChannelRuntimeState resolveRuntime(SocketChannel channel) {
         return channelRuntimeRegistry.resolveRuntime(channel);
     }
@@ -1201,10 +1340,11 @@ public final class NativeTcpCarrier implements TransportEngine {
             for (int drained = 0; drained < MAX_TLS_RECORDS_PER_READ; drained++) {
                 LoanedBuffer offered = stream.readTlsIngressFromFd();
                 if (offered == null) {
-                    return;
+                    break;
                 }
                 stream.offerIngress(offered);
             }
+            stream.flushPendingAfterIngress();
             return;
         }
 
@@ -1239,9 +1379,16 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /* default */ void flushStream(NativeTcpStream stream, SelectionKey key) {
-        stream.signalWriteReady();
-        boolean drained = stream.flushPendingWrites();
-        if (drained && !stream.hasPendingData()) {
+        boolean drained;
+        try {
+            drained = stream.flushPendingWrites();
+        } catch (TransportStreamClosedException _) {
+            // The peer ended the stream: the abort already released the queue and the stream finishes
+            // its own close and cancels the key, so this is not a dispatch fault. The writer's next
+            // call reports the signal.
+            return;
+        }
+        if (drained && !stream.hasPendingData() || stream.hasPendingData() && stream.stalledOnRead()) {
             key.interestOps(SelectionKey.OP_READ);
         }
     }
@@ -1280,6 +1427,12 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (runtime.beginLifecycleCleanup()) {
             activeStreams.decrementAndGet();
             activeConnections.decrementAndGet();
+            // Once per lifecycle, like the slot above, and only for a connection the gate admitted:
+            // an outbound connection never took an admission.
+            WorkloadAdmission admittedBy = runtime.admittedBy();
+            if (admittedBy != null) {
+                admittedBy.connectionClosed();
+            }
         }
     }
 

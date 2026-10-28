@@ -1,0 +1,60 @@
+# Executed-test floors for the tls-openssl-matrix job, read by .github/scripts/tls-matrix-floor.sh.
+#
+# Row: <report-dir> <class> <min-executed> [zero-skip]
+# Executed is tests minus skipped. A skipped test reports green and so does a -Dtest pattern that
+# matched nothing, so every class the job selects is named here. zero-skip refuses any skipped test;
+# a class without it skips by design and has its floor instead of an exemption:
+#   CoreOffHeapTlsEngineTckTest, CommunityKernelCryptoProviderTckTest
+#       the cases that need an active fd-bound session skip and name OffHeapTlsEngineLoopbackIT
+#   CoreSyscallAbiSymbolResolutionTckTest
+#       the optional-symbol case is OpenSSL-pinned-run only and the syscall table has no such symbol
+# Every OpenSSL major in the matrix is held to the same floors, so a class that executes fewer tests
+# on one major than on another fails there instead of passing on the other.
+#
+# total is the floor on the sum of every row's executed tests.
+
+exeris-kernel-core/target/surefire-reports CoreOpenSslPinnedVersionAssertionTest 1 zero-skip
+exeris-kernel-core/target/surefire-reports CoreOpenSslRuntimeTest 5 zero-skip
+exeris-kernel-core/target/surefire-reports CoreOpenSslCleanseTest 4 zero-skip
+exeris-kernel-core/target/surefire-reports CoreOpenSslVersionGateTest 6 zero-skip
+exeris-kernel-core/target/surefire-reports OpenSslLoadEventTest 1 zero-skip
+exeris-kernel-core/target/surefire-reports CoreOpenSslAbiSymbolResolutionTckTest 4 zero-skip
+exeris-kernel-core/target/surefire-reports CoreSyscallAbiSymbolResolutionTckTest 3
+exeris-kernel-core/target/surefire-reports CoreOffHeapTlsEngineTckTest 9
+exeris-kernel-core/target/surefire-reports CoreOffHeapTlsEngineZeroAllocTckTest 1 zero-skip
+exeris-kernel-core/target/failsafe-reports OffHeapTlsEngineLoopbackIT 5 zero-skip
+exeris-kernel-core/target/failsafe-reports OffHeapTlsEngineErrorQueueIT 2 zero-skip
+exeris-kernel-core/target/failsafe-reports OffHeapTlsEnginePeerVerificationIT 14 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityOpenSslPinnedMajorTest 1 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityTlsEngineLoopbackIntegrationTest 4 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityHttpClientTlsPeerVerificationTckTest 14 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityTlsPeerVerificationTest 9 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityTlsServerErrorQueueTest 1 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityServerContextErrorQueueTest 3 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityClientTrustOpeningTest 5 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityClientEngineAssemblyTest 3 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityServerCertificateChainTest 4 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityHttpAlpnMaxVersionIntegrationTest 4 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityHttp2StreamRouteIntegrationTest 3 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityHttp2RequestBodyIntegrationTest 3 zero-skip
+exeris-kernel-community/target/surefire-reports NativeTcpTransportProviderClientTlsTest 19 zero-skip
+exeris-kernel-community/target/surefire-reports TransportTlsDecisionTest 2 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityHttpDualSelfDialTest 8 zero-skip
+exeris-kernel-community/target/surefire-reports NativeTcpCarrierCloseRacesConnectTest 1 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityS3EndpointSchemeTest 9 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityS3BootedEndpointSchemeTest 4 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityAbiSymbolResolutionTckTest 4 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityTlsEngineBindTest 2 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityTlsEngineLifecycleTest 5 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityTlsFdOwnerContractTckTest 3 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityKernelCryptoProviderTest 6 zero-skip
+exeris-kernel-community/target/surefire-reports NativeTcpTlsEstablishedOnceIntegrationTest 1 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityHttpBootstrapIntegrationTest 7 zero-skip
+exeris-kernel-community/target/surefire-reports NativeTcpClientServerE2eIntegrationTest 3 zero-skip
+exeris-kernel-community/target/surefire-reports NativeTcpClientServerE2eMultiReactor2IntegrationTest 2 zero-skip
+exeris-kernel-community/target/surefire-reports NativeTcpClientServerE2eMultiReactor4IntegrationTest 2 zero-skip
+exeris-kernel-community/target/surefire-reports NativeTcpTlsSendBufferStallIntegrationTest 1 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityTlsDefaultTrustTest 3 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityKernelCryptoProviderTckTest 15
+
+total 206

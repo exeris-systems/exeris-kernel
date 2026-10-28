@@ -28,7 +28,7 @@ Delivery agent for writing and refactoring code without re-litigating architectu
 ## Coding Defaults
 - Prefer explicit construction and predictable lifecycle.
 - Prefer zero-copy/off-heap-safe patterns on hot paths.
-- Avoid framework DI, `ThreadLocal` runtime context, and unstructured orchestration in runtime paths.
+- Avoid framework DI and unstructured orchestration in runtime paths, and `ThreadLocal` everywhere, tests included (ADR-007).
 
 ## Verification
 Use proportional verification:

@@ -9,19 +9,27 @@ import eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents;
 import eu.exeris.kernel.core.bootstrap.jfr.KernelStartEvent;
 import eu.exeris.kernel.core.config.DynamicConfigFileWatcher;
 import eu.exeris.kernel.core.config.KernelConfigRegistry;
+import eu.exeris.kernel.core.contract.ContractBootstrapStep;
+import eu.exeris.kernel.core.contract.ContractDecision;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.contract.ContractKernelProviders;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
+import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemInitDeadlineException;
+import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -57,6 +65,13 @@ import java.util.function.Supplier;
  *   KernelShutdownComplete       ← after shutdown() (SubsystemOrchestrator)
  * </pre>
  *
+ * <h2>Shutdown</h2>
+ * <p>The stop sequence is started by one of three triggers: {@code kernelMain} returning (or throwing),
+ * a call to {@link #shutdown()}, or the JVM shutdown hook that {@link #boot(Runnable)} registers unless
+ * {@link Builder#registerShutdownHook(boolean)} disables it. The hook runs {@link #shutdown()}, so a
+ * standalone process stops in order on {@code SIGTERM}. The kernel installs no signal handler and never
+ * exits the JVM.
+ *
  * <h2>Zero Magic DI</h2>
  * <p>No Spring, no CDI, no Guice. The orchestrator is wired via the builder
  * pattern; providers are loaded via {@link ServiceLoader}.
@@ -69,9 +84,15 @@ import java.util.function.Supplier;
 // does not constitute a Demeter violation in this composition-root context.
 // AvoidCatchingGenericException: ScopedValue.call() declares 'throws Exception' —
 // we must catch the broadest type and re-wrap for callers.
+// TooManyMethods / CyclomaticComplexity: this is the composition root of the boot sequence; every step
+// (config, contract gate, orchestrator, scope, shutdown) is one small method, and their sum is the count.
+// GodClass: the same sum read as coupling; the per-boot stop state is already in BootSession.
 @SuppressWarnings({
     "PMD.LawOfDemeter",
-    "PMD.AvoidCatchingGenericException"
+    "PMD.AvoidCatchingGenericException",
+    "PMD.TooManyMethods",
+    "PMD.CyclomaticComplexity",
+    "PMD.GodClass"
 })
 public final class KernelBootstrap {
 
@@ -85,10 +106,22 @@ public final class KernelBootstrap {
      */
     private static final String KERNEL_VERSION = KernelVersion.current();
 
+    private static final System.Logger LOG = System.getLogger(KernelBootstrap.class.getName());
+
+    private static final String STOP_DURING_BOOT = "Stop requested during boot — kernelMain is not run";
+
+    /** Name of the platform thread the JVM shutdown hook runs on. */
+    private static final String SHUTDOWN_HOOK_THREAD_NAME = "exeris-kernel-shutdown";
+
     private final SubsystemOrchestrator.FailurePolicy failurePolicy;
     private final BootstrapSelector                   selector;
     private final ClassLoader                         classLoader;
+    private final BiFunction<ConfigProvider, ClassLoader, ContractDecision> contractGate;
+    private final Duration                            initializeDeadline;
+    private final boolean                             registerShutdownHook;
+    private final ShutdownHookRegistry                shutdownHookRegistry;
     private final AtomicBoolean                       bootActive = new AtomicBoolean(false);
+    private final AtomicReference<BootSession>        session = new AtomicReference<>();
     @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile SubsystemOrchestrator activeOrchestrator;
 
@@ -102,6 +135,10 @@ public final class KernelBootstrap {
         this.classLoader   = builder.classLoader != null
                 ? builder.classLoader
                 : Thread.currentThread().getContextClassLoader();
+        this.contractGate  = builder.contractGate;
+        this.initializeDeadline = builder.initializeDeadline;
+        this.registerShutdownHook = builder.registerShutdownHook;
+        this.shutdownHookRegistry = builder.shutdownHookRegistry;
     }
 
     // =========================================================================
@@ -120,15 +157,38 @@ public final class KernelBootstrap {
      *   <li>Emit {@code KernelStart} JFR event.</li>
      *   <li>Resolve {@link ConfigProvider} via {@code ServiceLoader}.</li>
      *   <li>Emit {@code ConfigSettingsResolved} JFR event.</li>
-     *   <li>Bind {@code CURRENT_CONFIG} and run subsystem bootstrap within the scope.</li>
+     *   <li>Run the Phase 0 contract gate ({@code ContractBootstrapStep}, ADR-088 / ADR-089) before any
+     *       subsystem is initialized; a breach propagates as {@link ContractBreachException}.</li>
+     *   <li>Bind {@code CURRENT_CONFIG}, {@code EXECUTION_CONTRACT} and {@code WORKLOAD_ADMISSION} and run
+     *       subsystem bootstrap within the scope.</li>
+     *   <li>Register the JVM shutdown hook that runs {@link #shutdown()}, unless
+     *       {@link Builder#registerShutdownHook(boolean)} disabled it; a JVM already shutting down fails
+     *       the boot here.</li>
      *   <li>Call {@code orchestrator.initialize(config)} → Kahn BFS → per-subsystem init.</li>
      *   <li>Call {@code orchestrator.start(config)} → phased parallel start.</li>
-     *   <li>Run {@code kernelMain}.</li>
+     *   <li>Run {@code kernelMain}. If {@link #shutdown()} was requested before this point, {@code kernelMain}
+     *       is not run and {@code boot()} returns normally once the stop has completed.</li>
      *   <li>Call {@code orchestrator.shutdown()} in {@code finally}.</li>
+     *   <li>Remove the shutdown hook before returning.</li>
      * </ol>
      *
+     * <p>One instance runs one boot at a time; a second concurrent {@code boot()} is refused.
+     *
      * @param kernelMain the top-level kernel runnable (your application entry point)
-     * @throws BootstrapException if config resolution or subsystem boot fails
+     * @throws IllegalStateException if this instance is already booting
+     * @throws BootstrapException if config resolution or subsystem boot fails, or the JVM is already
+     *                            shutting down
+     * @throws ContractBreachException if the Phase 0 contract gate refuses the boot, before any subsystem
+     *                                 is initialized,
+     *                                 with {@code EX-LIC-0001} (a manifest that cannot be read or fails the
+     *                                 schema or its signature), {@code EX-LIC-0002} (unknown issuer key),
+     *                                 {@code EX-LIC-0003} / {@code EX-LIC-0006} (outside its validity window),
+     *                                 {@code EX-LIC-0004} / {@code EX-LIC-0007} (a {@code HARD} capability or
+     *                                 environment breach), {@code EX-LIC-0005} (a production class with a
+     *                                 declared requirement and no manifest) or {@code EX-LIC-0008} (an
+     *                                 {@code EntitlementRequirement} that breaks its contract)
+     * @throws ConfigProvider.ConfigProviderException with {@code EX-CFG-1002} if the {@code environment}
+     *                                 configuration key names none of the six environment classes
      */
     public void boot(Runnable kernelMain) throws BootstrapException {
         runKernel(true, kernelMain);
@@ -145,7 +205,9 @@ public final class KernelBootstrap {
      * can describe the static composition of <em>any</em> kernel build, infra-free. Provider discovery is
      * done by the diagnostics provider via {@link java.util.ServiceLoader}, independent of this scope.
      * {@code isRunning()} reports {@code false} for every subsystem — the honest answer for a static
-     * composition snapshot.
+     * composition snapshot. The Phase 0 contract gate does not run, because nothing is initialized:
+     * {@link ContractKernelProviders#EXECUTION_CONTRACT} and {@link ContractKernelProviders#WORKLOAD_ADMISSION}
+     * are unbound inside {@code inspector}.
      *
      * @param inspector the read-only introspection runnable
      * @throws BootstrapException if config resolution or topology resolution fails
@@ -155,6 +217,36 @@ public final class KernelBootstrap {
     }
 
     private void runKernel(boolean fullBoot, Runnable body) throws BootstrapException {
+        // The session is published before the first side effect, so a concurrent boot() is refused
+        // before it emits an event or runs the contract gate, and a shutdown() that arrives while the
+        // configuration or the gate is still running is recorded rather than lost.
+        BootSession bootSession = null;
+        if (fullBoot) {
+            BootSession candidate = new BootSession(Thread.currentThread());
+            if (!session.compareAndSet(null, candidate)) {
+                throw new IllegalStateException(
+                        "KernelBootstrap is already booting; one instance runs one boot at a time");
+            }
+            bootSession = candidate;
+        }
+        try {
+            runPublishedKernel(fullBoot, body, bootSession);
+        } finally {
+            if (bootSession != null) { // full boot only
+                bootSession.markUnwound(); // the stop has completed: runBootInsideScope's finally ran it
+                try {
+                    if (bootSession.hook() != null) {
+                        shutdownHookRegistry.unregister(bootSession.hook());
+                    }
+                } finally {
+                    session.compareAndSet(bootSession, null);
+                }
+            }
+        }
+    }
+
+    private void runPublishedKernel(boolean fullBoot, Runnable body, BootSession bootSession)
+            throws BootstrapException {
 
         // ── Step 1: Emit KernelStart JFR — the first anchor in the waterfall ─
         KernelStartEvent.emit(KERNEL_VERSION, failurePolicy.name(), selector.toString());
@@ -171,33 +263,47 @@ public final class KernelBootstrap {
         BootstrapJfrEvents.emitConfigResolved(
                 config.providerName(), profile, configStartNanos, "serviceloader");
 
-        // ── Step 4: Build the orchestrator ────────────────────────────────────
+        // ── Step 4: Phase 0 contract gate (ADR-088, ADR-089) ──────────────────
+        // The execution contract is decided before any subsystem is initialized, so a breach leaves
+        // no memory allocated and no socket bound. inspect() initializes nothing, so it neither runs
+        // the gate nor binds a contract.
+        ScopedValue.Carrier scope = kernelScope(config, fullBoot);
+
+        // ── Step 5: Build the orchestrator ────────────────────────────────────
         SubsystemOrchestrator orchestrator = SubsystemOrchestrator.builder()
                 .failurePolicy(failurePolicy)
                 .selector(selector)
                 .classLoader(classLoader)
+                .initializeDeadline(initializeDeadline)
                 .build();
+        if (bootSession != null) {
+            bootSession.attach(orchestrator);
+        }
         activeOrchestrator = orchestrator;
         bootActive.set(true);
 
-        // ── Step 5: Bind CURRENT_CONFIG and run the full boot inside the scope ─
+        // ── Step 6: Bind CURRENT_CONFIG and EXECUTION_CONTRACT inside the scope
         //
         // From this point every virtual thread spawned in the kernel scope
-        // inherits KernelProviders.CURRENT_CONFIG automatically — zero arg-threading,
-        // zero ThreadLocal (banned), zero static singletons.
+        // inherits KernelProviders.CURRENT_CONFIG and EXECUTION_CONTRACT
+        // automatically — zero arg-threading, zero ThreadLocal, zero static singletons.
         try {
-            ScopedValue.where(KernelProviders.CURRENT_CONFIG, config)
-                    .call(() -> {
-                        if (fullBoot) {
-                            DynamicConfigFileWatcher configWatcher =
-                                    DynamicConfigFileWatcher.forRegistry(configRegistry);
-                            runBootInsideScope(orchestrator, config, configRegistry, configWatcher, body);
-                        } else {
-                            runInspectInsideScope(orchestrator, config, body);
-                        }
-                        return null;
-                    });
-        } catch (SubsystemCircularDependencyException ex) {
+            if (bootSession != null && registerShutdownHook) {
+                registerHook(bootSession);
+            }
+            final BootSession runSession = bootSession;
+            ScopedValue.Carrier bootScope = runSession == null ? scope : scope.where(BootSession.CURRENT, runSession);
+            bootScope.call(() -> {
+                if (fullBoot) {
+                    DynamicConfigFileWatcher configWatcher =
+                            DynamicConfigFileWatcher.forRegistry(configRegistry);
+                    runBootInsideScope(runSession, config, configRegistry, configWatcher, body);
+                } else {
+                    runInspectInsideScope(orchestrator, config, body);
+                }
+                return null;
+            });
+        } catch (SubsystemCircularDependencyException | ContractBreachException | BootstrapException ex) {
             throw ex;
         } catch (SubsystemOrchestrator.BootstrapException ex) {
             throw new BootstrapException("Subsystem bootstrap failed: " + ex.getMessage(), ex);
@@ -206,6 +312,72 @@ public final class KernelBootstrap {
         } finally {
             bootActive.set(false);
         }
+    }
+
+    /**
+     * Registers the JVM shutdown hook for {@code bootSession}, before any subsystem is initialized.
+     *
+     * @throws BootstrapException if the JVM is already shutting down
+     */
+    private void registerHook(BootSession bootSession) throws BootstrapException {
+        Thread hook = Thread.ofPlatform().name(SHUTDOWN_HOOK_THREAD_NAME).unstarted(this::shutdown);
+        try {
+            shutdownHookRegistry.register(hook);
+        } catch (IllegalStateException ex) {
+            throw new BootstrapException("JVM shutdown is in progress; the kernel does not boot", ex);
+        }
+        bootSession.hook(hook);
+    }
+
+    /**
+     * Stops the running kernel: readiness turns {@code 503}, then every running subsystem is stopped in
+     * reverse topological order, the transport draining first and memory released last.
+     *
+     * <ul>
+     *   <li>Idempotent and safe from any thread, concurrently with {@code kernelMain} returning: the stop
+     *       sequence runs once, and every caller returns only after it has completed.</li>
+     *   <li>A {@code stop()} that throws is logged and skipped; the one exception is a
+     *       {@link VirtualMachineError}, which propagates unchanged and ends the stop.</li>
+     *   <li>A no-op before {@link #boot(Runnable)}, after it has returned, and during
+     *       {@link #inspect(Runnable)}.</li>
+     *   <li>Called while {@code boot()} is still resolving configuration, initializing or starting
+     *       subsystems, it records the
+     *       request: {@code kernelMain} is not run, and the stop runs once initialization has unwound;
+     *       this call returns after that. Called from a subsystem's {@code initialize()} or {@code start()}
+     *       on the booting thread, it records the request and returns at once.</li>
+     *   <li>It does not interrupt or end {@code kernelMain}: application code decides when to return.</li>
+     * </ul>
+     *
+     * <p>The JVM shutdown hook {@code boot()} registers runs exactly this method. An embedding host that
+     * disables the hook calls it from its own lifecycle.
+     */
+    public void shutdown() {
+        BootSession current = session.get();
+        if (current != null) {
+            current.requestStop();
+        }
+    }
+
+    /**
+     * Builds the kernel scope: {@code CURRENT_CONFIG}, and for a full boot the execution contract the
+     * Phase 0 contract gate decides (ADR-088 / ADR-089) before any subsystem is initialized.
+     *
+     * @param config   active configuration provider
+     * @param fullBoot {@code false} for {@link #inspect(Runnable)}, which runs no gate and binds no contract
+     * @return the scope carrier
+     * @throws ContractBreachException if the gate refuses the boot, with an {@code EX-LIC} code as
+     *                                 {@link ContractBootstrapStep#run} lists them
+     * @throws ConfigProvider.ConfigProviderException with {@code EX-CFG-1002} for an unknown environment
+     */
+    private ScopedValue.Carrier kernelScope(ConfigProvider config, boolean fullBoot) {
+        ScopedValue.Carrier scope = ScopedValue.where(KernelProviders.CURRENT_CONFIG, config);
+        if (!fullBoot) {
+            return scope;
+        }
+        ContractDecision decision = contractGate.apply(config, classLoader);
+        return scope
+                .where(ContractKernelProviders.EXECUTION_CONTRACT, decision.contract())
+                .where(ContractKernelProviders.WORKLOAD_ADMISSION, decision.admission());
     }
 
     /**
@@ -252,17 +424,26 @@ public final class KernelBootstrap {
      * cannot declare checked exceptions. {@link SubsystemOrchestrator.BootstrapException}
      * is checked, so it is wrapped in an unchecked carrier and re-thrown after the scope.
      */
-    private static void runBootInsideScope(SubsystemOrchestrator orchestrator,
+    private static void runBootInsideScope(BootSession bootSession,
                                            ConfigProvider config,
                                            KernelConfigRegistry configRegistry,
                                            DynamicConfigFileWatcher configWatcher,
                                            Runnable kernelMain)
             throws SubsystemOrchestrator.BootstrapException {
+        SubsystemOrchestrator orchestrator = bootSession.orchestrator();
         try {
             // Phase A: initialize all subsystems — providerBindings() collected internally
+            if (bootSession.stopPending()) {
+                LOG.log(System.Logger.Level.INFO, STOP_DURING_BOOT);
+                return; // stop requested before initialize: nothing to initialize, start or run
+            }
             orchestrator.initialize(config);
             configRegistry.seal();
             startConfigWatcher(configWatcher);
+            if (bootSession.stopPending()) {
+                LOG.log(System.Logger.Level.INFO, STOP_DURING_BOOT);
+                return; // stop requested during initialize: skip start and kernelMain
+            }
 
             // Phase B: build the enriched ScopedValue.Carrier from all collected bindings
             ScopedValue.Carrier kernelScope = orchestrator.buildKernelScope();
@@ -270,7 +451,7 @@ public final class KernelBootstrap {
             if (kernelScope == null) {
                 // No provider bindings — run start() and kernelMain in the current scope
                 orchestrator.start(config);
-                kernelMain.run();
+                runKernelMain(bootSession, kernelMain);
             } else {
                 // Phase C: execute start() and kernelMain inside the enriched scope.
                 // Every VT spawned from here inherits MEMORY_ALLOCATOR, MEMORY_PROVIDER, etc.
@@ -280,7 +461,7 @@ public final class KernelBootstrap {
                 kernelScope.run(() -> {
                     try {
                         orchestrator.start(config);
-                        kernelMain.run();
+                        runKernelMain(bootSession, kernelMain);
                     } catch (SubsystemOrchestrator.BootstrapException ex) {
                         holder.exception = ex;
                     }
@@ -293,6 +474,15 @@ public final class KernelBootstrap {
             closeConfigWatcher(configWatcher);
             // Phase D: always shut down in reverse-topological order
             orchestrator.shutdown();
+        }
+    }
+
+    /** Runs {@code kernelMain} unless a stop was requested first; the CAS decides, once, for both sides. */
+    private static void runKernelMain(BootSession bootSession, Runnable kernelMain) {
+        if (bootSession.enterRunning()) {
+            kernelMain.run();
+        } else {
+            LOG.log(System.Logger.Level.INFO, STOP_DURING_BOOT);
         }
     }
 
@@ -480,6 +670,10 @@ public final class KernelBootstrap {
                 SubsystemOrchestrator.FailurePolicy.FAIL_FAST;
         private BootstrapSelector selector   = BootstrapSelector.all();
         private ClassLoader       classLoader;
+        private BiFunction<ConfigProvider, ClassLoader, ContractDecision> contractGate = ContractBootstrapStep::run;
+        private Duration initializeDeadline = SubsystemOrchestrator.DEFAULT_INITIALIZE_DEADLINE;
+        private boolean registerShutdownHook = true;
+        private ShutdownHookRegistry shutdownHookRegistry = RuntimeShutdownHookRegistry.INSTANCE;
 
         /**
          * Creates a builder with every setting at its default.
@@ -523,6 +717,64 @@ public final class KernelBootstrap {
          */
         public Builder classLoader(ClassLoader loader) {
             this.classLoader = loader;
+            return this;
+        }
+
+        /**
+         * Sets how long one subsystem's {@code initialize()} may run before the boot fails with
+         * {@link SubsystemInitDeadlineException} (EX-BOOT-0003). Default: 300 seconds.
+         * {@link Duration#ZERO} disables the deadline.
+         *
+         * <p>Forwarded to {@link SubsystemOrchestrator.Builder#initializeDeadline(Duration)}; see there for
+         * which phases are bounded and the limit on an {@code initialize()} that ignores interruption.
+         *
+         * @param deadline the longest one {@code initialize()} may run; {@link Duration#ZERO} for none
+         * @return this builder
+         * @throws IllegalArgumentException if {@code deadline} is negative, or positive but shorter than
+         *                                   one millisecond
+         */
+        public Builder initializeDeadline(Duration deadline) {
+            this.initializeDeadline = InitDeadlines.requireValidDeadline(deadline);
+            return this;
+        }
+
+        /**
+         * Replaces the contract gate. Package-private: only code in the bootstrap package can reach it, so a
+         * kernel built outside this package always runs {@link ContractBootstrapStep#run}.
+         *
+         * @param gate decides the execution contract and the workload gate from the configuration and class loader
+         * @return this builder
+         */
+        /* default */ Builder contractGate(BiFunction<ConfigProvider, ClassLoader, ContractDecision> gate) {
+            this.contractGate = Objects.requireNonNull(gate, "contractGate");
+            return this;
+        }
+
+        /**
+         * Sets whether {@link KernelBootstrap#boot(Runnable)} registers a JVM shutdown hook that runs
+         * {@link KernelBootstrap#shutdown()} (default: {@code true}).
+         *
+         * <p>An embedding host that owns the process's signals — it has its own shutdown hook or lifecycle
+         * that stops the kernel — passes {@code false} and calls {@link KernelBootstrap#shutdown()} from that
+         * lifecycle, so one {@code SIGTERM} starts one stop sequence. A standalone process keeps the default.
+         *
+         * @param register {@code false} to leave signal handling to the host
+         * @return this builder
+         */
+        public Builder registerShutdownHook(boolean register) {
+            this.registerShutdownHook = register;
+            return this;
+        }
+
+        /**
+         * Replaces the registry the shutdown hook is registered with. Package-private: only tests in the
+         * bootstrap package reach it, so a kernel built elsewhere registers with the JVM.
+         *
+         * @param registry where the hook is registered and unregistered
+         * @return this builder
+         */
+        /* default */ Builder shutdownHookRegistry(ShutdownHookRegistry registry) {
+            this.shutdownHookRegistry = Objects.requireNonNull(registry, "shutdownHookRegistry");
             return this;
         }
 

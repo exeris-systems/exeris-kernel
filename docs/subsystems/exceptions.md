@@ -89,9 +89,39 @@ formatting. It implements:
 |:---------------|:-----------------------------|:-------------------------------------------------|
 | `EX-BOOT-0001` | DAG Cycle Detected           | *(JFR-only — no rawArgs)*: the type actually thrown, `SubsystemCircularDependencyException`, is a plain `RuntimeException`, not an `ExerisKernelException` — it carries no `rawArgs` at all. The JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` records `cycleMembers` as one `String`, the names from `SubsystemCircularDependencyException.cycleMembers()` joined with `", "`, plus `errorCode`. |
 | `EX-BOOT-0002` | Subsystem Init Failure       | `[0] String subsystemName, [1] Phase phase (INITIALIZE\|START\|STOP), [2] String detail` — the sole thrower, `SubsystemException`, uses this fixed 3-slot layout every time. The missing-dependency abort cites the code in its message text only and carries no `rawArgs`. |
-| `EX-BOOT-0003` | Init Timeout (reserved)      | *(reserved — no rawArgs)*: the orchestrator imposes no initialization deadline, so no kernel code path raises this code; a layout is defined with its first thrower |
+| `EX-BOOT-0003` | Subsystem Init Deadline Exceeded | `[0] String subsystemName, [1] long deadlineMs` — the sole thrower, `SubsystemInitDeadlineException`, uses this fixed 2-slot layout |
 | `EX-BOOT-0004` | Memory Provider Init Failure | `[0] String providerName, [1] long reqBytes`     |
 | `EX-BOOT-3001` | Telemetry Provider Failure   | `[0] String providerName, [1] String reason`     |
+
+### Licensing / Execution Contract (`EX-LIC-`)
+
+Thrown as `eu.exeris.kernel.spi.exceptions.contract.ContractBreachException` (an `ExerisKernelException`,
+fault origin `SYSTEM`) by the Phase 0 contract gate of `KernelBootstrap.boot()` and by
+`ExecutionContract.assertCapability` / `assertEnvironment` at `HARD` enforcement (ADR-088, ADR-089). A gate
+refusal reaches the caller of `boot()` unwrapped, before any subsystem is initialized. After the gate, a `HARD`
+breach travels like any other failure from where it is raised: from a subsystem's `initialize()` or `start()` it
+is the cause of an `EX-BOOT-0002`; from `kernelMain` it reaches the caller of `boot()` unwrapped. An unknown
+value of the `environment` key fails the gate earlier, as `ConfigProviderException` `EX-CFG-1002`. A manifest
+that breaks the scope of the key that signed it is refused in the order the verifier checks: signature and
+schema (`EX-LIC-0001`, `EX-LIC-0002`), then the scope (`EX-LIC-0009`, `EX-LIC-0010`, `EX-LIC-0011`, then
+`EX-LIC-0013` for a key with a ceiling and `EX-LIC-0001` for a key without one that sets the workload envelope
+to `HARD`), then the validity window (`EX-LIC-0006`, `EX-LIC-0003`).
+
+| Code          | Description                               | Glass-Box Payload                                  |
+|:--------------|:------------------------------------------|:---------------------------------------------------|
+| `EX-LIC-0001` | Manifest rejected                         | `[0] String source` (file path, or `classpath:license-manifest.json`) when the manifest could not be read or exceeds 64 KiB, or when more than one distinct `license-manifest.json` is on the classpath (the message lists every URL), or `license.manifest.path` when that key is bound to a blank value; no `rawArgs` for invalid UTF-8 or JSON, a v1 schema violation (a missing `issuer` block or `keyId` included), a failed Ed25519 signature, or an embedded trust root that cannot be decoded — the message names the field or rule |
+| `EX-LIC-0002` | Unknown issuer key                        | `[0] String keyId` — the manifest's `issuer.keyId` names no trusted issuer key; a missing `issuer` block or `keyId` is a schema violation, `EX-LIC-0001` |
+| `EX-LIC-0003` | Manifest expired beyond grace             | `[0] String contractId, [1] Instant validUntil, [2] int gracePeriodDays` — evaluated after `validUntil + gracePeriodDays` |
+| `EX-LIC-0004` | Capability not entitled (`HARD`)          | `[0] String capabilityId` |
+| `EX-LIC-0005` | No manifest where an entitlement is required | `[0] String environment, [1] List<String> requiredCapabilities` (sorted) — an `EntitlementRequirement` on the classpath and no manifest, in any environment |
+| `EX-LIC-0006` | Manifest not yet valid                    | `[0] String contractId, [1] Instant validFrom` — evaluated before `validFrom`; the grace period never applies here |
+| `EX-LIC-0007` | Environment not authorized (`HARD`)       | `[0] String environment` |
+| `EX-LIC-0008` | Invalid entitlement requirement           | `[0] String provider` — the `EntitlementRequirement` class that throws or declares `null`, nothing, a malformed capability identifier or a `null` entitlement class, or declares one identifier under a class other than the one an earlier provider declared (the second provider is named); the service name when a provider cannot be loaded. Raised in every environment |
+| `EX-LIC-0009` | Environment outside the key's scope (`HARD`) | `[0] String keyId, [1] List<String> environments` outside the scope, sorted — a manifest `execution.environments` value the signing key may not authorize, or the declared environment of the running kernel. No enforcement rule softens it |
+| `EX-LIC-0010` | Validity outside the key's maximum (`HARD`) | `[0] String keyId, [1] Instant issuedAt` (`null` when absent), `[2] Instant` the last instant the manifest boots (`validUntil` plus the grace period, `Instant.MAX` with no end), `[3] long maxValidityDays` — `issuer.issuedAt` missing, `validFrom` before it, `PERPETUAL_INTERNAL` or no `validUntil`, or the span from `issuedAt` to the last boot instant above the maximum; the message names the rule |
+| `EX-LIC-0011` | Workload envelope above the key's ceiling, or absent (`HARD`) | `[0] String keyId, [1] long maxThroughputRps, [2] int maxConnections, [3] int growthAllowancePercent`, as read; `Long.MAX_VALUE` and `Integer.MAX_VALUE` when absent, `0` for an absent growth allowance |
+| `EX-LIC-0012` | Requirement class outside the key's scope (`HARD`) | `[0] String keyId, [1] String` entitlement class identifier, `[2] String` provider class name — raised for every declared requirement, whether or not the manifest lists its capabilities |
+| `EX-LIC-0013` | Rule below `HARD` under a key with a ceiling | `[0] String keyId, [1] String` rule name (`capability` or `environment`), `[2] String` level as read — a developer key's manifest may not soften the checks that keep it out of production |
 
 ### Runtime (`EX-RUN-`)
 
@@ -113,6 +143,8 @@ formatting. It implements:
 | `EX-NET-4005` | Transport Engine Start      | `[0] String transportName, [1] int port`              |
 | `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`, streaming stream-open path); PAQS request-edge shedding throws nothing and both paths record the JFR event `eu.exeris.kernel.core.transport.StreamShed` (`streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount`) |
 | `EX-NET-4007` | Buffer Exhaustion (reserved) | *(reserved — no rawArgs)*: no kernel code path raises this code, so it publishes no layout; one is defined with its first thrower |
+| `EX-NET-4008` | Transport stream closed by peer | *(no rawArgs)*: the thrower, `TransportStreamClosedException`, is an `IllegalStateException` subclass, not an `ExerisKernelException`. The remote end was observed, or the transport tore the stream down without a local close request, before the stream was closed through this endpoint. Core's PAQS records a handler ending with it as `StreamLifecycle` outcome `PEER_CLOSED`, not as a handler failure |
+| `EX-NET-4009` | Transport stream closed locally | *(no rawArgs)*: same thrower; the stream was closed through this endpoint (`close()`, `reset(long)`, or the connection's `close()`) first, before any remote end was observed or any transport teardown |
 
 ### HTTP (`EX-HTTP-`, codec-level violations 4001..4006; subsystem, streaming and request-decode faults 4007..)
 
@@ -155,6 +187,7 @@ formatting. It implements:
 | `EX-PERS-5006` | Interceptor Init Failure       | `[0] String interceptorClass, [1] String isolationKey` — **or**, from `PersistenceProviderException.dedicatedDatasourceNotFound()`, `[0] String providerName, [1] String dataSourceKey`. Two shapes share this code (both `String, String`); only the message text tells them apart. |
 | `EX-PERS-5007` | No Provider on Classpath       | `[0] String message`                                                 |
 | `EX-PERS-5008` | Unsupported Column Type (ADR-080 §2) | `[0] String declaredTypeName, [1] Integer columnIndex, [2] String accessor` |
+| `EX-PERS-5009` | Role Bypasses Row-Level Security (ADR-012 §4c.4) | `[0] String providerName, [1] String roleName, [2] String attribute` (`SUPERUSER`, `BYPASSRLS` or `SUPERUSER,BYPASSRLS`) |
 
 ### Graph (`EX-GRPH-`)
 
@@ -164,7 +197,7 @@ formatting. It implements:
 | `EX-GRPH-5002` | Query Execution Failure    | `[0] String queryType, [1] String detail`                        |
 | `EX-GRPH-5003` | Dual-Write Sync Failure    | `[0] String edgeType, [1] String detail`                         |
 | `EX-GRPH-5004` | Path Not Found             | `[0] long sourceMost, [1] long sourceLeast, [2] long targetMost, [3] long targetLeast` |
-| `EX-GRPH-5005` | Excessive Allocation       | `[0] String driverName, [1] long bytesAllocated, [2] long xfer`  |
+| `EX-GRPH-5005` | Excessive Allocation       | `[0] String driverName, [1] long bytesAllocated, [2] long xfer` (reserved; not thrown) |
 
 ### Events (`EX-EVENT-`)
 
@@ -178,9 +211,10 @@ formatting. It implements:
 | `EX-EVENT-6006` | Projection Handler Threw | `rawArgs[0]: String projectionName, rawArgs[1]: int eventTypeOrdinal` |
 | `EX-EVENT-6007` | Event-Loop VT Uncaught Exception | `rawArgs[0]: String loopName, rawArgs[1]: String exceptionType` |
 | `EX-EVENT-6008` | Append Version Conflict (ADR-049) | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion` |
-| `EX-EVENT-6009` | Bus Publish Failure      | `[0] int eventTypeOrdinal, [1] String reason` — the bus did not accept the event, for a reason other than a full queue; an upstream failure is `getCause()`. The kernel's bindings emit `reason` `"delivery-failed"` (the queue or broker client threw; cause attached), `"interrupted"` (interrupted while waiting for queue space; no cause, interrupt status left set) and `"unregistered-type"` (ordinal not registered; no cause) |
+| `EX-EVENT-6009` | Bus Publish Failure      | `[0] int eventTypeOrdinal, [1] String reason` — the bus did not accept the event, for a reason other than a full queue; an upstream failure is `getCause()`. The kernel's bindings emit `reason` `"delivery-failed"` (the queue or broker client threw; cause attached), `"interrupted"` (interrupted while waiting for queue space; no cause, interrupt status left set), `"unregistered-type"` (ordinal not registered; no cause), `"unregistered-isolation-key"` (the bound storage context's isolation key is not registered; no cause) and `"isolation-mismatch"` (the descriptor's isolation ordinal is non-zero and does not match the bound context, or no context is bound; no cause) |
 | `EX-EVENT-6010` | Event Handlers Failed    | `[0] int eventTypeOrdinal, [1] int failedHandlerCount` — `publishAndAwait` delivered the event and handlers threw; each handler's exception is in `getSuppressed()`, no cause. A retry runs again the handlers that succeeded |
-| `EX-EVENT-6011` | Subscription Rejected    | `[0] String eventType` — `subscribe` could not register the handler; the in-memory bus raises it for a type not registered in the `EventRegistry` |
+| `EX-EVENT-6011` | Subscription Rejected    | `[0] String eventType` — `subscribe` could not register the handler; the in-memory bus raises it for a type not registered in the `EventRegistry`. `subscribeScoped` raises it when no storage context is bound, the bound isolation key is empty or unregistered, or the bus does not support scoped subscriptions |
+| `EX-EVENT-6012` | Isolation Key Conflict   | `[0] String isolationKey, [1] int ordinal` — `IsolationKeyRegistry.register` refused a key already held under a different ordinal, or an ordinal already claimed by a different key |
 
 ### Flow / Saga (`EX-FLOW-`)
 
@@ -323,10 +357,8 @@ public class VirtualThreadPinningException extends ExerisKernelException {
 ### 2. Error Mapper Registry (Core — Protocol Blindness)
 
 // NOTE: this mirrors the real `ErrorMapperRegistry` (`exeris-kernel-core`) — it dispatches on the
-// `errorCode` *string prefix*, not `instanceof`, and only the `TransportErrorCode` values that
-// class actually declares. An earlier version of this example used a fictional
-// `mapToTransportCode(Throwable)` method and enum constants (`EXCESSIVE_LOAD`, `UNAUTHORIZED`)
-// that do not exist anywhere in the codebase; that has been replaced with the real shape below.
+// `errorCode` *string prefix*, not `instanceof`, and only to the `TransportErrorCode` values that
+// enum declares. The real `mapCode` also returns `INTERNAL_ERROR` for a null or empty code.
 
 ```java
 package eu.exeris.kernel.core.telemetry;
@@ -353,7 +385,9 @@ public final class ErrorMapperRegistry {
 }
 ```
 
-> **Note:** `EX-HTTP-*` and `EX-GRPH-*` codes map to `INTERNAL_ERROR` by policy — these represent internal infrastructure failures not surfaced as distinct protocol-level codes.
+> **Note:** `EX-EVENT-*` and `EX-FLOW-*` map to `INTERNAL_ERROR` explicitly, and every prefix the registry does not list
+> (`EX-HTTP-*`, `EX-GRPH-*`, `EX-BLOB-*`, `EX-JOB-*`, `EX-LIC-*`, `EX-DIAG-*`, `EX-UNK-*`) falls through to it — these represent internal
+> infrastructure failures not surfaced as distinct protocol-level codes.
 
 ---
 
@@ -416,6 +450,7 @@ Sentinel constructor — without coupling itself to any specific network protoco
 ## Owning ADRs
 
 - [ADR-083](../adr/ADR-083-exception-fault-origin.md) — A kernel exception says whose fault it is
+- [ADR-088](../adr/ADR-088.link.md) / [ADR-089](../adr/ADR-089.link.md) — the `EX-LIC-` codes of the license manifest and the contract gate
 
 ## Stability
 

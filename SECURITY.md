@@ -211,8 +211,9 @@ asserted by it, and both are checked on every pull request by the Supply-Chain G
   builds of the same commit produce byte-identical jars. This is what makes "traceable back to
   source" checkable by a third party rather than only by the builder.
 
-The signing half now exists as a pipeline but has **not yet produced a published artifact**, and
-the distinction matters if you are relying on it:
+The signing half is a pipeline whose output is published: `eu.exeris:*:0.12.0` is on Maven Central
+with a detached signature on every file, and the distinction between what the build asserts and what
+Central serves matters if you are relying on it:
 
 - **GPG signatures** are produced for every file a release would carry — jar, sources, javadoc, pom
   and SBOM alike — and a release-readiness gate verifies each one against the signing key before
@@ -223,10 +224,16 @@ the distinction matters if you are relying on it:
   commit, on which runner produced this file. Verify with
   `gh attestation verify <file> --repo exeris-systems/exeris-kernel`.
 
-**As of this writing no release has been published through that pipeline.** Artifacts you can
-resolve today come from GitHub Packages and carry an SBOM but no signature. Until the first signed
-release exists, treat a published SBOM as an inventory of what an artifact contains, not as proof
-of who built it.
+- **What Central serves is verified after publication.** `tools/central-verify/central-verify.sh`,
+  run by the `central-verify` workflow, fetches every `eu.exeris` coordinate of a release from
+  Maven Central into an empty directory and checks each signature against the project key pinned by
+  fingerprint (`1CEF 65BB ECBA 77D4 080D 51C9 5745 CD1C 91D5 B5B4`, the public key is
+  `tools/central-verify/exeris-release-key.asc`), every published checksum, and that each SBOM is
+  signed and names the coordinate it ships beside. You can run the same script against any release.
+
+Artifacts resolved from GitHub Packages carry an SBOM but no signature; the signed channel is
+Maven Central. A published SBOM is an inventory of what an artifact contains, and the signature on
+it, not the SBOM, is what says who built it.
 
 ---
 

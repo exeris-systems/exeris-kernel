@@ -1,0 +1,356 @@
+{
+  "reflection": [
+    {
+      "type": "com.zaxxer.hikari.HikariConfig",
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.zaxxer.hikari.pool.PoolBase",
+      "fields": [
+        {
+          "name": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "com.zaxxer.hikari.pool.PoolEntry",
+      "fields": [
+        {
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "type": "com.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry[]"
+    },
+    {
+      "type": "eu.exeris.kernel.community.crypto.CommunityAlpnSelector",
+      "methods": [
+        {
+          "name": "selectCallback",
+          "parameterTypes": [
+            "long",
+            "long",
+            "long",
+            "long",
+            "int",
+            "long"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.community.crypto.CommunityProviderBootstrapEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.crypto.CommunityTlsClientTrust",
+      "fields": [
+        {
+          "name": "refCount"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.community.crypto.CommunityTlsHandshakeEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.diagnostics.CommunityKernelDiagnosticsEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.events.jfr.CommunityEventPayloadEncodeFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.events.jfr.CommunityEventQueueOverflowEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.events.jfr.EventLogAppendConflictEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.events.jfr.EventLogAppendFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.events.jfr.EventLoopFailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.flow.FlowSnapshotSaveFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.flow.OptimisticLockConflictEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.http.CommunityHttpClientPoolEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.http.CommunityHttpLifecycleEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.http.CommunityUnscopedRequestSessionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.http.Http2RapidResetFloodEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.http.RouteExecutionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.memory.CommunityAllocationEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.memory.CommunityOverflowReturnEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.memory.CommunityReleaseEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.persistence.FairnessTracker$BucketMetrics",
+      "fields": [
+        {
+          "name": "accepted"
+        },
+        {
+          "name": "queueDepthSamples"
+        },
+        {
+          "name": "queueWaitSamples"
+        },
+        {
+          "name": "rejected"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.community.scheduling.CommunityJobJfrEvents"
+    },
+    {
+      "type": "eu.exeris.kernel.community.scheduling.CommunityJobJfrEvents$JobCompletionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.scheduling.CommunityJobJfrEvents$JobDispatchEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.scheduling.CommunityJobJfrEvents$JobFailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.security.CommunityIdentityJfrEvents"
+    },
+    {
+      "type": "eu.exeris.kernel.community.security.CommunityIdentityJfrEvents$IdentityRejectionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.security.CommunityIdentityJfrEvents$IdentityValidationEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.security.CommunityJwksKeyRotationEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.storage.CommunityBlobFailures"
+    },
+    {
+      "type": "eu.exeris.kernel.community.storage.CommunityBlobFailures$BlobCeilingExceededEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.storage.CommunityBlobFailures$BlobIsolationDeniedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.storage.CommunityBlobFailures$BlobTransferFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.transport.CommunityAcceptFaultEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.transport.CommunityAcceptRetryEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.transport.CommunityConnectionIdleTimeoutEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.transport.CommunityConnectionRefusedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.transport.CommunityReactorDispatchFaultEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.transport.CommunityTransportDrainEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.transport.TransportTlsClientPostureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.transport.TransportTlsDeclinedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.websocket.CommunityWebSocketLifecycleEvent"
+    },
+    {
+      "type": "java.io.FileDescriptor",
+      "fields": [
+        {
+          "name": "fd"
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Thread",
+      "methods": [
+        {
+          "name": "isVirtual",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.sql.SQLException",
+      "fields": [
+        {
+          "name": "next"
+        }
+      ]
+    },
+    {
+      "type": "java.sql.Statement[]"
+    },
+    {
+      "type": "org.jctools.queues.BaseMpscLinkedArrayQueueColdProducerFields",
+      "fields": [
+        {
+          "name": "producerLimit"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.BaseMpscLinkedArrayQueueConsumerFields",
+      "fields": [
+        {
+          "name": "consumerIndex"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.BaseMpscLinkedArrayQueueProducerFields",
+      "fields": [
+        {
+          "name": "producerIndex"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.BaseSpscLinkedArrayQueueConsumerField",
+      "fields": [
+        {
+          "name": "consumerIndex"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.BaseSpscLinkedArrayQueueProducerFields",
+      "fields": [
+        {
+          "name": "producerIndex"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.SpscArrayQueueConsumerIndexField",
+      "fields": [
+        {
+          "name": "consumerIndex"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.SpscArrayQueueProducerIndexFields",
+      "fields": [
+        {
+          "name": "producerIndex"
+        }
+      ]
+    },
+    {
+      "type": "sun.misc.Unsafe",
+      "methods": [
+        {
+          "name": "getAndAddLong",
+          "parameterTypes": [
+            "java.lang.Object",
+            "long",
+            "long"
+          ]
+        },
+        {
+          "name": "getAndSetObject",
+          "parameterTypes": [
+            "java.lang.Object",
+            "long",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.nio.ch.SocketChannelImpl",
+      "methods": [
+        {
+          "name": "getFDVal",
+          "parameterTypes": []
+        }
+      ],
+      "fields": [
+        {
+          "name": "fd"
+        },
+        {
+          "name": "fdVal"
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "glob": "db/migration/V0.10.0__create_event_log.sql"
+    },
+    {
+      "glob": "db/migration/V0.11.0__add_saga_step_name.sql"
+    },
+    {
+      "glob": "db/migration/V0.11.1__add_saga_definition_version.sql"
+    },
+    {
+      "glob": "db/migration/V0.11.2__add_saga_compensation_step_names.sql"
+    },
+    {
+      "glob": "db/migration/V0.13.0__add_event_isolation_ordinal.sql"
+    },
+    {
+      "glob": "db/migration/V0.5.0__create_outbox.sql"
+    },
+    {
+      "glob": "db/migration/V0.7.0__create_saga_state.sql"
+    }
+  ],
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jint"
+        ]
+      }
+    ],
+    "directUpcalls": [
+      {
+        "class": "eu.exeris.kernel.community.crypto.CommunityAlpnSelector",
+        "method": "selectCallback",
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jlong",
+          "jlong",
+          "jlong",
+          "jint",
+          "jlong"
+        ]
+      }
+    ]
+  }
+}

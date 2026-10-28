@@ -54,6 +54,17 @@ class CommunityPersistenceConfigResolverWarmupTest {
     }
 
     @Test
+    void bypassRoleConsentIsOffUnlessConfigured() {
+        PersistenceConfig absent = CommunityPersistenceConfigResolver.buildPersistenceConfig(
+                stubProvider(Optional.empty(), Optional.empty()), 1000, 1000, 1000, 1, 1);
+        PersistenceConfig granted = CommunityPersistenceConfigResolver.buildPersistenceConfig(
+                stubProvider(Optional.empty(), Optional.empty(), true), 1000, 1000, 1000, 1, 1);
+
+        assertEquals("false", absent.properties().get("rls.allowBypassRole"));
+        assertEquals("true", granted.properties().get("rls.allowBypassRole"));
+    }
+
+    @Test
     void defaultConnectionTimeoutIsAppliedWhenNotConfigured() {
         // Pins the DEFAULT_CONNECTION_TIMEOUT_MS = 250L regression:
         // CommunityPersistenceSubsystem passes 250L as defaultConnectionTimeoutMs.
@@ -66,6 +77,12 @@ class CommunityPersistenceConfigResolverWarmupTest {
     }
 
     private static ConfigProvider stubProvider(Optional<Boolean> warmupEnabled, Optional<Integer> warmupConnections) {
+        return stubProvider(warmupEnabled, warmupConnections, false);
+    }
+
+    private static ConfigProvider stubProvider(Optional<Boolean> warmupEnabled,
+                                               Optional<Integer> warmupConnections,
+                                               boolean allowBypassRole) {
         return new ConfigProvider() {
             @Override public Optional<String> getString(String key) { return Optional.empty(); }
             @Override public Optional<Integer> getInt(String key) {
@@ -77,6 +94,9 @@ class CommunityPersistenceConfigResolverWarmupTest {
             @Override public Optional<Boolean> getBoolean(String key) {
                 if (key.equals("persistence.pool.warmup.enabled")) {
                     return warmupEnabled;
+                }
+                if (key.equals("persistence.rlsAllowBypassRole")) {
+                    return allowBypassRole ? Optional.of(true) : Optional.empty();
                 }
                 if (key.equals("persistence.runMigrations")) {
                     return Optional.of(false);

@@ -9,6 +9,7 @@ import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.ChoreographyDecision;
 import eu.exeris.kernel.spi.flow.FlowChoreographyMapper;
+import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowScheduler;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
@@ -103,7 +104,10 @@ class FlowChoreographyBridgeWakeRaceTest {
 
     private static FlowChoreographyBridge bridgeWith(FlowScheduler scheduler) {
         FlowChoreographyMapper mapper = descriptor -> new ChoreographyDecision.Wake(MOST, LEAST);
-        return new FlowChoreographyBridge(mapper, scheduler);
+        // These cases only deliver wakes, so the runtime is never asked to start anything.
+        CoreFlowRuntime runtime = new CoreFlowRuntime(
+                FlowEngineConfig.defaults("wake-race-test"), new FlowProgressPublisher());
+        return new FlowChoreographyBridge(mapper, scheduler, runtime);
     }
 
     @Test

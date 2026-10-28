@@ -49,6 +49,7 @@ final class NativeTcpStreamTlsHandshake {
     private final Object tlsLock;
     private final NativeTcpHandshakeBackoff backoff;
     private final AtomicBoolean streamClosed;
+    private final AtomicBoolean closeRequested;
     private final Runnable closeStream;
     private final Runnable writeInterestCallback;
     private final AtomicBoolean bound = new AtomicBoolean(false);
@@ -68,16 +69,21 @@ final class NativeTcpStreamTlsHandshake {
      * @param tlsLock               the stream's TLS lock, shared with its wrap and unwrap
      * @param backoff               the pause between two handshake steps of a blocking caller
      * @param streamClosed          the stream's terminal closed flag
+     * @param closeRequested        the stream's close-requested flag; a blocking caller stops driving
+     *                              the handshake once a close was requested, even when the teardown
+     *                              is deferred
      * @param closeStream           closes the stream when a handshake step returns {@code CLOSED}
      * @param writeInterestCallback arms write interest when the handshake needs to send
      */
-    /* default */ NativeTcpStreamTlsHandshake(String engineName,
+    /* default */ @SuppressWarnings("PMD.ExcessiveParameterList") // the stream's flags and callbacks, passed once
+    NativeTcpStreamTlsHandshake(String engineName,
                                               TlsEngine tlsEngine,
                                               SocketChannel channel,
                                               MemoryAllocator allocator,
                                               Object tlsLock,
                                               NativeTcpHandshakeBackoff backoff,
                                               AtomicBoolean streamClosed,
+                                              AtomicBoolean closeRequested,
                                               Runnable closeStream,
                                               Runnable writeInterestCallback) {
         this.engineName = engineName;
@@ -87,6 +93,7 @@ final class NativeTcpStreamTlsHandshake {
         this.tlsLock = tlsLock;
         this.backoff = backoff;
         this.streamClosed = streamClosed;
+        this.closeRequested = closeRequested;
         this.closeStream = closeStream;
         this.writeInterestCallback = writeInterestCallback;
     }
@@ -152,7 +159,7 @@ final class NativeTcpStreamTlsHandshake {
 
     private boolean driveHandshake(boolean blocking) {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(HANDSHAKE_TIMEOUT_MILLIS);
-        while (!streamClosed.get()) {
+        while (!streamClosed.get() && !closeRequested.get()) {
             TlsStatus status = executeHandshakeStep();
             if (status == TlsStatus.FINISHED) {
                 return true;
@@ -191,7 +198,13 @@ final class NativeTcpStreamTlsHandshake {
                     return TlsStatus.FINISHED;
                 }
                 TlsStatus status = tlsEngine.beginHandshake(outbound);
-                if (status == TlsStatus.FINISHED || markReadyIfHandshakeComplete()) {
+                if (status == TlsStatus.FINISHED) {
+                    // Latched under the lock that ended the handshake, so a session the peer ends
+                    // right after it is never mistaken for a handshake still in progress.
+                    ready.set(true);
+                    return TlsStatus.FINISHED;
+                }
+                if (markReadyIfHandshakeComplete()) {
                     return TlsStatus.FINISHED;
                 }
                 if (status == TlsStatus.CLOSED) {

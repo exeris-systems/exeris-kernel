@@ -7,11 +7,13 @@ package eu.exeris.kernel.community.kafka;
 import eu.exeris.kernel.core.events.outbox.OutboxBrokerPort;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
+import org.apache.kafka.clients.producer.MockProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -90,6 +92,21 @@ class KafkaEventBrokerPortTest {
     }
 
     @Test
+    @DisplayName("each relayed record carries the descriptor's isolation ordinal in its header")
+    void relayedRecordCarriesIsolationHeader() {
+        MockProducer<byte[], byte[]> producer =
+                new MockProducer<byte[], byte[]>(true, null, new ByteArraySerializer(), new ByteArraySerializer());
+        KafkaEventBrokerPort port = new KafkaEventBrokerPort(producer, ord -> "topic-" + ord);
+
+        int published = port.publish(List.of(scopedEntry(ORDINAL_OK, 101), scopedEntry(ORDINAL_OK, 0)));
+
+        assertThat(published).isEqualTo(2);
+        List<ProducerRecord<byte[], byte[]>> history = producer.history();
+        assertThat(KafkaIsolationHeader.read(history.get(0).headers())).isEqualTo(101);
+        assertThat(KafkaIsolationHeader.read(history.get(1).headers())).isZero();
+    }
+
+    @Test
     @DisplayName("brokerId() identifies the adapter")
     void brokerIdConstant() {
         Producer<byte[], byte[]> producer = mock(Producer.class);
@@ -107,12 +124,16 @@ class KafkaEventBrokerPortTest {
     }
 
     private static OutboxBrokerPort.OutboxEntry entry(int ordinal) {
+        return scopedEntry(ordinal, 0);
+    }
+
+    private static OutboxBrokerPort.OutboxEntry scopedEntry(int ordinal, int isolationOrdinal) {
         UUID eventId  = UUID.randomUUID();
         UUID streamId = UUID.randomUUID();
         EventDescriptor descriptor = EventDescriptor.of(
                 eventId.getMostSignificantBits(),  eventId.getLeastSignificantBits(),
                 streamId.getMostSignificantBits(), streamId.getLeastSignificantBits(),
-                ordinal, EventDescriptor.FLAG_PERSISTENT, 0L);
+                ordinal, EventDescriptor.FLAG_PERSISTENT, 0L, isolationOrdinal);
         return new OutboxBrokerPort.OutboxEntry(descriptor, EventPayload.empty());
     }
 

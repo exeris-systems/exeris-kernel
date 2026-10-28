@@ -4,12 +4,16 @@
  */
 package eu.exeris.kernel.community;
 
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.library.dependencies.SliceAssignment;
+import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -67,6 +71,61 @@ class KernelTierDirectionArchitectureTest {
                     "eu.exeris.kernel.core..", "eu.exeris.kernel.community..")
             .because("The Wall: the SPI is the constitution both tiers are written against, so it "
                     + "cannot know either of them.");
+
+    /**
+     * The three packages of the licence contract in Core: the gate in the package itself, the verifier and
+     * its trust roots in {@code crypto}, the events and the violation reporter in {@code jfr}. A class
+     * outside them belongs to no slice.
+     */
+    private static final SliceAssignment CONTRACT_SLICES = new SliceAssignment() {
+        @Override
+        public SliceIdentifier getIdentifierOf(JavaClass javaClass) {
+            return switch (javaClass.getPackageName()) {
+                case "eu.exeris.kernel.core.contract" -> SliceIdentifier.of("gate");
+                case "eu.exeris.kernel.core.contract.crypto" -> SliceIdentifier.of("crypto");
+                case "eu.exeris.kernel.core.contract.jfr" -> SliceIdentifier.of("jfr");
+                default -> SliceIdentifier.ignore();
+            };
+        }
+
+        @Override
+        public String getDescription() {
+            return "the licence contract packages of Core";
+        }
+    };
+
+    @ArchTest
+    static void contractSlicesAreAnalysable(JavaClasses classes) {
+        // The rules below constrain slices; with a slice absent they would hold over an empty set.
+        for (String contractPackage : new String[] {
+                "eu.exeris.kernel.core.contract",
+                "eu.exeris.kernel.core.contract.crypto",
+                "eu.exeris.kernel.core.contract.jfr"}) {
+            assertThat(classes.stream().filter(c -> c.getPackageName().equals(contractPackage)).count())
+                    .as("%s must be analysable", contractPackage).isGreaterThan(0);
+        }
+    }
+
+    @ArchTest
+    static final ArchRule contractPackagesAreFreeOfCycles = slices()
+            .assignedFrom(CONTRACT_SLICES)
+            .should().beFreeOfCycles()
+            .because("the gate depends on the verifier and the verifier on the reporter, never the other "
+                    + "way round: that acyclic chain is what lets the verifier report a grace-period "
+                    + "violation without depending on the gate.");
+
+    @ArchTest
+    static final ArchRule cryptoDoesNotDependOnTheGate = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.core.contract.crypto..")
+            .should().dependOnClassesThat().resideInAPackage("eu.exeris.kernel.core.contract")
+            .because("the verifier and the trust roots are usable without the bootstrap gate.");
+
+    @ArchTest
+    static final ArchRule jfrDependsOnNeitherTheGateNorTheVerifier = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.core.contract.jfr..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "eu.exeris.kernel.core.contract", "eu.exeris.kernel.core.contract.crypto..")
+            .because("events and the violation reporter are the leaf of the contract packages.");
 
     private static long countIn(JavaClasses classes, String packagePrefix) {
         return classes.stream()

@@ -60,6 +60,17 @@ Community tier follows a **best-effort performance contract**:
 
 **Merge Gate:** Architecture sign-off on retention semantics in subsystem docs; if SPI/config surface changes, extend Flow TCK before release.
 
+**Status (v0.13): DELIVERED — exercised by `CoreFlowRuntimeTerminalFenceTest`, with row retention owned by the binder.**
+`FlowEngineConfig.terminalCatalogMaxSize` bounds `CoreFlowRuntime`'s terminal-state catalog as an LRU
+(`0`, the default, is unbounded; `enterpriseDefaults` sets 100 000) and bounds memory only; `flow.md`
+§"Terminal-State Catalog Retention" records the semantics (v0.7.0, ADR-013). With a snapshot store bound,
+completion replaces the instance's row with a `COMPLETED` snapshot in both modes, so a finished flow stays
+finished after an eviction or a restart. The Merge Gate's second clause is met by
+`CoreFlowRuntimeTerminalFenceTest` (both modes, and a Start naming another definition), the
+`AbstractSagaRecoveryTck` bounded cases, its `CompletedInstanceAcrossRestart` case and the terminal-snapshot
+cases of `AbstractDistributedFlowSnapshotStoreTck`. The kernel reclaims no terminal row (the saga TTL
+eviction half was never built), so storage retention belongs to the store's binder.
+
 See also: [Flow Subsystem](./subsystems/flow.md) — Known Constraints.
 
 ---
@@ -91,6 +102,12 @@ See also: [Flow Subsystem](./subsystems/flow.md) — Known Constraints.
 **Resolution:** Add `CommunityFlowIdempotencyGuardTckTest` in `exeris-kernel-community` passing `CoreIdempotencyGuard` as the SUT. Add `CommunityFlowZeroAllocTckTest` asserting low-allocation / zero-allocation behavior on the scheduler hot path for Community tier.
 
 **Merge Gate:** Both Community bindings must pass in CI before the next Flow SPI minor bump. Enterprise binding obligation applies for out-of-repo implementations.
+
+**Status (v0.13): DELIVERED, with one deviation from the Resolution.**
+`CommunityFlowIdempotencyGuardTckTest` extends `AbstractIdempotencyGuardTck` and
+`CommunityFlowZeroAllocTckTest` extends `FlowZeroAllocTck` (bounded budget of 10 allocations per
+iteration); both run in the default build. The idempotency binding exercises a guard defined inside
+the test rather than `CoreIdempotencyGuard`, which `CoreIdempotencyGuardTckTest` binds in Core.
 
 See also: [Flow Subsystem](./subsystems/flow.md) — TCK Coverage.
 
@@ -438,7 +455,7 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 **Merge Gate:** Restart/recovery tests pass for durable Community snapshot storage.
 
-**Status (v0.7):** **DELIVERED** under EPIC-1 in Sprints 3 and 4 — `JdbcFlowSnapshotStore` + `exeris_saga_state` DDL + auto-DDL bootstrap (Sprint 3); `lookupParked` snapshot fallback, bounded terminal-state catalog, saga TTL enforcement, `FlowEngineShutdownEvent` JFR (Sprint 4). `AbstractDistributedFlowSnapshotStoreTck` + `AbstractSagaRecoveryTck` Community Testcontainers PostgreSQL bindings green. ADR-013 signed off.
+**Status (v0.7):** **DELIVERED** under EPIC-1 in Sprints 3 and 4 — `JdbcFlowSnapshotStore` + `exeris_saga_state` DDL + auto-DDL bootstrap (Sprint 3); `lookupParked` snapshot fallback, bounded terminal-state catalog, saga timeout enforcement, `FlowEngineShutdownEvent` JFR (Sprint 4). TTL-based eviction of `exeris_saga_state` rows was not built; retention of terminal rows belongs to the binder (see the 0.13 status of the terminal-state catalog item). `AbstractDistributedFlowSnapshotStoreTck` + `AbstractSagaRecoveryTck` Community Testcontainers PostgreSQL bindings green. ADR-013 signed off.
 
 ---
 
@@ -799,7 +816,7 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
   - `FlowEngineConfig.defaultSagaTimeoutShort` (e.g. 30 s for transactional sagas)
   - `FlowEngineConfig.defaultSagaTimeoutLong` (e.g. 30 days for long-running business process sagas)
   - Timeout enforcement in the scheduler: on wake, check `snapshot.timeout().isBefore(Instant.now())` → trigger compensation path
-  - TTL-based eviction from `terminalStateCatalog` and `exeris_saga_state` table (configurable retention period)
+  - TTL-based eviction from `terminalStateCatalog` and `exeris_saga_state` table (configurable retention period). *Not built: timeout enforcement was delivered, row eviction was not, and retention of terminal rows belongs to the binder.*
   - JFR event: `FlowTimeoutEvent` with fields `definitionName`, `instanceIdMost`, `instanceIdLeast`, `timeoutAt`
 - **Acceptance:** `AbstractFlowEngineTck` test for timeout-triggered compensation; TCK passes.
 
@@ -920,7 +937,7 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 
 **Merge Gate:** Lifecycle and shutdown/drain behavior validated by regression/integration tests.
 
-**Status (v0.8):** **PARTIAL** — RFC 7540 §5.1.1/§5.1.2 stream-identifier admission landed in Sprint 5 (HTTP-112, `Http2SessionContextAdmissionTest`) and the h2c upgrade path was fixed (see next entry). Deeper GOAWAY/drain ownership and concurrency-control hardening remain ongoing.
+**Status (v0.8):** **PARTIAL** — RFC 7540 §5.1.1/§5.1.2 stream-identifier admission landed in Sprint 5 (HTTP-112, `Http2SessionContextAdmissionTest`) and the h2c upgrade path is the next entry. Deeper GOAWAY/drain ownership and concurrency-control hardening remain ongoing.
 
 ---
 
@@ -936,6 +953,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Owner:** HTTP / Transport subsystem.
 
+**Status (v0.13):** **DELIVERED, with one item decided against.** The session consumes the 24-byte preface after `101` (a mismatch is `GOAWAY(PROTOCOL_ERROR)` with last-stream-id 0), requires the client's SETTINGS frame first, and answers the upgrade request on stream 1 once that SETTINGS frame is applied; a later HEADERS on stream 1 is a protocol error. The `HTTP2-Settings` header is not applied: the client's real SETTINGS frame is in force before stream 1 is dispatched, so nothing depends on it, and requiring it would refuse clients served today. The TCK item is open as #757; `Http2UpgradePrefaceTest` pins the Community engine.
+
 **Resolution:** Three coordinated changes landing as a single PR:
 
 1. **Detector — extract `HTTP2-Settings`.** Extend `CommunityHttpH2cUpgradeDetector.isH2cUpgradeIntent` (or a sibling extractor method) to capture the `HTTP2-Settings` header value when the upgrade intent is detected; thread the base64url-decoded payload and the parsed originating `HttpRequest` through `handleHttp1UpgradeToH2c` into `CommunityHttp2SessionProcessor.handleUpgrade`.
@@ -944,7 +963,7 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** `curl --http2 http://localhost:<port>/...` against a `CommunityHttpServerEngine` returns the expected response (no `GOAWAY error=1`); h2c upgrade TCK scenarios green (positive + adversarial); HTTP/2 prior-knowledge tests remain green (no regression on the unaffected path); stream identifier accounting per RFC 7540 §5.1.1 verified via TCK assertion that stream 3 sent by the client immediately after upgrade is accepted while stream 2 is rejected with `PROTOCOL_ERROR`.
 
-**Status (v0.8):** **DELIVERED** in Sprint 6 (HTTP-137) — `CommunityHttpH2cUpgradeDetector` extracts `HTTP2-Settings`; the processor consumes the connection preface, applies peer SETTINGS, and synthesises the original request as stream 1 per RFC 7540 §3.2. Cleartext `curl --http2` no longer fails with `GOAWAY error=1`; prior-knowledge / ALPN paths unaffected.
+**Status (v0.8):** **NOT DELIVERED.** On the 0.8 line the detector matched the upgrade intent only: `HTTP2-Settings` was not extracted, the processor did not consume the connection preface, and the original request was not answered on stream 1, so cleartext `curl --http2` still ended in `GOAWAY error=1`. Prior-knowledge and ALPN paths were unaffected. The v0.13 status above records what is delivered.
 
 ---
 
@@ -1082,6 +1101,16 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Abstract TCK for upgrade-negotiation contract and frame ordering passes; Community binding green; carrier-pinning regression test demonstrates no PAQS starvation under N concurrent long-lived streams.
 
+**Status (v0.13): PARTIALLY DELIVERED, as two surfaces rather than one `StreamHandler`.** SSE is
+`HttpStreamExchange` with Core's `HttpStreamEngine` and `SseEventEncoder` (ADR-043, v0.10.0),
+covered by `AbstractHttpStreamExchangeTck` and `AbstractStreamRouteResolverTck` with Community
+bindings, and JFR `StreamOpened`/`StreamClosed`/`StreamBackpressurePark`/`StreamAbortiveTeardown`
+events. WebSocket is `spi.websocket` with its Community binding (ADR-084, preview, v0.12.0), covered
+by `AbstractWebSocketExchangeTck` and `AbstractWebSocketProviderTck`; see *HTTP: `WebSocketProvider`
+SPI (or SSE-Only Commitment)*. Not delivered: the carrier-pinning regression under N concurrent
+long-lived streams that the Merge Gate names, and per-handler attach/detach events for WebSocket,
+which emits engine start/stop only.
+
 ---
 
 ### HTTP: gRPC Streaming over HTTP/2
@@ -1120,7 +1149,7 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 - **HTTP-131 `QueryParams` SPI.** `eu.exeris.kernel.spi.http.QueryParams` — fluent builder exposing `empty()`, `add(String, Object)` (null value → skip, idiomatic for nullable filters), `addAll(String, List<?>)` (multi-value `?tag=a&tag=b`), `render()` (returns `""` when empty, otherwise `"?k1=v1&k2=v2"` with RFC 3986 query-component percent-encoding), and `isEmpty()`. Insertion-order preservation for deterministic cache keys + test stability. `AbstractQueryParamsTck` covers round-trip against the existing server-side query parser, multi-value, null-value skip semantics, and adversarial inputs (`value="evil&injected=1"`).
 - **HTTP-132 `WebClientException` predicate expansion (Community).** Add `isClientError()` (4xx), `isServerError()` (5xx), `isUnauthorized()` (401), `isForbidden()` (403), `isConflict()` (409), `isValidationError()` (422) to the existing `CommunityWebClient.WebClientException` inner class. No SPI surface change; no new exception types. Existing `isNotFound()` retained. Generator continues to use only `isNotFound()` for now; the additional predicates exist as ergonomic affordance for hand-written client code.
 - **HTTP-133 `HttpClientRequestEnricher` SPI + ADR-032.** `eu.exeris.kernel.spi.http.HttpClientRequestEnricher` — functional interface `HttpRequest enrich(HttpRequest)` with `noop()` and `chain(List<...>)` factories. Contract enforces immutable rebuild (returns a new `HttpRequest` record), zero body interaction (`LoanedBuffer` ownership untouched), and CR / LF / NUL rejection in header values (CWE-93 outbound symmetry with Security S-P0-04). `AbstractHttpClientRequestEnricherTck` covers chain composition, header-injection rejection, `ScopedValue` read-when-bound vs noop-when-unbound semantics, and null-input rejection. ADR-032 documents the contract and the rejected alternatives.
-- **HTTP-134 `CommunityKernelContextEnricher` (Community, opt-in).** Default-bundled enricher in `eu.exeris.kernel.community.http.client` reading `KernelProviders.PRINCIPAL_CONTEXT` to add `X-Tenant-Id` (from `tenantId().orElse-skip`) and `X-Principal-Id` (from `principalId()`). Unbound ScopedValue → silently skip; never throw. Bearer-token forwarding intentionally out-of-scope — the kernel does not hold the raw token (`PrincipalContext` is the parsed identity, not the JWT); applications shipping outbound Bearer must compose a custom enricher reading their own token store. W3C `traceparent` header deferred until the consolidated 1.0 GA roadmap Sprint 0.12 lands the `TraceContext` ScopedValue slot.
+- **HTTP-134 `CommunityKernelContextEnricher` (Community, opt-in).** Default-bundled enricher in `eu.exeris.kernel.community.http.client` reading `KernelProviders.PRINCIPAL_CONTEXT` to add `X-Tenant-Id` (from `tenantId().orElse-skip`) and `X-Principal-Id` (from `principalId()`). Unbound ScopedValue → silently skip; never throw. Bearer-token forwarding intentionally out-of-scope — the kernel does not hold the raw token (`PrincipalContext` is the parsed identity, not the JWT); applications shipping outbound Bearer must compose a custom enricher reading their own token store. No W3C `traceparent` header: no `TraceContext` ScopedValue slot exists; the slot belongs to *Telemetry: OTLP Metrics Export and Distributed Tracing*.
 - **HTTP-135 `CommunityWebClient` new constructor + DI Javadoc.** Add `CommunityWebClient(HttpClientEngine, MemoryAllocator, ObjectMapper, HttpClientRequestEnricher)` as the four-arg constructor; the existing three-arg constructor delegates with `HttpClientRequestEnricher.noop()` to preserve ADR-026's "no implicit behaviour" surface. Extend `CommunityWebClientIntegrationTest` to assert tenant-scoped requests arrive at the in-process handler with `X-Tenant-Id` headers. Add `community/http/client/package-info.java` documenting the canonical engine acquisition pattern: `HttpKernelProviders.httpClientEngine().orElseThrow(...)` (engine is bound by `CommunityHttpSubsystem` when `HttpConfig.mode()` is `CLIENT` or `DUAL`) and a four-arg construction example showing `chain(...)` composition with a hypothetical `BearerForwardingEnricher`.
 - **TOOL-136 `KernelClientGenerator` emission update (cross-repo `exeris-tooling`).** Update `exeris-tooling/exeris-codegen-java/src/main/java/eu/exeris/tooling/codegen/java/kernel/KernelClientGenerator.java` to emit `UriTemplate.of("/api/v1/widgets/{id}").resolve("id", id)` in place of `BASE_PATH + "/" + id` (lines 107, 173, 185 in current source) and `QueryParams.empty().add("page", page).add("size", size).render()` in place of `BASE_PATH + "?page=" + page + "&size=" + size` (line 131). Generator's `WEB_CLIENT` `ClassName` constant already migrated to `CommunityWebClient` via ADR-026 amendment; this change pins the emitted code to the new SPI primitives without touching that import. Lands as a separate PR in `exeris-tooling`, sequenced after the kernel-side SPI publication.
 
@@ -1178,6 +1207,15 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Abstract TCK for hot-reload contract (dynamic-key change → listener notified; non-dynamic-key change → reject) passes; Community binding green; no leaked file handles under sustained churn.
 
+**Status (v0.13): PARTIALLY DELIVERED — the registry reloads, the provider seam does not.** A
+full boot starts Core's `DynamicConfigFileWatcher` (a `WatchService` on a virtual thread) whenever
+the config directory exists (`exeris.config.dir`), on any tier; it reloads keys registered with
+`KernelConfigRegistry` and refuses a non-dynamic key under `EX-CFG-1004`.
+`AbstractDynamicConfigRegistryTck` is bound in Core. `ConfigProvider.watch`, the per-provider seam,
+delivers nothing on Community: `CommunityConfigProvider.watch` is a no-op. Not delivered: a
+`ConfigChangeListener` SPI, the log-level, telemetry-sink and watermark consumers, a Community
+binding of the TCK, and the file-handle churn test.
+
 ---
 
 ### TCK: ABI Symbol Resolution Suite
@@ -1188,7 +1226,9 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Resolution:** Add `AbstractAbiSymbolResolutionTck` enumerating every native symbol the kernel calls (OpenSSL TLS context, cipher, syscall path); each binding declares its required-symbol manifest as data; the TCK asserts that `SymbolLookup` returns a non-null address for each entry under the runtime's selected library. Run as part of the bootstrap acceptance test on every supported platform variant (Linux x86-64 / ARM64), and across OpenSSL 3.5 LTS and OpenSSL 4.0 once the cryptographic compliance workstream lands.
 
-**Merge Gate:** Suite enumerates a complete and reviewed symbol manifest per binding; CI bootstrap acceptance is gated on the suite passing across the platform matrix; failure mode produces a structured `EX-CRY-ABI-MISSING` error identifying the absent symbol.
+**Merge Gate:** Suite enumerates a complete and reviewed symbol manifest per binding; CI bootstrap acceptance is gated on the suite passing across the platform matrix; failure mode names the absent symbol. The loader's failure is the existing `CryptoBootstrapException` (`EX-NET-2002`, "Required OpenSSL symbol not found: <symbol>"), not a new `EX-CRY-ABI-MISSING` code, which would not match the error-code format and would widen the SPI exception surface; the suite's own failure lists every absent symbol at once.
+
+**Status (v0.13): PARTIALLY DELIVERED — the suite and the three bindings that exist today; the platform matrix and the Enterprise bindings are not.** `AbstractAbiSymbolResolutionTck` takes a manifest the binding derives from its descriptor tables, never a hand-kept list: `OpenSslDowncall`, `SyscallDowncall` and `CommunityForeignCall` each state, per row, the library or platform it is looked up in and whether its absence is fatal, and `CoreOpenSslLoader` binds every OpenSSL row from those same attributes (the version probes, which fail the load with their own message, and the syscall rows, whose loader dispatches by operating system, carry them as pinned metadata that a test holds to the row names), so for the bound rows the manifest and the loader cannot disagree. `SyscallErrno` takes its errno candidates from the `errno` group. Four cases: the manifest is non-empty and unique; every `REQUIRED` symbol of the current platform resolves, every miss in one failure; every alternatives group (the errno accessors, of which one suffices) has a resolvable member; and, when the run is pinned to one OpenSSL major with `-Dexeris.test.expectedOpenSslMajor`, every `OPTIONAL` symbol resolves too, which is what lets the matrix fail on a major that no longer exports a symbol whose absence the loader otherwise tolerates. Bound by `CoreOpenSslAbiSymbolResolutionTckTest`, `CoreSyscallAbiSymbolResolutionTckTest` and `CommunityAbiSymbolResolutionTckTest`; a guard test reads the compiled `CoreOpenSslLoader` and fails on a table row it never binds or binds twice. The OpenSSL bindings run in the `tls-openssl-matrix` job on 3.5.6 and 4.0.0 with executed-test floors, measured on OpenSSL 3 and applied to both legs. **Not delivered:** a Linux ARM64 or Windows run (the matrix is x86-64 Linux, and Windows is not a verified target), and bindings for `exeris-kernel-enterprise`, whose native paths (`io_uring`, QUIC) are not in this repository. The suite is a test, not a bootstrap check: `READY` does not wait on it.
 
 ---
 
@@ -1210,7 +1250,7 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Owner:** Build / Cross-cutting.
 
-**Resolution:** Add `<execution>` `jacoco:check` with a per-module `<rule>` block. Initial v0.8 thresholds (raised toward ~85% in the 1.0 GA ramp, see `1_0-gA-roadmap-consolidated.md` row #82): SPI line ≥ 60%, Core ≥ 60%, Community ≥ 55%, TCK module ≥ 70%, Build-config ≥ 50%. Enable `-Pcoverage` in the default `build-and-verify` step so the gate fires on every push and PR. Introduce a separate `exeris-kernel-coverage-aggregate` module hosting `jacoco:report-aggregate` so a single rollup `coverage.xml` is generated for downstream tooling. Keep current opt-in HTML rendering for local inspection.
+**Resolution:** Add `<execution>` `jacoco:check` with a per-module `<rule>` block. Initial v0.8 thresholds (raised toward ~85% in the 1.0 GA ramp): SPI line ≥ 60%, Core ≥ 60%, Community ≥ 55%, TCK module ≥ 70%, Build-config ≥ 50%. Enable `-Pcoverage` in the default `build-and-verify` step so the gate fires on every push and PR. Introduce a separate `exeris-kernel-coverage-aggregate` module hosting `jacoco:report-aggregate` so a single rollup `coverage.xml` is generated for downstream tooling. Keep current opt-in HTML rendering for local inspection.
 
 **Merge Gate:** `mvn verify` in the default CI job fails when any module drops below its declared threshold; per-module XML report + aggregate XML are uploaded as CI artifacts; thresholds documented in `docs/quality/coverage-gates.md`.
 
@@ -1375,6 +1415,8 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Status (v0.9):** **DELIVERED** in Sprint 2 — `docs/stability-matrix.md` published as a tracked, consumer-facing artifact: per-package maturity (`stable` / `preview` / `experimental`), since-version, anchor ADR, TCK coverage, and Enterprise-overlay status, plus the canonical semver policy and pre-1.0 / TRL-3 framing. `diagnostics` is the first explicitly-`stable` surface (ADR-033); `events` / `graph` / `security` / `crypto` held at `preview` (scheduled v0.9 contract work); `http` is `mixed` (engines + enricher `stable`, ADR-034 body-codec quadrant `preview`). All 13 `docs/subsystems/*.md` and 5 `docs/modules/*.md` carry a `## Stability` cross-reference; `CHANGELOG.md` links the matrix as the semver-policy source. Drift sweep clean (whitepaper / architecture / performance-contract enumerate no per-surface levels to sync).
 
+**Status (v0.13):** ADR-100 promotes `http` (the whole package), `security` with `security.identity`, `events`, `crypto`, `scheduling` and `storage.blob` to `stable`, joining transport, persistence, flow, memory and the foundation packages; `contract`, `graph`, `time` and `websocket` stay `preview` at 1.0. The compatibility gate fails a binary- or source-incompatible change to every `stable` package.
+
 ---
 
 ### Support Matrix Finalization
@@ -1496,6 +1538,14 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Status (v0.9):** **DEFERRED to v0.10** (covers this + the two sibling HTTP-client entries below — Generic-Element Decode and Retry/Backoff Policy). Per the 2026-05-18 "Path B" decision, Sprint 6 was **design-only**: the codec/retry surface shape is locked by the ADR-034 family, with **zero kernel SPI commits in v0.9**. Implementation lands when a concrete external consumer or a measured zero-alloc win materialises (the merge-gate trigger above).
 
+**Status (v0.13): PARTIALLY DELIVERED — one binding, not the two the Merge Gate asks for.** The
+pair is `HttpRequestBodyEncoder` / `HttpResponseBodyDecoder` with their registries, in
+`eu.exeris.kernel.spi.http` rather than a `codec` subpackage (ADR-034, v0.8.0), covered by
+`AbstractHttpRequestBodyEncoderTck` and `AbstractHttpResponseBodyDecoderTck`. Each is bound once, by
+the Jackson binding (`CommunityJsonRequestBodyEncoder`, `CommunityJsonResponseBodyDecoder`).
+`CommunityTextResponseBodyDecoder` is a second decoder with unit tests and no TCK binding; no second
+encoder exists.
+
 ---
 
 ### HTTP Client: Generic-Element Decode (`TypeReference`-style facade overload) — deferred from v0.8
@@ -1507,6 +1557,10 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 **Resolution:** Add a generics-carrying **overload on the kernel facade** decode path — a kernel-neutral type token (analogous to Jackson `TypeReference<T>`, but implementation-blind so no Jackson type crosses the SPI boundary) that preserves the full parameterized type to the resolved decoder. This is a **facade-side overload on `KernelWebClient`, NOT a codec change in `exeris-tooling`**: the generator keeps emitting the decode call and only switches collection-returning operations to the token overload; the kernel owns the type-carrying seam and the driver's Jackson binding consumes the resolved generic type. The existing `Class<?>` path stays as the default for non-generic returns. Decide whether the token threads through the decode SPI (a parallel `decode(LoanedBuffer, <type-token>, …)`) or is resolved to a parameterized `java.lang.reflect.Type` at the facade and handed to the driver — keep it implementation-blind either way.
 
 **Merge Gate:** A `List<Widget>` round-trip (plus one `Map` / nested-generic case) decodes to the correct element type via the facade token overload; the `Class<?>` path is unchanged for non-generic types; no Jackson `TypeReference` (or any driver type) appears in an SPI signature (The Wall). Naturally rides alongside the Symmetric Body Codec multi-binding work above — same decode surface, same facade seam.
+
+**Status (v0.13): NOT STARTED.** The decode path still takes `Class<?>`
+(`HttpResponseBodyDecoder.decode(LoanedBuffer, Class<?>, …)`), and `KernelWebClient` has no
+type-token overload.
 
 ---
 
@@ -1525,6 +1579,13 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 - Jitter strategy and failure-mode classification (transient vs permanent — DNS resolution failure, connection reset, TLS handshake failure, application-level 5xx).
 
 **Merge Gate:** Companion ADR accepted with the above decisions documented; abstract retry TCK exercises an in-process server that fails N-1 times then succeeds, asserting the policy reaches success within budget and respects `GIVE_UP` boundaries; Community binding green; zero-leak assertion on `LoanedBuffer` lifecycle across retried requests.
+
+**Status (v0.13): DELIVERED** in v0.10.0 (ADR-045, #220) as `HttpRetryPolicy` + `RetryDecision`
+in `eu.exeris.kernel.spi.http`, the `KernelWebClient` retry loop and `CommunityHttpRetryPolicy`.
+`AbstractHttpRetryPolicyTck` is bound by `CommunityHttpRetryPolicyTckTest`;
+`KernelWebClientRetryTest` covers retry-then-success, giving up at the cap and re-encoding the body
+per attempt over a programmed engine, and `KernelWebClientRequestBodyReleaseTest` the buffer
+release across attempts.
 
 ---
 
@@ -1550,9 +1611,9 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Resolution:** Bind `OPENSSL_cleanse` from `libcrypto` and expose it via the OpenSSL runtime facade; audit existing call-sites that hold key material (`OffHeapTlsEngine` handshake state, native cipher contexts, JWT signing material) and route their disposal through cleanse before arena release. Promote to a `SensitiveBuffer` SPI marker if additional call-sites accumulate, with `close()` contractually guaranteeing cleanse before underlying arena release.
 
-**Merge Gate:** `OPENSSL_cleanse` binding present and invoked from every identified secret-holding path on disposal; TCK assertion via a probe segment proves zeroed buffer contents after disposal for at least one representative path.
+**Merge Gate:** `OPENSSL_cleanse` binding present and exposed through `CoreOpenSslRuntime#cleanse`; the audit records zero identified secret-holding Java-owned segments, so zero disposal sites invoke it; the probe test `CoreOpenSslCleanseTest` proves zeroed segment contents against the real routine, including sub-slice isolation.
 
-**Status (v0.9):** **DEFERRED / CARRIED** — not implemented in v0.9 (no `OPENSSL_cleanse` binding landed). Carried forward; pairs naturally with the FIPS workstream below.
+**Status (v0.13):** **BINDING DELIVERED — AUDIT RECORDED.** `OPENSSL_cleanse` is bound against `libcrypto` and exposed as `CoreOpenSslRuntime#cleanse`. The audit of Java-owned segments that hold key material found none. OpenSSL owns the TLS secrets (key schedule, master and session secrets) and frees them with `OPENSSL_clear_free` inside `SSL_free`/`SSL_CTX_free`. The private key is loaded by OpenSSL from a path, so Java never holds it. The session slab in `NativeCipherContext` is a budget placeholder that OpenSSL never writes to. The SNI and address staging in `OffHeapTlsEngine` is not secret. `CommunityJwksFetcher` handles public keys. The S3 signing secret and the Argon2 buffers are heap values, where `OPENSSL_cleanse` does not apply. The TLS plaintext slab holds application data, not key material. With zero identified paths, no call site is routed through cleanse. The `SensitiveBuffer` SPI stays deferred with the FIPS workstream below.
 
 ---
 
@@ -2254,6 +2315,12 @@ those does.
 kernel instance after a crash of the first — the property neither engine can demonstrate today; the
 delivery-boundary section in `docs/subsystems/events.md` loses its "not composable today" paragraph.
 
+**1.0 disposition:** post-1.0, accepted in [ADR-101](adr/ADR-101-events-spi-contract-anchor.md)
+Ruling 3 (2026-10-08). At 1.0 the two paths are a documented limit, not composable, and `events.md`
+"Delivery Boundary" is where that is stated. Making the `OutboxBrokerPort` a configured selection
+changes no SPI signature, so it is additive after 1.0; the publish-path duplication and an
+acknowledging relay send are part of that work, not of 1.0.
+
 ---
 
 **Status (v0.12): OPEN, unchanged.** No selection seam landed. `KafkaEventEngine` still constructs a
@@ -2644,7 +2711,9 @@ times in seven.
 
 **Status (v0.12): the instrument is DELIVERED; the claims question it exposed is OPEN.** The corrected `GraphChurnRatioTck` shipped in v0.12 — an exact per-thread allocated-bytes delta for the numerator, a denominator derived from the iterations actually run and the result set actually returned, and a 500-id fan-out so the fixed per-round-trip cost amortises. Everything between the third defect and this line is the finding rather than the plan.
 
-What remains is not instrument work: the regime split (the slow regime breaches the published `< 20x` in 4 of 14 observed processes), the cold-traversal transient the published figure does not scope itself against, `EX-GRPH-5005` still having no emission site, and the PGQ/JDBC path having no churn binding at all. The TCK's 23x Community bound is deliberately a **regression** bound and not the published contract; deciding which number is honest to publish is the open work.
+At v0.12, what remained was not instrument work: the regime split (the slow regime breaches the published `< 20x` in 4 of 14 observed processes), the cold-traversal transient the published figure does not scope itself against, `EX-GRPH-5005` still having no emission site, and the PGQ/JDBC path having no churn binding at all. The TCK's 23x Community bound was then a **regression** bound and not the published contract; deciding which number was honest to publish was the open work, closed by the Status (v0.13) below.
+
+**Status (v0.13): DECIDED and DELIVERED — the Community contract is the two-regime bound, `< 23x`, and the SQL/PGQ path is deliberately unmeasured.** The slow regime is published, not fixed. `graph.md` §2, `GraphChurnRatioTck` (`churnBound()` and `documentedContract()` both 23.0 for Community) and this section state one figure: `< 23x` in steady state, in either regime, with the observed range 17.5–20.8x as its description. On `development/0.13.0`, `CommunityGraphChurnRatioTckIT` passed in 16 fresh JVMs, 1 of them in the slow regime (20.8x, ~166 500 bytes per traversal; the other 15 at 17.5–17.9x), none above the bound, and the 128-bytes-per-row mutation breaches the bound from both regimes (25.6–25.8x in the fast regime, 28.7x in the slow one). The cold-traversal transient (19.9–20.6x at worst) falls inside the bound, so the figure needs no exclusion beyond saying it is steady state. The SQL/PGQ path has no binding and no published figure: a PGQ binding must run its traversals inside a caller-supplied persistence scope, `GraphChurnRatioTck` offers no such hook, and Exeris publishes no churn figure for a path a binding does not measure. `EX-GRPH-5005` stays declared and reserved: `ExcessiveAllocationException` is in the stable `spi.exceptions` surface, and its Javadoc states that nothing throws it. The cause of the slow regime is not established; with the published figure covering it, finding it is no longer 1.0-blocking, and it is post-1.0 work together with the PGQ binding.
 
 **On this line the numbers are different, and that is the reason this entry is here rather than only
 on the GA line.** The instrument was ported to `preview` on 2026-09-01 — it had stayed on the broken
@@ -2944,9 +3013,27 @@ Two are recovered and green: five assertions that had never executed anywhere. *
 
 **What the follow-up starts from, so it does not start from scratch.** `CommunityHttpClientEngine` carries no TLS code of its own; TLS reaches it through `CommunityHttpTransportFactory`, which does read `transport.certPath` / `transport.keyPath` — the properties this test sets. `NativeTcpCarrier.createTlsEngineIfEnabled()` returns `null` unless the carrier holds both a `cryptoProvider` and a `cryptoConfig`, and that binding is a different path from the properties. So the premise is reachable and the gap is in crypto-to-carrier wiring on the client side, which may be a product gap rather than a test defect. That is its own PR.
 
-**Still open:** the remaining gates are the genuinely environmental ones (OpenSSL probes) plus `AbstractSecurityProviderTck$JwksKeyRotationContract`, where a binding declines a TCK contract by returning a null harness — a contract that a provider can opt out of silently is the same shape one level up.
+**Still open:** the remaining gates are the genuinely environmental ones (OpenSSL probes, and socket file-descriptor access). The null-harness opt-out in `AbstractSecurityProviderTck$JwksKeyRotationContract` is its own entry, [Test Coverage: A TCK Contract A Binding Can Decline By Returning A Null Harness](#test-coverage-a-tck-contract-a-binding-can-decline-by-returning-a-null-harness-residue-of-the-fourteen-skip-gates).
+
+**Status (v0.13): DELIVERED for the OpenSSL and file-descriptor gates — the matrix asserts an executed-test floor per class, and the Merge Gate holds as worded.** The floors are the counts measured on OpenSSL 3; the matrix holds the 4.0.0 leg to the same floors, so a leg that executes fewer tests fails. `.github/tls-matrix-floors.txt` names every class the `tls-openssl-matrix` job selects with the fewest tests it must have executed (tests minus skipped), a zero-skip marker where a skip is a gap, and a total; `.github/scripts/tls-matrix-floor.sh` reads the Surefire and Failsafe reports and fails a class that is below its floor, skipped when it must not, or has no report. A Core or Community TCK binding that skips by design (`CoreOffHeapTlsEngineTckTest`, `CommunityKernelCryptoProviderTckTest`: the cases that need an active file-descriptor-bound session, which name `OffHeapTlsEngineLoopbackIT`) has a floor instead of an exemption. The audit of every `assume*` gate in the Community tests found 23 distinct sites in 13 files: 14 are OpenSSL probes, and every class holding one is now selected and floored (six were not selected by any matrix step: `CommunityTlsEngineBindTest`, `CommunityTlsEngineLifecycleTest`, `CommunityTlsFdOwnerContractTckTest`, `CommunityKernelCryptoProviderTest`, `CommunityKernelCryptoProviderTckTest`, `NativeTcpTlsEstablishedOnceIntegrationTest`, and so were four more with the same probe: `CommunityHttpBootstrapIntegrationTest` and the three `NativeTcpClientServerE2e*IntegrationTest`s). Eight gate on whether the JVM exposes a `SocketChannel`'s descriptor to the test harness, which is an environmental property of the JVM flags, not of OpenSSL; each sits in a class that is floored, so a skip there is a build failure in the matrix. One (`NativeTcpCarrierBackendSelectionTest`) skips by selection, when the Core syscall seam is armed and the fallback-only path is therefore not under test; it needs no OpenSSL and is not part of the matrix.
 
 **Worth recording as correct rather than fixed:** the three skips in `CoreOffHeapTlsEngineTckTest` name `OffHeapTlsEngineLoopbackIT` as where they are covered, and that test really runs — 5 tests, 0 skipped, in the default build, plus a dedicated failsafe step in CI. A skip that names its replacement is only as good as the replacement running; this one checks out and is the pattern to copy.
+
+---
+
+### Test Coverage: A TCK Contract A Binding Can Decline By Returning A Null Harness (residue of the Fourteen Skip Gates)
+
+**Gap:** `AbstractSecurityProviderTck.JwksKeyRotationContract` asserts the key-rotation overlap window and the stale-fetch budget (ADR-012), but each case opens `createRotationHarness()` and calls `assumeTrue(harness != null, ...)`. A binding that does not override the method returns `null`, and the whole contract reports as skipped, which a build counts as green. The Community binding overrides it, so nothing is skipped today; the gap is that a binding can opt out of the contract without anyone choosing to. It is the same shape as the gates in [Test Coverage: Fourteen Skip Gates That Report Green](#test-coverage-fourteen-skip-gates-that-report-green-residue-of-375-surfaced-2026-08-28), one level up: the skip is in the contract rather than in the binding's environment.
+
+**Owner:** TCK / Security.
+
+**Resolution:** make the opt-out explicit and visible rather than silent: a binding declares that it does not support rotation (a method the contract reads), the declared opt-out is a named, reasoned abort, and a binding that neither supplies a harness nor declares the opt-out fails the contract. The alternative is to drop the null return and require every binding to supply a harness.
+
+**Merge Gate:** no binding reports success on `JwksKeyRotationContract` by returning a null harness without having declared that it does not support rotation.
+
+**1.0 disposition:** 1.0-recommended. The Community binding runs the contract, so the 1.0 claim does not rest on the gap; it matters to a third-party binding, which is exactly who the TCK exists for.
+
+**Status (v0.13): NOT STARTED** — split from the Fourteen Skip Gates entry so that entry could close on what it covers.
 
 ---
 
@@ -3011,7 +3098,7 @@ is the same: check the side effect, not the exit code.
 
 **Merge Gate:** every remaining remote branch has an open PR or a written reason.
 
-**1.0 disposition:** not blocking; hygiene.
+**1.0 disposition:** 1.0-recommended; hygiene, not a release blocker.
 
 **Status (v0.12): PARTIALLY DELIVERED — and the Resolution above would not have done it.** Re-counted rather than re-quoted: `git ls-remote --heads origin` returns **20**, of which six are permanent (`main`, `preview`, `gh-pages`, `development/0.12.0`, plus `development/0.11.0` and `development/0.7.1`) and three are research branches kept deliberately. The heading keeps its number because 56 was the count on the day it was surfaced.
 
@@ -3114,6 +3201,13 @@ in every implementation, and a case proving one says nothing about the other.
 files of `exeris-kernel-tck`'s `contract/http` package contain **no** reference to
 `maxRequestBodyBytes`, `maxResponseBodyBytes` or `maxRequestHeaderSize`, so a second engine could
 ignore every one of them and pass the shared suite. Measured 2026-09-03.
+
+**Status (v0.13): PARTIAL.** The three HTTP/2 header keys — `maxHeaderBlockSize`,
+`maxHeaderListSize`, `maxStringLiteralSize` — are asserted on the wire by
+`AbstractHttp2HeaderLimitTck`, bound for Community by `CommunityHttp2HeaderLimitTckTest`, with a case
+at and over each limit. The other four — `maxRequestBodyBytes`, `maxResponseBodyBytes`,
+`maxRequestHeaderCount`, `maxRequestHeaderSize` — remain unasserted: `AbstractHttpClientEngineTck`
+copies them into the configuration it builds and no case observes them.
 
 ---
 
@@ -3284,20 +3378,20 @@ stream routes on its HTTP/1.1 path only. `CommunityHttp2SessionProcessor` has no
 so a request for a stream route that arrives over HTTP/2 goes to `handle` and is answered by
 whichever respond-once route matches its path, or `404`. A connection reaches HTTP/2 with or without
 TLS. With TLS terminated by the kernel, `CommunityAlpnSelector#selectCallback` selects `h2` whenever
-the client offers it and reads no configuration, so a browser `EventSource` over kernel-terminated
-TLS is on HTTP/2. On a connection without TLS, an `h2c` upgrade or a prior-knowledge HTTP/2 preface
+the client offers it and `http.maxVersion` permits HTTP/2, so a browser `EventSource` over
+kernel-terminated TLS is on HTTP/2 unless the listener is capped at HTTP/1.1. On a connection
+without TLS, an `h2c` upgrade or a prior-knowledge HTTP/2 preface
 is handed to the HTTP/2 session before stream resolution runs. Workarounds today: terminate TLS
-upstream and speak HTTP/1.1 to the kernel; without TLS, set `http.maxVersion=HTTP_1_1`, which
-disables both of those paths to HTTP/2. Because `http.maxVersion` does not reach ALPN selection, no
-setting keeps a TLS client on HTTP/1.1.
+upstream and speak HTTP/1.1 to the kernel, or set `http.maxVersion=HTTP_1_1`, which disables both
+of those paths to HTTP/2 and keeps a TLS listener from selecting `h2`.
 
 **Owner:** HTTP subsystem (the Community HTTP/2 session and the Core SSE engine).
 
 **Resolution:** resolve stream routes in `CommunityHttp2SessionProcessor` through the same
 `StreamRouteResolver`, and give the stream engine an HTTP/2 path: a response `HEADERS` frame, then
 `DATA` frames per event, with the stream's flow-control window as the credit `emit` parks on.
-Separately, make ALPN selection honour `http.maxVersion`, so that a deployment can keep TLS clients
-on HTTP/1.1 in the meantime.
+ALPN selection honours `http.maxVersion` as of 0.13 (#533), so a deployment keeps its TLS clients
+on HTTP/1.1 by setting it.
 
 **Merge Gate:** a client that negotiates `h2` over TLS receives a `text/event-stream` response and
 one event per `emit`; the backpressure park is exercised against the HTTP/2 flow-control window; a
@@ -3305,6 +3399,14 @@ request over `h2c` resolves the same route.
 
 **Status (v0.12): OPEN.** Recorded by ADR-043 Amendment A1 as an unmet part of the Decision's
 "HTTP/1.1 + h2", not a narrowing of it.
+
+**Status (v0.13): DELIVERED.** A listener's ALPN answer follows `http.maxVersion` (#533), outbound
+HTTP/2 flow control is delivered, and Community resolves and serves stream routes over HTTP/2. The
+merge gate is held by `CommunityHttp2StreamRouteIntegrationTest`, which reads a stream route over TLS
+with ALPN `h2` and over prior knowledge, and by `Http2StreamRouteTest` and
+`Http2ConnectionWriterTest`, which exercise the park on the HTTP/2 flow-control window and every
+interleaving of a window change with a parking emitter. `CommunityHttp2cStreamExchangeTckTest` binds
+`AbstractHttpStreamExchangeTck` over HTTP/2 and runs on demand with the `stream-loopback` group.
 
 ---
 
@@ -3367,6 +3469,39 @@ fails, and fixed to `false` both positive cases fail.
 ---
 
 ## Known Gaps / Future Work planned for v0.13
+
+### License Manifest & Capability Entitlement Runtime Contract (ADR-088, ADR-089)
+
+**Scope:** Core & SPI (`bootstrap`, `crypto`, `contract`).
+
+**Gap:** Kernel v0.12 does not possess an offline cryptographic verification mechanism for license manifests (`license-manifest.json`) or a formal typed execution contract (`ExecutionContract`) in Phase 0 of the bootstrap sequence.
+
+**Owner:** Core / Bootstrap, Crypto, Contract subsystems.
+
+**Status (v0.13): PARTIALLY DELIVERED.** The verification and enforcement of the contract are delivered: Phase 0 of `KernelBootstrap.boot()` through `ContractBootstrapStep` (exeris-systems/exeris-kernel#608), with scoped issuer keys, the entitlement classes and the developer-licence envelope enforced by `DeveloperWorkloadAdmission`, covered by `AbstractExecutionContractTck`, `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck`. Metering beyond the developer licence, offline revocation, the `-Pproduction` capability check and the measurement of the gate's cost are not delivered; they are the items under "Open within this item".
+
+**Resolution:**
+- Define `ExecutionContract`, `WorkloadEnvelope`, `EnforcementLevel`, `ExecutionEnvironment` and the `EntitlementRequirement` SPI in `exeris-kernel-spi` (`eu.exeris.kernel.spi.contract`).
+- Define `ContractBreachException` in `exeris-kernel-spi` (`eu.exeris.kernel.spi.exceptions.contract`) with registered error codes `EX-LIC-0001` through `EX-LIC-0013` (catalogued in `docs/subsystems/exceptions.md`).
+- Expose the `ContractKernelProviders.EXECUTION_CONTRACT` slot.
+- Implement zero-dependency RFC 8785 JSON canonicalization (`JsonCanonicalizer`), Ed25519 signature verification (`LicenseManifestVerifier`), and an immutable embedded `TrustedIssuerKeyStore` in `exeris-kernel-core` that pins one scoped key per family, `exeris-prod-2026-k1`, `exeris-dev-2026-k1` and `exeris-ent-2026-k1`; `exeris-root-2026-k1` is retired.
+- Integrate license verification in Phase 0 of `KernelBootstrap.boot()`, before the orchestrator, through `ContractBootstrapStep` (`inspect()` does not run it): with no manifest and no `EntitlementRequirement` the kernel boots under the Community fallback in every environment, and with a requirement it fails fast (`EX-LIC-0005`) in every environment, development included.
+- Verify the manifest against the strict v1 schema of ADR-088 §1 and canonicalize it per RFC 8785, including ECMAScript number serialization; read it from `license.manifest.path` with no fallback when that key is set, and refuse one above 64 KiB.
+- Load every `EntitlementRequirement` defensively (`EX-LIC-0008` for one that breaks its contract, its `EntitlementClass` included), and record each gate decision as `ContractResolvedEvent`.
+- Hold a manifest to the scope of the key that signed it, at `HARD` and whatever `enforcementRules` say: environments (`EX-LIC-0009`, the declared environment included), validity (`EX-LIC-0010`), workload ceiling (`EX-LIC-0011`), the class of every declared requirement (`EX-LIC-0012`), and for the developer key the `capability` and `environment` rules (`EX-LIC-0013`). The scope types and `LicenseManifestVerifier.verifyScoped` are public so a tool that signs licences runs the same checks.
+- Run a kernel under a developer licence at 50 requests per second and 10 connections: the gate binds a `DeveloperWorkloadAdmission` when a developer key signed the manifest and a requirement is declared, and the Community drivers enforce it (`WorkloadAdmission`).
+- Report `SOFT` and `AUDIT` violations through `ContractViolationReporter`, once per distinct violation: `SOFT` logs a `WARNING` through `System.Logger` and emits `ContractEnforcementEvent`, `AUDIT` emits the event only; `assertCapability` / `assertEnvironment` return the violation below `HARD`, and Phase 0 and the grace period report through it.
+- Implement `AbstractExecutionContractTck`, `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck` in `exeris-kernel-tck` and bind concrete tests in `exeris-kernel-community`; the crypto suite verifies a golden manifest canonicalized and signed by an independent RFC 8785 implementation, holds a manifest to its key's scope and checks the gate in every environment.
+
+**Open within this item:**
+- `authorizedInstances` is carried in the contract but not metered, and the workload envelope is enforced only under the developer licence: metering for the other keys stays open.
+- `BlockedManifestRegistry` (ADR-088 §4 item 3, offline revocation) is not implemented.
+- The signing CLI lives in the private issuance repository. Only the `-Pproduction` capability check, which compares each declared class with the licence registry, stays in `exeris-tooling` and is not started.
+- The gate's cost is not measured against ADR-089's reversal threshold (5 ms); the measurement that settles it — marginal cost to `KernelBootReady` with and without a manifest, read from `ContractResolved.gateDuration` — is exeris-systems/exeris-kernel#605.
+
+**Merge Gate:** Complete TCK coverage with passing Community bindings, zero-dependency canonicalization in Core, ArchUnit/The Wall compliance. A startup-cost claim waits for the measurement listed above.
+
+---
 
 ### Telemetry: a contract for events the kernel did not define
 
@@ -3444,6 +3579,9 @@ JFR event class in the kernel for the warm-up catalogues; the inventory is what 
 the two paths visible as a contract question rather than an implementation detail. No RFC exists in
 `docs/rfc/`.
 
+**Status (v0.13): NOT STARTED — deferred.** `docs/rfc/` still carries no telemetry-contract document, and
+`TelemetrySink` is unchanged, so the RFC and everything it gates move past 0.13.
+
 ---
 
 ### Tooling Asks Carried to v0.13 — Persistence Role Check, Flow Routing, Choreography Start, Security Rulings (surfaced 2026-09-26)
@@ -3472,12 +3610,47 @@ issue holding the measurement:
 **Owner:** Persistence (#581, #580 item 4), Flow (#582, #583), Security (#585). The tooling halves
 of each are `exeris-tooling`'s and are listed in each issue.
 
-**Resolution:** #581 and #583 are implementation plus TCK once the default is chosen; #582 needs an
-RFC; #585 and #580 item 4 are ADR rulings (ADR-012, ADR-006).
+**Resolution:** #581 and #583 are implementation plus TCK once the default is chosen; #585 and #580
+item 4 are ADR rulings (ADR-012, ADR-006). #582 needs an RFC, written in 0.13, that fixes a shape adding
+to the stable flow surface; the implementation follows 1.0, which ships with the next step fixed at
+plan compilation, as `flow.md` §"A step's next step is fixed when the plan is compiled" states.
 
 **Merge Gate:** each issue's acceptance criteria.
 
-**Status (v0.13): NOT STARTED.** The measurements are in #581–#585.
+**Status (v0.13): PARTIALLY DELIVERED.** ADR-012's amendment of 2026-10-07 (accepted 2026-10-08)
+rules #585, #611 (item 4 of #580) and #581.
+- **#581 DELIVERED.** `RlsConnectionInterceptor` registration probes the role and throws `EX-PERS-5009`
+  (`PersistenceProviderException.rlsBypassRole`, `RlsRoleCheck`); `persistence.rlsAllowBypassRole=true` is the
+  consent; `AbstractRlsBypassRoleCheckTck` is the suite.
+- **#611 (item 4 of #580) DELIVERED.** The reference policy pins the shared-scope tag on write;
+  `AbstractSharedScopeAccessMatrixTck` gains `retagScope` and the tag cells, bound by
+  `CommunityPersistenceSharedScopeIT` and `CommunityPersistenceSharedScopeUuidIT`.
+- **#583 DELIVERED.** A choreography `Start` for an instance the engine already holds is a no-op pinned by
+  `AbstractFlowChoreographyTck`, and each absorbed delivery emits `ChoreographyStartIgnoredEvent`.
+- **#585 RULED, NOT IMPLEMENTED.** The ruling is in ADR-012's amendment; no principal session key and no
+  field-level encryption ship.
+- **#582 NOT STARTED.** `docs/rfc/` carries no flow-routing RFC; the step graph is still fixed at plan
+  compilation.
+
+The measurements are in #581–#585.
+
+---
+
+### Native-Image: Opt-In Build With Metadata In The Jars (ADR-103)
+
+**Scope:** `exeris-kernel-spi`, `exeris-kernel-core`, `exeris-kernel-community` (graph on PostgreSQL and Neo4j included), `exeris-kernel-community-kafka`; `RequiresRoleProcessor` in `exeris-kernel-build-config`.
+
+**Gap:** No kernel artifact ships GraalVM native-image configuration — no `META-INF/native-image/` in any module. An image built from the 0.12 artifacts fails at run time on unregistered FFM downcalls and missing classpath resources, crashes on shutdown when closing a shared arena, loads the empty role registry instead of the generated one, and loses JFR event classes resolved by name. Tracing-agent output from one run does not close the gap: it misses every path the run did not take.
+
+**Owner:** Core / Community (metadata), Build (`RequiresRoleProcessor`, CI).
+
+**Resolution:** per [ADR-103](adr/ADR-103-native-image-opt-in-build.md) — an opt-in build with HotSpot/C2 the default and the only runtime with asserted SLOs; per-module `META-INF/native-image/eu.exeris/<artifactId>/reachability-metadata.json` and `native-image.properties`, generated or checked from the declaration sites; `RequiresRoleProcessor` emits metadata for the class it generates; the fd resolver's JDK members registered and the two `--add-opens` shipped as build arguments; `NativeTcpSocketBackend` off `Arena.ofShared()`; GraalVM 25 or newer. Prerequisite: #619.
+
+**Merge Gate:** a per-module test fails on a declaration site with no metadata entry; a `native-smoke` job outside the default PR gate (label, nightly, release PR) builds a sample image with no application-side configuration and asserts boot, TLS over HTTP/1.1 and HTTP/2, persistence, JFR, the role registry, graph on both backends and a Kafka broker round trip — made red first by deleting one module's metadata file.
+
+**1.0 disposition:** **1.0-BLOCKING** — delivered in 0.13; the support matrix and the performance contract already state the HotSpot/C2 pin, and this item makes the native-image half of that stance something a consumer can build.
+
+**Status (v0.13): DELIVERED.** [ADR-103](adr/ADR-103-native-image-opt-in-build.md) is accepted (2026-10-08), including that the kernel may ship an experimental GraalVM option inside its jars when the shared-arena pool still needs it. An `Error` from a subsystem goes through the failure policy (#619); `RequiresRoleProcessor` emits metadata for the registry it generates; the socket backend no longer uses a shared arena; Core, Community and Kafka ship reachability metadata (the SPI's file is empty) checked against their declaration sites by a per-module test, and Community ships the image build arguments (#659). The `native-smoke` job builds the sample images with no application-side configuration and passes every step, and it was made red first: with the Kafka module's metadata deleted it fails on the Kafka path at run time, on a class kafka-clients resolves by name from its `ConfigDef`, while every Community step stays green. With Community's metadata deleted the image does not build: GraalVM 25.0.2 stops on an internal compiler error in H2's `MathUtils.generateAlternativeSeed`, so that module's path could not be shown failing at run time.
 
 ---
 
@@ -3578,7 +3751,7 @@ See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the
 
 **Status (v0.12): superseded — see the second status below, which records the migration as complete.** *(As first written: "the seam ships and the saga TTL is drivable; the rest of the migration is not". The rest landed later in the same milestone.)*
 [ADR-082](adr/ADR-082-injectable-time-seam.md) rules `TimeSource` (`nanoTime()` + `wallTime()`) in
-`spi.time`, bound through `KernelProviders.TIME_SOURCE` and read through `KernelProviders.timeSource()`,
+`spi.time`, bound through `TimeKernelProviders.TIME_SOURCE` and read through `TimeKernelProviders.timeSource()`,
 which falls back to the platform clock. The names are taken from `CommunitySchedulerClock` rather than
 invented, so the scheduler's clock becomes the seam plus waiting instead of a second definition.
 
@@ -3680,6 +3853,8 @@ CI against the built artifacts.
 **Status (v0.12, first slice): SBOM and reproducible builds, delivered on `development/0.12.0`.** *(This heading read "signing and provenance are not" until the cut; the second slice below built and gated both, so the clause was retired rather than left contradicting the paragraph beneath it.)* Two of the four items the Resolution names are done and gated on every pull request by the `Supply-Chain Gate`: a CycloneDX SBOM per artifact, attached under classifier `cyclonedx` so `mvn deploy` publishes it beside the jar, and a reproducible-build baseline (`project.build.outputTimestamp` plus version pins on the default-lifecycle plugins). The Gap paragraph's "no reproducible-build config" was understated on one point worth keeping: `maven-jar-plugin` carried no version anywhere in the reactor and resolved through Maven's super-POM to 3.1.2, which predates reproducible archive support — so the pins are not hygiene accompanying the timestamp property, they are what makes it do anything. Measured rather than assumed: on the preceding commit two consecutive builds differed in all 9 jars; they are now byte-identical, as are the 11 SBOMs.
 
 **Status (v0.12, second slice): the signing and provenance pipeline is built and gated; nothing has been published through it.** GPG signing covers every file a release carries — jar, sources, javadoc, pom and SBOM — and SLSA provenance is attested through Sigstore keyless signing on the release workflow's OIDC identity, which is the question a GPG signature does not answer (which workflow, at which commit, on which runner). The Merge Gate's "a CI job verifies the signature" is met by `tools/release-readiness`, which verifies each signature against the key *before* upload rather than after; verifying "on a fresh pull" is not yet possible because nothing signed has been published to pull.
+
+**Status (v0.13, third slice): the consumer-side verification is built; the Merge Gate is met when it has run green from `main`.** `eu.exeris:*:0.12.0` is on Maven Central, so a fresh pull can now be verified, and `tools/central-verify/central-verify.sh` does it: for every coordinate the release tag declares it fetches the files from Central into an empty directory and checks each `.asc` against the project key pinned by fingerprint, every published checksum, and that each coordinate's CycloneDX SBOM is signed and names its own group, artifact and version. Its `--self-test` negative controls (a flipped byte in a jar, an SBOM naming another version, a pin that does not match the key, a different valid key) run on every invocation. Run locally against 0.12.0 it verified 11 coordinates and 46 files, and every control failed as intended. **Not yet met:** the `central-verify` workflow has not run in CI, and a scheduled or dispatched workflow only registers once the file is on the default branch, so the clause stays open until it has run green from `main`. Provenance (`gh attestation verify`) is not part of this check.
 
 **What remains is operational, not engineering** — and that sentence was wrong in a way worth keeping, because it is the same class of claim this milestone kept finding. The four secrets (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `CENTRAL_TOKEN_USERNAME`, `CENTRAL_TOKEN_PASSWORD`) are in place as organization secrets visible to this repository, with names matching what the workflow references. The `eu.exeris` namespace is verified in the Central Portal. **What was left was not "one manual run": nothing could run at all.** `workflow_dispatch` registers only a workflow present on the **default branch**, `release.yml` has never reached `main`, and so GitHub had no record of it — `GET /actions/workflows` listed six workflows and not this one. The dry run the workflow itself offers as "touching nothing remote" and explicitly allows from any branch **was runnable from no branch**, so the signing key had never been imported, `-P release` had never been built, and the readiness, SBOM and provenance steps had never executed on any ref, once. The first opportunity would have been the release integration PR that carries the file to `main` — the moment they are first depended on, which is the failure shape `tools/release-readiness` exists to prevent one level down.
 
@@ -3789,7 +3964,7 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 
 **Merge Gate:** `AbstractSecretProviderTck` covers resolve/missing/rotation; DB + JWKS + TLS read through the seam; no plaintext secret retained in a config record beyond the resolved-handle boundary; Wall preserved.
 
-**1.0 disposition:** **1.0-RECOMMENDED** (B2B production blocker) — stage-able if 1.0 docs explicitly state "secrets via config + external injection" as the supported 1.0 posture, with the SPI in v0.11.
+**1.0 disposition:** post-1.0. At 1.0 secrets reach the kernel through configuration and external injection, and the security surface 1.0 publishes does not include the seam, as [ADR-100](adr/ADR-100-spi-surfaces-stable-at-1-0.md) states in its Context, answer 2. Adding `SecretProvider` afterwards is an addition to a stable surface, not a change to one.
 
 **Status (v0.12): NOT STARTED — and the disposition above can no longer be satisfied as written.** No `SecretProvider` type exists in SPI, Core or Community; the name appears only in this document and in [RFC-2026-09-02](rfc/RFC-2026-09-02-preview-spi-promotion.md)'s inventory of what 1.0 owes. That is the point rather than the finding: the disposition makes staging conditional on **both** halves — the 1.0 docs declaring the config-plus-external-injection posture **and** the SPI landing in v0.11. The SPI did not land in v0.11 and has not landed in v0.12, so no future work can make that sentence true; only rewriting it can. One of the two has to move — schedule the SPI, or rest the staging on the documented posture alone and say so. Recorded rather than quietly read as satisfied, which is what a conditional nobody re-checks becomes.
 
@@ -3821,9 +3996,9 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 
 **Native-image / GraalVM — declare a performance contract, not just a yes/no.** The mechanism is concrete: Panama performs better on HotSpot because FFM downcall stubs and `MemorySegment`/`VarHandle` access are intrinsified and C2-runtime-optimized; the FFM path under native-image is younger and, without PGO, more conservative. The same logic extends to the **zero-alloc / No-Waste-Compute contract**: scalarization via Escape Analysis is peak-tier C2, profile-driven — under AOT without profiles the decisions are more conservative. PGO closes part of the gap but is operationally heavy (instrumented build → profile → optimized build). This is not "native-image is worse"; it is **"native-image is a different performance contract."** Edge/lightweight (startup without warmup, small footprint, small image) is where native-image *wins* and is part of the thesis; the throughput tier stays HotSpot/C2. The decision is *which contract*, not *whether it builds* — a build was already confirmed to compile.
 
-**Actions:** (1) **Pin the zero-alloc / No-Waste-Compute contract explicitly to HotSpot-C2** in `docs/performance-contract.md` — otherwise someone benchmarks the claim under native-image, sees it not hold, and concludes it is *false*; scoping the contract defends the claim. (2) Declare the 1.0 stance in the support matrix: **edge/lightweight = native-image target (enablement is a post-1.0 gated track); throughput tier = HotSpot/C2** — explicitly stated, not silently absent. (3) Track native-image *enablement* as a separate gated track (post-1.0): reachability metadata for FFM downcalls, reflection config for reflective loaders (`GeneratedRoleRegistryLoader` resolves FQNs via reflection), `ServiceLoader` registration, and JFR feature-parity (JFR-first telemetry + `RecordingStream` in TCK — *not* zero-risk; verify custom events and streaming under SubstrateVM).
+**Actions:** (1) **Pin the zero-alloc / No-Waste-Compute contract explicitly to HotSpot-C2** in `docs/performance-contract.md` — otherwise someone benchmarks the claim under native-image, sees it not hold, and concludes it is *false*; scoping the contract defends the claim. (2) Declare the 1.0 stance in the support matrix: **edge/lightweight = native-image target (enablement planned for 0.13 as an opt-in build, [ADR-103](adr/ADR-103-native-image-opt-in-build.md)); throughput tier = HotSpot/C2** — explicitly stated, not silently absent. (3) Track native-image *enablement* as a separate item — now [its own v0.13 entry](#native-image-opt-in-build-with-metadata-in-the-jars-adr-103), planned as an opt-in build: reachability metadata for FFM downcalls, reflection config for reflective loaders (`GeneratedRoleRegistryLoader` resolves FQNs via reflection), `ServiceLoader` registration, and JFR feature-parity (JFR-first telemetry + `RecordingStream` in TCK — *not* zero-risk; verify custom events and streaming under SubstrateVM).
 
-**1.0 disposition:** declare the **contract** in 1.0 (cheap, defends the claim — the `performance-contract.md` pin is near-term); native-image **enablement** is a **post-1.0** gated track.
+**1.0 disposition:** declare the **contract** in 1.0 (cheap, defends the claim — the `performance-contract.md` pin is near-term); native-image **enablement** is delivered in **0.13** as an opt-in build under [ADR-103](adr/ADR-103-native-image-opt-in-build.md), with the HotSpot/C2 pin unchanged, and is tracked as [its own item](#native-image-opt-in-build-with-metadata-in-the-jars-adr-103).
 
 **Status (v0.12): both Actions are discharged; one example in the section is overtaken.** Action 1 — pinning the zero-allocation and per-core throughput SLOs to HotSpot/C2 — is `performance-contract.md` §2.2.1. Action 2 — declaring the 1.0 native-image stance — was outstanding until v0.12 and is now a row in `docs/support-matrix.md`, which is where this document's own 1.0 requirements list asks for it and where silence had been reading as "unknown".
 
@@ -3921,7 +4096,11 @@ That is not merely inconvenient. It moves the join into application code, which 
 
 **Resolution:** RFC before ADR — the option space is open and the choice is a contract shape, not a defect fix. Options to compare: (a) a `GraphPathSpec` carrying an ordered `List<GraphEdgeDescriptor>` with a per-hop depth, consumed by a new `traversePath(...)`; (b) generalising `GraphTraversal.edgeDescriptor` to a set with a per-hop predicate; (c) declining the primitive and documenting the client-side composition as the supported pattern, on the grounds that arbitrary path expressions are a query-language problem the kernel deliberately does not own. Any option that lands must state how depth interacts with hop count (a five-hop path with `maxDepth=3` needs a defined meaning), and must keep `StorageContext` scoping engine-side on every hop.
 
-**Merge Gate:** RFC accepted with one shape and dissent recorded. If a primitive lands: `AbstractGraphSessionTck` covers a heterogeneous two-hop path, a hop that matches nothing (empty result, not error), depth interaction, and a cross-tenant probe proving the second hop cannot escape the caller's isolation key; both bindings green; the zero-copy streaming variant covered, not only the `List<UUID>` one.
+**Merge Gate:** RFC accepted with one shape and dissent recorded. If a primitive lands: `AbstractGraphSessionContractTck` covers a heterogeneous two-hop path, a hop that matches nothing (empty result, not error), depth interaction, and a cross-tenant probe proving the second hop cannot escape the caller's isolation key; both bindings green; the zero-copy streaming variant covered, not only the `List<UUID>` one.
+
+**Decision (2026-10-08).** [RFC-2026-10-07](rfc/RFC-2026-10-07-graph-multi-hop.md) accepted Option A, an ordered `GraphPathSpec` run by `traversePath` and `streamPathJson`; [ADR-102](adr/ADR-102-graph-spi-anchor-and-multi-hop-traversal.md) records it with its verification cases. Implementation is planned for 0.13; graph stays `preview` at 1.0.
+
+**Status (v0.13): DELIVERED.** Verified by `AbstractGraphSessionLiveContractTck` (`CommunityGraphSessionPostgresContractTckIT` and `CommunityGraphSessionNeo4jContractTckIT` in `persistence-rls-gate`), `AbstractGraphDialectTck`, `AbstractGraphSessionContractTck`, and `CommunityGraphSessionGuardTest`. No allocation factor is published until ADR-102's measurement has run.
 
 **Corroborated from the cost side (2026-08-27).** The gap above was written from expressiveness: a two-hop heterogeneous query is not sayable in one request. The benchmark track reached the same wall from the other direction. The graph arm originally ran inside the saga scenario; splitting the two left a standalone graph scenario that is **not ready to run**, because client-side hop composition is what it would be measuring. It is blocked pending the cost work this entry describes, which means the missing primitive is now holding up a measurement rather than only an API.
 
@@ -3985,6 +4164,9 @@ SDK annotation whose declared semantics the runtime silently ignores is a docume
 `FlowDefinition`, `FlowStepDescriptor`, `RuntimeFlowInstance.currentStep` and `FlowSnapshot` were all
 read before this entry was written, and nothing in SPI or Core names parallelism.
 
+**Status (v0.13): NOT STARTED — RFC deferred.** `docs/rfc/` carries no parallel-steps document, and
+`FlowDefinition` and `FlowStepDescriptor` still model an ordered linear list.
+
 ---
 
 ### Flow: No Way to Await a Flow (surfaced by dogfooding, 2026-07-31)
@@ -3999,9 +4181,12 @@ This is a genuine product-SPI gap rather than a stylistic one. Request/response 
 
 **Merge Gate:** RFC accepted with one shape and dissent recorded. If a surface lands: `AbstractFlowSchedulerTck` covers completion after a normal terminal state, after a compensating/failed terminal state, a timeout, an awaiter racing a park, and an awaiter that gives up before the flow settles (no leak, no orphaned registration); Community binding green.
 
-**1.0 disposition:** 1.0-recommended. Flow *is* in the 1.0 core, and "replaces the orchestration layer" is one of the two load-bearing product claims — a flow nobody can wait on weakens it. Sequenced behind the v0.11 flow-versioning and continuity work rather than ahead of it.
+**1.0 disposition:** post-1.0. 1.0 ships without a completion surface; the RFC above decides its shape afterwards, and that shape has to add to the stable flow surface rather than change it.
 
 **Status (v0.12): NOT STARTED — and no longer blocked.** The sequencing condition above is discharged: the flow-versioning and continuity work it waited on shipped in v0.11 (ADR-062, ADR-064 with amendments A4/A5), so this is ripe rather than deferred. What has not happened is the decision — `docs/rfc/` carries no flow-await document, and `FlowScheduler.schedule` still returns `void`, so there is no completion surface for anything to await on. Carried to v0.13 as a decision-only slice: the RFC is one PR and it gates every shape an implementation could take.
+
+**Status (v0.13): NOT STARTED — deferred.** `docs/rfc/` still carries no flow-await document, and
+`FlowScheduler.schedule` still returns `void`.
 
 ---
 
@@ -4028,13 +4213,17 @@ The HTTP/1 ÷ HTTP/2 rows are the sharpest: `http.maxRequestHeaderSize` and `htt
 
 **Resolution:** Promote the operational limits above onto the config provider under their subsystem namespaces, and decide **once** what "disable" means for a protective limit — an explicit unbounded sentinel, or a documented refusal to offer one. That decision is the substantive part: an admission controller with no ceiling is a legitimate configuration for a JVM-controlled deployment and a foot-gun for a shared one, and the contract should say which it supports rather than leaving it to whether a constant happens to be reachable. The four system properties either become real keys or are documented as deliberate escape hatches; the present state is neither. Protocol invariants (HPACK table shapes, status-code ranges, UTF-8 boundaries) stay hardcoded and are explicitly out of scope.
 
-**Status (v0.12): PARTIAL — the header limits and the admission ceiling are wired; four constants and the four system properties are not.** [ADR-071](adr/ADR-071-operational-limit-configuration-path.md) settled the disable semantics and made the two h1 header keys true (exeris-systems/exeris-kernel#342), the three h2 header keys followed (#362), and `transport.paqs.maxActiveStreams` now carries the PAQS admission ceiling on `TransportConfig`, read at **both** sites that build one — the transport subsystem and the HTTP listener's own carrier — with `-1` meaning no ceiling and `0` refused at startup. Admission has the TCK coverage the gate asks for: a lowered ceiling bounds concurrently served streams under load, and the unbounded sentinel admits past the default.
+**Status (v0.13): DELIVERED — the header limits and the admission ceiling are wired (v0.12), the four constants and the four system properties are settled in the two child entries (v0.12), and the Merge Gate holds as worded below, its TCK clause met for the three HTTP/2 header keys by a contract suite (v0.13).** [ADR-071](adr/ADR-071-operational-limit-configuration-path.md) settled the disable semantics and made the two h1 header keys true (exeris-systems/exeris-kernel#342), the three h2 header keys followed (#362), and `transport.paqs.maxActiveStreams` now carries the PAQS admission ceiling on `TransportConfig`, read at **both** sites that build one — the transport subsystem and the HTTP listener's own carrier — with `-1` meaning no ceiling and `0` refused at startup. Admission has the TCK coverage the gate asks for: a lowered ceiling bounds concurrently served streams under load, and the unbounded sentinel admits past the default.
 
 **Two corrections this slice made to the table above rather than to the code.** `SPIN_THRESHOLD` is listed here as a PAQS operational limit and is not one — it is reachable only from `PaqsScheduler.close()` and bounds how the shutdown drain spends CPU while waiting, so it stays a constant with a documented refusal rather than becoming a key nobody should turn. And the constant in that class an operator might genuinely have a view about is missing from the table: `DRAIN_DEADLINE_NANOS` (60 s), whose own javadoc reasons about container grace periods. It already carries a reasoned refusal; the point is that the sweep catalogued the wrong one of the two.
 
-**Still open:** `TRANSLATION_CACHE_MAX_ENTRIES`, `DEFAULT_NETWORK_OFF_HEAP_THRESHOLD`, `FLOW_PROGRESS_ORDINAL_PROBE_LIMIT`, `MAX_RECLAIM_CADENCE_MS` — all four verified still hardcoded — and the four `System.getProperty` reads, which the Merge Gate's last clause names explicitly. Two direct `-D` knobs are already *documented* as deliberate escape hatches in `docs/subsystems/config.md` (note ⁑), which is the shape the ruling permits; the other four are still neither.
+**Constants and system properties, settled per item.** `TRANSLATION_CACHE_MAX_ENTRIES` became `persistence.sqlTranslationCacheMaxEntries` (the constant is now `JdbcPersistenceConnection.DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES`); `DEFAULT_NETWORK_OFF_HEAP_THRESHOLD`, `FLOW_PROGRESS_ORDINAL_PROBE_LIMIT` and `MAX_RECLAIM_CADENCE_MS` stay constants with a reasoned refusal, stated at each constant and in §"Config: The Four Hardcoded Constants, and Why Only One Became a Key". Of the four system properties, `transport.socket.backend` and `memory.jfr.sampleEvery` resolve through `ConfigProvider` first; `transport.maxTlsRecordsPerRead` and `transport.queueBackpressureEnabled` are documented direct `-D` knobs, with the class-load reason (§"Config: The Operational Knobs `ConfigProvider` Cannot See").
 
-**Merge Gate:** Each promoted limit has a key, a documented default, and a stated disable semantics; TCK coverage where the limit changes observable behaviour under load (admission and the HTTP/2 header limits at minimum); `docs/subsystems/*.md` config tables updated; no remaining `System.getProperty` reads for operational policy in `src/main`.
+**Merge Gate, last clause.** It asks for no **undocumented** read rather than no read: `docs/subsystems/config.md` note ⁑ documents direct `-Dexeris.<key>` knobs as the shape ADR-071 permits, and a `static final` resolved at class load cannot read a provider that does not exist yet. Measured by enumerating every `System.getProperty`, `System.getProperties`, `System.getenv`, `Integer.getInteger`, `Long.getLong` and `Boolean.getBoolean` call in every module's `src/main`: each read of operational policy is documented — in `config.md`, or for node identity in `bootstrap.md`, the kernel profile in `operations/reference-deployment.md`, and the OpenSSL library paths in `crypto.md`. Two reads had no row and gained one in `config.md`: `exeris.transport.defaultMaxReactors` (the cap on `TransportConfig.DEFAULT_REACTOR_COUNT`) and the `exeris.persistence.properties.*` / `EXERIS_PERSISTENCE_PROPERTIES_*` JDBC data-source passthrough; the `transport.socket.backend` row now names the `SOCKET_BACKEND_ENV` alias its ladder also reads. The remaining reads are not operational policy: platform detection (`os.name`), the config provider's own `-Dexeris.<key>` / `EXERIS_<KEY>` resolution, the config directory and the graph backend's connection settings (endpoint and credentials), the TCK and benchmark harness properties in `exeris-kernel-tck`, the test-kit fixtures, and the JFR reporter's `java.version` stamp.
+
+**Merge Gate, TCK clause.** Admission is covered by `AbstractPaqsSchedulerTck` (`ceilingBoundsConcurrentlyServedStreams`, `unboundedAdmitsPastDefaultCeiling`). **Ruled: the three HTTP/2 header keys — `http.maxHeaderBlockSize`, `http.maxHeaderListSize`, `http.maxStringLiteralSize` — need a TCK contract before 1.0**, because coverage below the TCK tier (`Http2HeaderBlockAssemblerTest`, `HpackDecoderTest`, the driver's `CommunityHttpRequestProcessorTest`) binds only the implementation it tests, and nothing would obligate a second HTTP/2 server to honour a bound an operator set. The contract is `AbstractHttp2HeaderLimitTck`, bound for Community by `CommunityHttp2HeaderLimitTckTest`. It judges each key on the wire, over cleartext HTTP/2 with prior knowledge and hand-built frames: a request whose measured quantity equals the limit is served, a request one octet over it is refused and never reaches the handler, and `http.maxHeaderListSize` is the value advertised as `SETTINGS_MAX_HEADER_LIST_SIZE`. A refusal is a `431` on the stream, `RST_STREAM` with an error code, or `GOAWAY` with an error code naming the stream unprocessed; a refusal that keeps the connection keeps the HPACK dynamic table in step, so a request that references entries the refused block added is served with them; a block that does not decode is `GOAWAY(COMPRESSION_ERROR)`. Community refuses an oversized block with `GOAWAY(PROTOCOL_ERROR)` and an oversized field section or literal with `431` on the stream after reading the block to its end.
+
+**Merge Gate:** Each promoted limit has a key, a documented default, and a stated disable semantics; TCK coverage where the limit changes observable behaviour under load (admission and the HTTP/2 header limits at minimum); `docs/subsystems/*.md` config tables updated; no undocumented `System.getProperty` read for operational policy in `src/main`.
 
 **1.0 disposition:** **1.0-blocking.** A runtime that cannot be tuned for the deployment it runs in is not operable, and the HTTP/2 asymmetry means an operator can believe a limit is set while it is not. Both are the kind of thing that has to be right *before* external consumers exist, because changing a limit's default or its disable semantics afterwards is the change nobody can absorb quietly.
 
@@ -4145,7 +4334,7 @@ Community 1.0 requires:
 - **supply-chain integrity** — published artifacts carry CycloneDX SBOM + verifiable signature + provenance attestation; a "1.0 GA" on Maven Central cannot ship unsigned (see "Table-Stakes: Supply-Chain Integrity").
 - **automated SPI binary-compatibility gate** — revapi/japicmp baselined at the 1.0 SPI surface, enforcing the stability declaration in CI (see "Table-Stakes: SPI Binary-Compatibility Gate").
 - **a declared native-image / GraalVM stance** in the support matrix (`supported` / `explicitly-not-supported` / `post-1.0`) rather than silence.
-- **a narrowed, deep core** — the new v0.11/v0.12 SPIs (Blob, Job, Cache, WebSocket, ServiceResolver, coordination) are explicitly **post-1.0** *for the stable core*; three of them (`storage.blob`, `scheduling`, `websocket`) ship as `preview` surfaces, which promise nothing semver-binding and so do not widen what 1.0 must hold; 1.0 is unbreakable on `transport / http / security / persistence / flow / events` (+ `memory`) rather than shallow across fifteen surfaces.
+- **a narrowed, deep core** — the new v0.11/v0.12 SPIs (Blob, Job, Cache, WebSocket, ServiceResolver, coordination) are explicitly **post-1.0** *for the stable core*; `websocket` ships as a `preview` surface, which promises nothing semver-binding and so does not widen what 1.0 must hold; `storage.blob` and `scheduling` are `stable` since 0.13 (ADR-100) and are part of the 1.0 freeze; 1.0 is unbreakable on `transport / http / security / persistence / flow / events / crypto / scheduling / storage.blob` (+ `memory`) rather than shallow across fifteen surfaces.
 
 ---
 

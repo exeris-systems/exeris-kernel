@@ -22,10 +22,12 @@ import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -38,8 +40,10 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
  * {@link FlowEngine#registerChoreographyMapper}, and this contract fixes what each decision must
  * do: {@link ChoreographyDecision.Wake} resumes the exact parked instance the mapper names,
  * {@link ChoreographyDecision.Start} schedules a new instance from the mapped plan, and
- * {@link ChoreographyDecision.Ignore} leaves scheduler state unchanged. The bridge dispatching a
- * decision must also release the inbound event payload on every branch.
+ * {@link ChoreographyDecision.Ignore} leaves scheduler state unchanged. A
+ * {@link ChoreographyDecision.Start} for an instance the engine already holds, running, parked or
+ * completed, is a no-op: it starts no second execution. The bridge dispatching a decision must also
+ * release the inbound event payload on every branch.
  *
  * @since 0.5
  */
@@ -242,6 +246,175 @@ public abstract class AbstractFlowChoreographyTck {
 
     @Test
     @Timeout(value = 180, unit = TimeUnit.SECONDS)
+    @DisplayName("Start decision for a running instance — a repeated Start runs no second flow")
+    void repeatedStart_forRunningInstance_isAbsorbed() throws InterruptedException {
+        UUID instanceId = UUID.randomUUID();
+        long most = instanceId.getMostSignificantBits();
+        long least = instanceId.getLeastSignificantBits();
+        AtomicInteger stepRuns = new AtomicInteger();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        FlowExecutionPlan plan = engine.plans().compile(
+                engine.plans().newDefinition("dup-running-" + instanceId)
+                      .step("hold-step", ctx -> {
+                          stepRuns.incrementAndGet();
+                          entered.countDown();
+                          awaitQuietly(release);
+                          return FlowOutcome.COMPLETE;
+                      }, null)
+                      .build());
+
+        String eventType = "DuplicateRunningStart-" + instanceId;
+        int ordinal = registerType(eventType);
+        AtomicInteger deliveries = new AtomicInteger();
+        engine.registerChoreographyMapper(
+                descriptor -> {
+                    deliveries.incrementAndGet();
+                    return new ChoreographyDecision.Start(plan, most, least);
+                },
+                List.of(eventType),
+                bus);
+
+        try {
+            bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
+            assertThat(entered.await(choreographyRoundtripTimeoutMs(), TimeUnit.MILLISECONDS))
+                    .as("the first Start must reach its step")
+                    .isTrue();
+
+            bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
+            assertThat(awaitTrue(() -> deliveries.get() >= 2, choreographyRoundtripTimeoutMs()))
+                    .as("the repeated Start must have been delivered before the settle window")
+                    .isTrue();
+            settleWindow(choreographyIgnoreSettleMs() * 1_000_000L);
+            assertThat(stepRuns)
+                    .as("a repeated Start must not run a second execution while the first is held")
+                    .hasValue(1);
+            assertThat(engine.stats().completedFlows())
+                    .as("a repeated Start must not launch a second instance that completes while the first is held")
+                    .isZero();
+        } finally {
+            // Released on every path, so a failed assertion above never leaves the held step running.
+            release.countDown();
+        }
+        assertThat(awaitTrue(() -> engine.stats().activeFlows() == 0, choreographyRoundtripTimeoutMs()))
+                .as("the first flow must finish once released")
+                .isTrue();
+        settleWindow(choreographyIgnoreSettleMs() * 1_000_000L);
+        assertThat(stepRuns).as("the flow must run exactly once").hasValue(1);
+        assertThat(engine.stats().completedFlows())
+                .as("exactly one completion for two Starts")
+                .isEqualTo(1L);
+    }
+
+    @Test
+    @Timeout(value = 180, unit = TimeUnit.SECONDS)
+    @DisplayName("Start decision for a parked instance — a repeated Start leaves it parked, wake resumes once")
+    void repeatedStart_forParkedInstance_isAbsorbed() throws InterruptedException {
+        UUID instanceId = UUID.randomUUID();
+        long most = instanceId.getMostSignificantBits();
+        long least = instanceId.getLeastSignificantBits();
+        AtomicInteger waitRuns = new AtomicInteger();
+        FlowExecutionPlan plan = engine.plans().compile(
+                engine.plans().newDefinition("dup-parked-" + instanceId)
+                      .step("wait-step", ctx -> {
+                          waitRuns.incrementAndGet();
+                          return FlowOutcome.PARK;
+                      }, null)
+                      .step("done-step", ctx -> FlowOutcome.COMPLETE, null)
+                      .transition(0, 1)
+                      .build());
+
+        String startType = "DuplicateParkedStart-" + instanceId;
+        String wakeType = "DuplicateParkedWake-" + instanceId;
+        int startOrdinal = registerType(startType);
+        int wakeOrdinal = registerType(wakeType);
+        AtomicInteger deliveries = new AtomicInteger();
+        engine.registerChoreographyMapper(
+                descriptor -> {
+                    deliveries.incrementAndGet();
+                    return new ChoreographyDecision.Start(plan, most, least);
+                },
+                List.of(startType),
+                bus);
+        engine.registerChoreographyMapper(
+                descriptor -> new ChoreographyDecision.Wake(most, least),
+                List.of(wakeType),
+                bus);
+
+        bus.publish(descriptorForOrdinal(startOrdinal), EventPayload.empty());
+        assertThat(awaitTrue(() -> engine.stats().parkedFlows() >= 1L, choreographyRoundtripTimeoutMs()))
+                .as("flow must be PARKED before the repeated Start")
+                .isTrue();
+
+        bus.publish(descriptorForOrdinal(startOrdinal), EventPayload.empty());
+        assertThat(awaitTrue(() -> deliveries.get() >= 2, choreographyRoundtripTimeoutMs()))
+                .as("the repeated Start must have been delivered before the settle window")
+                .isTrue();
+        settleWindow(choreographyIgnoreSettleMs() * 1_000_000L);
+        assertThat(engine.stats().parkedFlows())
+                .as("a repeated Start must not register the parked instance a second time")
+                .isEqualTo(1L);
+        assertThat(waitRuns)
+                .as("a repeated Start must not re-run the parked step")
+                .hasValue(1);
+
+        bus.publish(descriptorForOrdinal(wakeOrdinal), EventPayload.empty());
+        assertThat(awaitTrue(() -> engine.stats().completedFlows() >= 1L, choreographyRoundtripTimeoutMs()))
+                .as("the wake must resume the parked flow to completion")
+                .isTrue();
+        assertThat(engine.stats().completedFlows())
+                .as("exactly one completion for the parked instance")
+                .isEqualTo(1L);
+    }
+
+    @Test
+    @Timeout(value = 180, unit = TimeUnit.SECONDS)
+    @DisplayName("Start decision for a completed instance — a repeated Start runs nothing")
+    void repeatedStart_forCompletedInstance_isAbsorbed() throws InterruptedException {
+        UUID instanceId = UUID.randomUUID();
+        AtomicInteger stepRuns = new AtomicInteger();
+        FlowExecutionPlan plan = engine.plans().compile(
+                engine.plans().newDefinition("dup-completed-" + instanceId)
+                      .step("only-step", ctx -> {
+                          stepRuns.incrementAndGet();
+                          return FlowOutcome.COMPLETE;
+                      }, null)
+                      .build());
+
+        String eventType = "DuplicateCompletedStart-" + instanceId;
+        int ordinal = registerType(eventType);
+        AtomicInteger deliveries = new AtomicInteger();
+        engine.registerChoreographyMapper(
+                descriptor -> {
+                    deliveries.incrementAndGet();
+                    return new ChoreographyDecision.Start(
+                            plan,
+                            instanceId.getMostSignificantBits(),
+                            instanceId.getLeastSignificantBits());
+                },
+                List.of(eventType),
+                bus);
+
+        bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
+        assertThat(awaitTrue(() -> engine.stats().completedFlows() >= 1L, choreographyRoundtripTimeoutMs()))
+                .as("the first Start must complete its flow")
+                .isTrue();
+
+        bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
+        assertThat(awaitTrue(() -> deliveries.get() >= 2, choreographyRoundtripTimeoutMs()))
+                .as("the repeated Start must have been delivered before the settle window")
+                .isTrue();
+        settleWindow(choreographyIgnoreSettleMs() * 1_000_000L);
+        assertThat(stepRuns)
+                .as("a completed flow must not run again for a repeated Start")
+                .hasValue(1);
+        assertThat(engine.stats().completedFlows())
+                .as("a repeated Start must not record a second completion")
+                .isEqualTo(1L);
+    }
+
+    @Test
+    @Timeout(value = 180, unit = TimeUnit.SECONDS)
     @DisplayName("Ignore decision — has no side-effects on scheduler state")
     void ignoreDecision_hasNoSideEffects() throws InterruptedException {
         long statsBefore = engine.stats().activeFlows();
@@ -273,6 +446,27 @@ public abstract class AbstractFlowChoreographyTck {
         long remaining;
         while ((remaining = deadline - System.nanoTime()) > 0L) {
             LockSupport.parkNanos(remaining);
+        }
+    }
+
+    /**
+     * Polls {@code condition} until it holds or {@code budgetMs} elapses, and reports whether it held.
+     * The caller asserts the result, so a timeout names the condition rather than failing later.
+     */
+    private static boolean awaitTrue(BooleanSupplier condition, long budgetMs) {
+        long deadline = System.currentTimeMillis() + budgetMs;
+        while (!condition.getAsBoolean() && System.currentTimeMillis() < deadline) {
+            LockSupport.parkNanos(10_000_000L); // 10 ms — deterministic poll, avoids S2925 Thread.sleep
+        }
+        return condition.getAsBoolean();
+    }
+
+    /** Waits on a latch inside a step; an interrupt restores the flag rather than being swallowed. */
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            latch.await(60, TimeUnit.SECONDS);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
         }
     }
 

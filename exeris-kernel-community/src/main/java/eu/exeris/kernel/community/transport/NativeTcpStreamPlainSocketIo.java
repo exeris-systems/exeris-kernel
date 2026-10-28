@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.crypto.TlsEngine;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SocketChannel;
 
 /**
@@ -113,7 +114,9 @@ final class NativeTcpStreamPlainSocketIo {
      * Writes {@code length} bytes from {@code source} starting at {@code offset}
      * via the core-socket seam {@code send} syscall. Returns the byte count on
      * success, {@code 0} on retryable errno, or falls back to the NIO channel
-     * {@code write} on any non-{@link IOException} Throwable from the seam.
+     * {@code write} on any non-{@link IOException} Throwable from the seam. An errno that says the peer
+     * reset or closed the connection ({@link SyscallErrno#isPeerReset}) throws
+     * {@link NativeTcpPeerResetException}; the NIO fallback has no errno, so it never does.
      */
     // Panama invokeExact() may throw Throwable per FFM contract; NIO fallback covers non-IO failures.
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
@@ -137,6 +140,10 @@ final class NativeTcpStreamPlainSocketIo {
             if (SyscallErrno.isRetryable(errno)) {
                 return 0;
             }
+            if (SyscallErrno.isPeerReset(errno)) {
+                throw new NativeTcpPeerResetException(
+                        "Core socket send() found the peer gone (errno=" + errno + ") for stream " + streamId);
+            }
             throw new IOException("Core socket send() failed with errno=" + errno + " for stream " + streamId);
         } catch (IOException ex) {
             throw ex;
@@ -145,6 +152,19 @@ final class NativeTcpStreamPlainSocketIo {
             ByteBuffer sourceBuffer = slice.asByteBuffer();
             return channel.write(sourceBuffer);
         }
+    }
+
+    /**
+     * Whether an {@link IOException} from an NIO send means the connection is broken rather than closed
+     * by this side. The NIO channel reports no errno and its messages are locale text, but a send on a
+     * channel this side closed fails with a {@link ClosedChannelException}, so the class alone says
+     * whether the failure is local.
+     *
+     * @param failure the failure of a send on an established channel
+     * @return {@code false} for a local close, {@code true} for any other failure
+     */
+    /* default */ static boolean isBrokenConnection(IOException failure) {
+        return !(failure instanceof ClosedChannelException);
     }
 
     /**
