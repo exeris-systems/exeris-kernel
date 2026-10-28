@@ -30,6 +30,29 @@ class HpackDynamicTableTest {
                 .hasMessageContaining("maxTableSize");
     }
 
+    @Test
+    @DisplayName("add(name, value) sizes the entry as the UTF-8 encoding the encoder writes")
+    void twoArgumentAddSizesAsUtf8() {
+        HpackDynamicTable table = new HpackDynamicTable(4096);
+        table.add("x", "\u00e9");
+        assertThat(table.byteSize()).isEqualTo(1 + 2 + 32);
+    }
+
+    @Test
+    @DisplayName("An entry keeps the size it was inserted with when it is evicted")
+    void evictionSubtractsTheInsertedSize() {
+        HpackDynamicTable table = new HpackDynamicTable(100);
+        table.add("x-obs", "\u00ff".repeat(10), 15);
+        assertThat(table.byteSize()).isEqualTo(15 + 32);
+
+        table.add("x-b", "b".repeat(30));
+        assertThat(table.byteSize()).isEqualTo(3 + 30 + 32);
+        assertThat(table.size()).isEqualTo(1);
+
+        table.setMaxSize(64);
+        assertThat(table.size()).isZero();
+    }
+
     @Nested
     @DisplayName("add() — insertion and eviction")
     class AddContract {

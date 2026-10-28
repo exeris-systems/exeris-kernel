@@ -141,8 +141,8 @@ class CommunityMemoryProviderIntegrationTest {
         void invalidConfigIsWrapped() {
             MemoryProvider provider = new CommunityMemoryProvider();
             MemoryProviderConfig invalid = new MemoryProviderConfig(
-                    1024L,
-                    MemoryProviderConfig.defaults().networkOffHeapThreshold(),
+                    MemoryProviderConfig.defaults().totalOffHeapBytes(),
+                    16 * 1024,
                     MemoryProviderConfig.defaults().carrierCount(),
                     MemoryProviderConfig.defaults().leakDetection(),
                     MemoryProviderConfig.defaults().jfrEnabled());
@@ -150,6 +150,22 @@ class CommunityMemoryProviderIntegrationTest {
             assertThatThrownBy(() -> provider.createAllocator(invalid))
                     .isInstanceOf(MemoryBootstrapException.class)
                     .hasCauseInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("a positive budget is accepted and reported")
+        void positiveBudgetIsAcceptedAndReported() {
+            MemoryProvider provider = new CommunityMemoryProvider();
+            MemoryProviderConfig budgeted = new MemoryProviderConfig(
+                    1_048_576L,
+                    MemoryProviderConfig.defaults().networkOffHeapThreshold(),
+                    MemoryProviderConfig.defaults().carrierCount(),
+                    MemoryProviderConfig.defaults().leakDetection(),
+                    MemoryProviderConfig.defaults().jfrEnabled());
+
+            try (MemoryAllocator allocator = provider.createAllocator(budgeted)) {
+                assertThat(allocator.stats().totalBytes()).isEqualTo(1_048_576L);
+            }
         }
     }
 }

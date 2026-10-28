@@ -15,8 +15,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CoreFailurePolicyTckTest extends AbstractFailurePolicyTck {
 
 	public static final class FailurePolicySubsystemProvider implements SubsystemProvider {
-		static List<Subsystem> subsystems = List.of();
+		static volatile List<Subsystem> subsystems = List.of();
 
 		@Override
 		public List<Subsystem> getSubsystems(ConfigProvider config) {
@@ -65,54 +65,31 @@ class CoreFailurePolicyTckTest extends AbstractFailurePolicyTck {
 	}
 
 	@Override
-	protected boolean missingDependencyFailsInAllSelector() {
-		FailurePolicySubsystemProvider.subsystems = List.of(
-				stub("transport", BootstrapPhase.SERVICES, false, false, List.of("memory", "ghost")),
-				stub("memory", BootstrapPhase.FOUNDATION, false, false, List.of())
-		);
-
-		SubsystemOrchestrator orchestrator = newOrchestrator(SubsystemOrchestrator.FailurePolicy.FAIL_FAST);
+	protected Throwable bootCapturing(List<Subsystem> subsystems,
+									  boolean degrade,
+									  Runnable kernelMain) throws Exception {
+		FailurePolicySubsystemProvider.subsystems = subsystems;
+		ClassLoader shim = new KernelBootstrapTest.DualServiceShimLoader(
+				Thread.currentThread().getContextClassLoader(),
+				Map.of(
+						"eu.exeris.kernel.spi.config.ConfigProvider",
+						KernelBootstrapTest.StubConfigProvider.class.getName(),
+						"eu.exeris.kernel.spi.bootstrap.SubsystemProvider",
+						FailurePolicySubsystemProvider.class.getName()
+				));
+		SubsystemOrchestrator.FailurePolicy policy = degrade
+				? SubsystemOrchestrator.FailurePolicy.DEGRADE
+				: SubsystemOrchestrator.FailurePolicy.FAIL_FAST;
+		KernelBootstrap bootstrap = KernelBootstrap.builder()
+				.failurePolicy(policy)
+				.selector(BootstrapSelector.all())
+				.classLoader(shim)
+				.build();
 		try {
-			orchestrator.initialize(minimalConfig());
-			return false;
-		} catch (SubsystemOrchestrator.BootstrapException _) {
-			return true;
-		}
-	}
-
-	@Override
-	protected boolean degradeContinuesOnOptionalFailure() throws Exception {
-		FailurePolicySubsystemProvider.subsystems = List.of(
-				stub("memory", BootstrapPhase.FOUNDATION, false, false, List.of()),
-				stub("events", BootstrapPhase.SERVICES, true, true, List.of("memory"))
-		);
-
-		SubsystemOrchestrator orchestrator = newOrchestrator(SubsystemOrchestrator.FailurePolicy.DEGRADE);
-		orchestrator.initialize(minimalConfig());
-		orchestrator.start(minimalConfig());
-
-		return orchestrator.isStarted() && orchestrator.subsystem("events").isEmpty();
-	}
-
-	@Override
-	protected boolean failFastAbortsOnOptionalFailure() throws Exception {
-		FailurePolicySubsystemProvider.subsystems = List.of(
-				stub("memory", BootstrapPhase.FOUNDATION, false, false, List.of()),
-				stub("events", BootstrapPhase.SERVICES, true, true, List.of("memory"))
-		);
-
-		SubsystemOrchestrator orchestrator = newOrchestrator(SubsystemOrchestrator.FailurePolicy.FAIL_FAST);
-		orchestrator.initialize(minimalConfig());
-		try {
-			orchestrator.start(minimalConfig());
-			return false;
-		} catch (SubsystemOrchestrator.BootstrapException _) {
-			// JDK 28 REMOVED StructuredTaskScope.FailedException, which this used to catch
-			// alongside BootstrapException because join() threw it unchecked and the orchestrator's
-			// own failure path was therefore unreachable. On 28 join() reports a failed subtask as a
-			// checked ExecutionException, the orchestrator catches it and wraps it, and a mandatory
-			// subsystem failure finally arrives as the one type the contract always named.
-			return true;
+			bootstrap.boot(kernelMain);
+			return null;
+		} catch (Throwable t) {
+			return t;
 		}
 	}
 

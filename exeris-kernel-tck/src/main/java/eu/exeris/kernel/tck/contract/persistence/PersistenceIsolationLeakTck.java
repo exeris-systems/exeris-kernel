@@ -5,6 +5,8 @@
 package eu.exeris.kernel.tck.contract.persistence;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
@@ -21,6 +23,7 @@ import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * TCK: Persistence Subsystem — StorageContext isolation leak test.
@@ -41,6 +44,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>Run both queries concurrently in a {@code StructuredTaskScope} to expose
  *       any ScopedValue mis-propagation between virtual threads.</li>
  * </ol>
+ *
+ * <h2>Absent tenant</h2>
+ * <p>A context that declares no tenant ({@link ImmutableStorageContext#GLOBAL}) is a supported input
+ * the kernel does not refuse; it publishes the tenant key as {@code ''}. A conforming policy raises on
+ * that value rather than returning an empty result or admitting a row owned by the empty tenant, so a
+ * read and a write from such a context both fail with {@code EX-PERS-5003} (ADR-012 §4c.3). Each
+ * refusal is paired with the same operation under a tenant, which must succeed.
  *
  * <h2>VT Pinning check</h2>
  * <p>The JDBC driver MUST NOT pin the carrier thread during the isolation query.
@@ -265,5 +275,68 @@ public abstract class PersistenceIsolationLeakTck {
         assertThat(seenByB)
                 .as("Concurrent VT: Tenant B's context MUST isolate its query.")
                 .doesNotContain(sentinelA);
+    }
+
+    @Test
+    @DisplayName("An absent tenant raises on read — a tenant-less context is refused, not served an empty result")
+    @Timeout(value = 15, unit = TimeUnit.SECONDS)
+    void readFromATenantlessContextIsRefused() {
+        // The table must hold a row: a policy that raises while it evaluates a row has nothing to
+        // evaluate on an empty table, so a read of one is not a statement the refusal is pinned for.
+        String sentinel = "SENTINEL-READ-CONTROL-" + System.nanoTime();
+        try (PersistenceConnection conn = engine.openConnection(contextFor(isolationKeyA()))) {
+            writeSentinelRow(conn, sentinel);
+        }
+
+        assertThatThrownBy(() -> {
+            try (PersistenceConnection conn = engine.openConnection(ImmutableStorageContext.GLOBAL)) {
+                readSentinelRows(conn);
+            }
+        })
+                .as("a mis-scoped read that returns an empty result looks like a read of an empty table; "
+                        + "the policy must raise on the unpublished tenant key (ADR-012 §4c.3)")
+                .isInstanceOf(PersistenceProviderException.class)
+                .satisfies(refusal -> assertThat(((PersistenceProviderException) refusal).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_PERS_5003));
+
+        // The direction control: the same read under a tenant is served.
+        List<String> visible = new ArrayList<>();
+        try (PersistenceConnection conn = engine.openConnection(contextFor(isolationKeyA()))) {
+            visible.addAll(readSentinelRows(conn));
+        }
+        assertThat(visible)
+                .as("a raise on every read would pass the refusal and break isolation's positive half")
+                .contains(sentinel);
+    }
+
+    @Test
+    @DisplayName("An absent tenant raises on write — a tenant-less context cannot write a row owned by the empty tenant")
+    @Timeout(value = 15, unit = TimeUnit.SECONDS)
+    void writeFromATenantlessContextIsRefused() {
+        String refused = "SENTINEL-NO-TENANT-" + System.nanoTime();
+
+        assertThatThrownBy(() -> {
+            try (PersistenceConnection conn = engine.openConnection(ImmutableStorageContext.GLOBAL)) {
+                writeSentinelRow(conn, refused);
+            }
+        })
+                .as("a write check that only compares the owner with the published key admits a row owned "
+                        + "by the empty tenant, which every later tenant-less request reads back; the "
+                        + "policy must raise instead (ADR-012 §4c.3)")
+                .isInstanceOf(PersistenceProviderException.class)
+                .satisfies(refusal -> assertThat(((PersistenceProviderException) refusal).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_PERS_5003));
+
+        // The direction control: the same write under a tenant is admitted.
+        String admitted = "SENTINEL-TENANT-WRITE-" + System.nanoTime();
+        List<String> visible = new ArrayList<>();
+        try (PersistenceConnection conn = engine.openConnection(contextFor(isolationKeyA()))) {
+            writeSentinelRow(conn, admitted);
+            visible.addAll(readSentinelRows(conn));
+        }
+        assertThat(visible)
+                .as("the tenant's write was admitted, so the refusal above was for the absent tenant")
+                .contains(admitted)
+                .doesNotContain(refused);
     }
 }

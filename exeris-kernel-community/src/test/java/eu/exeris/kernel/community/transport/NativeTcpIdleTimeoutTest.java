@@ -45,6 +45,7 @@ class NativeTcpIdleTimeoutTest {
     private static final String IDLE_TIMEOUT = "eu.exeris.kernel.transport.CommunityConnectionIdleTimeout";
 
     private static final long IDLE_TIMEOUT_MILLIS = 500L;
+    private static final long PACING_INTERVAL_MILLIS = 50L;
     private static final long DISABLED = 0L;
     private static final int CONNECT_TIMEOUT_MS = 2_000;
     private static final long SETTLE_TIMEOUT_SECONDS = 10L;
@@ -124,8 +125,8 @@ class NativeTcpIdleTimeoutTest {
                 engine = startEchoingEngine(port, IDLE_TIMEOUT_MILLIS);
                 socket = openQuietly(port);
 
-                // Five times the timeout, fed at a third of it: every sweep in the window sees a
-                // stamp younger than the limit.
+                // Fed with a margin (>= 10x) against the timeout: every sweep in the window sees a
+                // stamp younger than the limit even under thread pacing delays.
                 long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(QUIET_WINDOW_MILLIS);
                 boolean resetByPeer = false;
                 while (System.nanoTime() < deadline) {
@@ -140,12 +141,12 @@ class NativeTcpIdleTimeoutTest {
                         resetByPeer = true;
                         break;
                     }
-                    Thread.sleep(IDLE_TIMEOUT_MILLIS / 3L);
+                    Thread.sleep(PACING_INTERVAL_MILLIS);
                 }
 
                 assertThat(resetByPeer)
                         .as("the server reset a connection that was reading every %d ms under a "
-                                + "%d ms timeout", IDLE_TIMEOUT_MILLIS / 3L, IDLE_TIMEOUT_MILLIS)
+                                + "%d ms timeout", PACING_INTERVAL_MILLIS, IDLE_TIMEOUT_MILLIS)
                         .isFalse();
             } finally {
                 closeQuietly(socket);
@@ -155,8 +156,9 @@ class NativeTcpIdleTimeoutTest {
             }
 
             assertThat(captured.get())
-                    .as("a connection reading every 166 ms under a 500 ms timeout is the opposite "
-                            + "of idle; reclaiming it would make the knob a connection lifetime")
+                    .as("a connection reading every %d ms under a %d ms timeout is the opposite "
+                            + "of idle; reclaiming it would make the knob a connection lifetime",
+                            PACING_INTERVAL_MILLIS, IDLE_TIMEOUT_MILLIS)
                     .isNull();
         }
 
@@ -205,7 +207,7 @@ class NativeTcpIdleTimeoutTest {
 
                 assertThat(resetByPeer)
                         .as("the server reset a connection it was itself writing to every %d ms "
-                                + "under a %d ms timeout", IDLE_TIMEOUT_MILLIS / 3L, IDLE_TIMEOUT_MILLIS)
+                                + "under a %d ms timeout", PACING_INTERVAL_MILLIS, IDLE_TIMEOUT_MILLIS)
                         .isFalse();
                 assertThat(received)
                         .as("the server must still have been writing at the end of a window five "
@@ -319,6 +321,10 @@ class NativeTcpIdleTimeoutTest {
     }
 
     private static TransportEngine startWritingEngine(int port, long idleTimeoutMillis) {
+        return startWritingEngine(port, idleTimeoutMillis, PACING_INTERVAL_MILLIS);
+    }
+
+    private static TransportEngine startWritingEngine(int port, long idleTimeoutMillis, long pacingIntervalMillis) {
         TransportEngine[] holder = new TransportEngine[1];
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR).run(() -> {
             holder[0] = new NativeTcpTransportProvider().createEngine(new TransportConfig(
@@ -333,7 +339,7 @@ class NativeTcpIdleTimeoutTest {
                         outbound.segment().set(java.lang.foreign.ValueLayout.JAVA_BYTE, 0, (byte) '.');
                         outbound.setSize(1);
                         stream.write(outbound.segment(), 1);
-                        Thread.sleep(IDLE_TIMEOUT_MILLIS / 3L);
+                        Thread.sleep(pacingIntervalMillis);
                     }
                 } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();

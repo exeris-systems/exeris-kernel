@@ -7,21 +7,29 @@ package eu.exeris.kernel.community.graph;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
-import eu.exeris.kernel.spi.graph.model.GraphTraversal;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
+import eu.exeris.kernel.spi.security.StorageContext.IsolationStrategy;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * SQL/PGQ backend adapter (Community's {@link CommunityGraphBackend} for the non-Cypher
@@ -31,91 +39,128 @@ import java.util.regex.Pattern;
  * execution.
  */
 // Backend adapter intentionally mirrors the GraphSession surface for the SQL dialect.
-// TooManyMethods + CyclomaticComplexity: SQL/PGQ backend adapter implementing the full
+// TooManyMethods + CyclomaticComplexity + GodClass: SQL/PGQ backend adapter implementing the full
 // CommunityGraphBackend surface — one method per graph operation type; complexity is structural
-// (SQL query branching).
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
+// (SQL query branching and statement lifecycle coordination).
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity", "PMD.GodClass"})
 final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     private static final String ROOT_NODE_QUERY_TYPE = "ROOT_NODE";
     private static final Pattern SQL_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
+    private static final int SIDE_SOURCE = 1;
+    private static final int SIDE_TARGET = 2;
+    private static final int INITIAL_SQL_CAPACITY = 256;
+    private static final String BINDING_NAME = "Community SQL/PGQ (PostgreSQL)";
+    private static final Set<IsolationStrategy> SCOPABLE =
+            Collections.unmodifiableSet(EnumSet.of(IsolationStrategy.SEPARATED_SCHEMA, IsolationStrategy.DEDICATED));
+    private static final Map<IsolationStrategy, String> SCOPE_REFUSAL_DETAILS;
+
+    static {
+        Map<IsolationStrategy, String> details = new EnumMap<>(IsolationStrategy.class);
+        String scopableList = SCOPABLE.stream().map(Enum::name).collect(Collectors.joining(", "));
+        for (IsolationStrategy strategy : IsolationStrategy.values()) {
+            details.put(strategy, BINDING_NAME + " cannot scope a graph query under isolation strategy "
+                    + strategy + "; scopable strategies: " + scopableList);
+        }
+        SCOPE_REFUSAL_DETAILS = Collections.unmodifiableMap(details);
+    }
 
     private final CommunityGraphDialect dialect;
     private final Supplier<PersistenceConnection> connectionSupplier;
+    private final List<GraphEdgeDescriptor> registeredEdges;
 
     /* default */ CommunityGraphSqlHelper(
             CommunityGraphDialect dialect,
-            Supplier<PersistenceConnection> connectionSupplier) {
+            Supplier<PersistenceConnection> connectionSupplier,
+            List<GraphEdgeDescriptor> registeredEdges) {
         this.dialect = Objects.requireNonNull(dialect, "dialect must not be null");
         this.connectionSupplier = Objects.requireNonNull(
                 connectionSupplier,
                 "connectionSupplier must not be null");
+        this.registeredEdges = Objects.requireNonNull(
+                registeredEdges,
+                "registeredEdges must not be null");
     }
 
     /**
-     * Runs a single-hop MATCH ({@code traversal.maxDepth() == 1}) or a recursive-CTE
-     * multi-hop query otherwise, and collects the visited node IDs.
+     * Executes a path traversal as one statement and collects the terminal frontier node IDs.
      *
-     * @param traversal traversal configuration
-     * @return node IDs visited, in result order
-     * @throws IllegalArgumentException if {@code traversal}'s edge descriptor table name
-     *         does not match {@code [A-Za-z][A-Za-z0-9_]*} (validated by
-     *         {@link CommunityGraphDialect}, which this method delegates the query text to)
+     * @param path path specification
+     * @return node IDs in the terminal frontier
+     * @throws GraphQueryException ({@code EX-GRPH-5002}) if query execution fails
      */
+    // Dialect and JDBC driver throw RuntimeException; map to GraphQueryException
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     @Override
-    public List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
-        String sql = traversal.maxDepth() == 1
-                ? dialect.buildMatchQuery(traversal.edgeDescriptor())
-                : dialect.buildMultiHopQuery(traversal.edgeDescriptor(), 1, traversal.maxDepth());
+    public List<UUID> traversePath(GraphPathSpec path) {
         List<UUID> results = new ArrayList<>();
-        try (PersistenceConnection conn = acquireConnection();
-             PersistenceStatement stmt = conn.prepare(sql)) {
-            stmt.bindUuid(0, traversal.startNodeId());
-            try (QueryResult queryResult = stmt.executeQuery()) {
-                while (queryResult.next()) {
-                    results.add(queryResult.row().getUuid(0));
+        try {
+            String sql = dialect.buildPathQuery(path.hops());
+            try (PersistenceConnection conn = acquireConnection();
+                 PersistenceStatement stmt = conn.prepare(sql)) {
+                stmt.bindUuid(0, path.startNodeId());
+                try (QueryResult queryResult = stmt.executeQuery()) {
+                    while (queryResult.next()) {
+                        results.add(queryResult.row().getUuid(0));
+                    }
                 }
             }
+        } catch (GraphQueryException e) {
+            throw e;
+        } catch (RuntimeException cause) {
+            throw new GraphQueryException("PATH", "Failed to execute graph path traversal", cause);
         }
         return results;
     }
 
     /**
-     * Runs a recursive-CTE traversal that aggregates the visited node IDs into JSON inside
-     * the query itself ({@code json_agg}), then copies the returned JSON text into a network
-     * buffer from {@code KernelProviders.MEMORY_ALLOCATOR}. Unlike the Cypher backend's
-     * {@link CommunityGraphCypherReader#streamBfsJson}, which builds the JSON in Java from a
-     * list of IDs, this pushes the aggregation down to PostgreSQL.
+     * Executes a path traversal and streams the terminal frontier node IDs as a UTF-8 JSON array
+     * into a network buffer from {@code KernelProviders.allocator()}.
      *
-     * @param traversal traversal configuration
-     * @return a buffer holding the query's JSON text (or {@code "[]"} if the query returned
-     *         no row or a {@code null} result); caller-owned, caller must close it
-     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
-     *         if {@code traversal}'s edge descriptor table name does not match
-     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     * @param path path specification
+     * @return a buffer holding the query's JSON text; caller-owned, caller must close it
+     * @throws GraphQueryException ({@code EX-GRPH-5002}) if query execution fails
      */
+    // Dialect and JDBC driver throw RuntimeException; map to GraphQueryException
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     @Override
-    public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
-        String sql = buildJsonPushDownQuery(traversal);
-        try (PersistenceConnection conn = acquireConnection();
-             PersistenceStatement stmt = conn.prepare(sql)) {
-            stmt.bindUuid(0, traversal.startNodeId());
-            try (QueryResult queryResult = stmt.executeQuery()) {
-                byte[] jsonBytes;
-                if (queryResult.next()) {
-                    String json = queryResult.row().getString(0);
-                    jsonBytes = json != null
-                            ? json.getBytes(StandardCharsets.UTF_8)
-                            : CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
-                } else {
-                    jsonBytes = CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
+    public LoanedBuffer streamPathJson(GraphPathSpec path) {
+        byte[] jsonBytes;
+        try {
+            String sql = "SELECT json_agg(frontier.id) AS json_result FROM ("
+                    + dialect.buildPathQuery(path.hops()) + ") AS frontier";
+            try (PersistenceConnection conn = acquireConnection();
+                 PersistenceStatement stmt = conn.prepare(sql)) {
+                stmt.bindUuid(0, path.startNodeId());
+                try (QueryResult queryResult = stmt.executeQuery()) {
+                    if (queryResult.next()) {
+                        String json = queryResult.row().getString(0);
+                        jsonBytes = json != null
+                                ? json.getBytes(StandardCharsets.UTF_8)
+                                : CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
+                    } else {
+                        jsonBytes = CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
+                    }
                 }
-                LoanedBuffer buffer = KernelProviders.allocator().allocateNetwork(jsonBytes.length);
-                MemorySegment.copy(jsonBytes, 0, buffer.segment(),
-                        ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
-                buffer.setSize(jsonBytes.length);
-                return buffer;
             }
+        } catch (GraphQueryException e) {
+            throw e;
+        } catch (RuntimeException cause) {
+            throw new GraphQueryException("PATH", "Failed to execute graph path traversal", cause);
         }
+        LoanedBuffer buffer = KernelProviders.allocator().allocateNetwork(jsonBytes.length);
+        MemorySegment.copy(jsonBytes, 0, buffer.segment(), ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
+        buffer.setSize(jsonBytes.length);
+        return buffer;
+    }
+
+    @Override
+    public Set<IsolationStrategy> scopableStrategies() {
+        return SCOPABLE;
+    }
+
+    @Override
+    public String scopeRefusalDetail(IsolationStrategy strategy) {
+        return SCOPE_REFUSAL_DETAILS.get(strategy);
     }
 
     /**
@@ -210,19 +255,96 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     }
 
     /**
-     * Deletes the row identified by {@code nodeId} and {@code label} from
-     * {@code graph_nodes}. A no-op if no such row exists.
+     * Builds the SQL statement for deleting a node and cascading the deletion to all
+     * connected edges across registered edge tables.
      *
-     * <p>Unlike the Cypher backend's {@code deleteNode} ({@code DETACH DELETE}), this does
-     * not remove edge rows referencing {@code nodeId} — the edge tables are separate from
-     * {@code graph_nodes} and are not cleaned up here.
+     * <p>One statement is atomic without a transaction (the SQL backend has none):
+     * PostgreSQL runs every data-modifying {@code WITH} sub-statement exactly once, to
+     * completion, on one snapshot.
+     *
+     * <p>Edge rows carry no label; a node of label {@code L} is connected through the edges
+     * whose descriptor names {@code L} on that side. That is exactly the set Neo4j's
+     * {@code MATCH (n:L {id}) DETACH DELETE n} removes, because Cypher {@code createEdge}
+     * {@code MERGE}s endpoints with the descriptor's labels. A label the node does not carry
+     * therefore removes nothing on either backend.
+     *
+     * <p>Only registered edge descriptors are cascaded; an edge table created outside
+     * {@code registerEdges} is not known to the engine. A registered table missing in the
+     * current scope fails the whole statement (nothing is deleted).
+     *
+     * @param label node label to delete
+     * @return the complete atomic delete SQL statement
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if a registered edge table naming {@code label} is not a valid SQL identifier
+     */
+    /* default */ String buildDeleteNodeSql(String label) {
+        Map<String, Integer> sides = resolveCascadeSides(label);
+        if (sides.isEmpty()) {
+            return "WITH arg (id) AS (SELECT CAST($1 AS uuid))\n"
+                    + "DELETE FROM graph_nodes WHERE id = (SELECT id FROM arg) AND label = $2";
+        }
+        StringBuilder sqlBuilder = new StringBuilder(INITIAL_SQL_CAPACITY);
+        sqlBuilder.append("WITH arg (id) AS (SELECT CAST($1 AS uuid)),\n");
+        int index = 0;
+        int total = sides.size();
+        for (Map.Entry<String, Integer> entry : sides.entrySet()) {
+            String table = entry.getKey();
+            int side = entry.getValue();
+            String pred = deletePredicate(side);
+            sqlBuilder.append("     del_e").append(index).append(" AS (DELETE FROM ").append(table)
+                    .append(" WHERE ").append(pred).append(')');
+            if (index < total - 1) {
+                sqlBuilder.append(",\n");
+            } else {
+                sqlBuilder.append('\n');
+            }
+            index++;
+        }
+        sqlBuilder.append("DELETE FROM graph_nodes WHERE id = (SELECT id FROM arg) AND label = $2");
+        return sqlBuilder.toString();
+    }
+
+    private Map<String, Integer> resolveCascadeSides(String label) {
+        Map<String, Integer> sides = new LinkedHashMap<>();
+        for (GraphEdgeDescriptor e : registeredEdges) {
+            int side = (e.sourceNode().equals(label) ? SIDE_SOURCE : 0)
+                    | (e.targetNode().equals(label) ? SIDE_TARGET : 0);
+            if (side == 0) {
+                continue;
+            }
+            sides.merge(requireSqlIdentifier(e.tableName()), side, (a, b) -> a | b);
+        }
+        return sides;
+    }
+
+    private static String deletePredicate(int side) {
+        if (side == SIDE_SOURCE) {
+            return "source_id = (SELECT id FROM arg)";
+        }
+        if (side == SIDE_TARGET) {
+            return "target_id = (SELECT id FROM arg)";
+        }
+        return "source_id = (SELECT id FROM arg) OR target_id = (SELECT id FROM arg)";
+    }
+
+    /**
+     * Deletes the row identified by {@code nodeId} and {@code label} from
+     * {@code graph_nodes} and cascades the deletion to all connected edges in registered
+     * edge tables. A no-op if no such row exists.
      *
      * @param label  node label
      * @param nodeId node ID
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if a registered edge table naming {@code label} is not a valid SQL identifier;
+     *         no statement is prepared. A registered table missing in the current scope fails
+     *         the statement with the persistence engine's translated error, and nothing is
+     *         deleted.
      */
     @Override
     public void deleteNode(String label, UUID nodeId) {
-        String sql = "DELETE FROM graph_nodes WHERE id = $1 AND label = $2";
+        Objects.requireNonNull(label, "label must not be null");
+        Objects.requireNonNull(nodeId, "nodeId must not be null");
+        String sql = buildDeleteNodeSql(label);
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql)) {
             stmt.bindUuid(0, nodeId);
@@ -290,24 +412,6 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
 
     private PersistenceConnection acquireConnection() {
         return connectionSupplier.get();
-    }
-
-    private String buildJsonPushDownQuery(GraphTraversal traversal) {
-        String table = requireSqlIdentifier(traversal.edgeDescriptor().tableName());
-        int maxDepth = traversal.maxDepth();
-        return """
-                WITH RECURSIVE traversal AS (
-                    SELECT target_id, 1 AS depth
-                    FROM %s
-                    WHERE source_id = $1
-                    UNION ALL
-                    SELECT e.target_id, t.depth + 1
-                    FROM %s e
-                    INNER JOIN traversal t ON e.source_id = t.target_id
-                    WHERE t.depth < %d
-                )
-                SELECT json_agg(DISTINCT target_id) AS json_result FROM traversal
-                """.formatted(table, table, maxDepth);
     }
 
     private String buildInsertEdgeSql(GraphEdgeDescriptor edge) {

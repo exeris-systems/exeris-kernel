@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.kafka;
 
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class KafkaEventLogCodecTest {
             assertThat(KafkaEventLogCodec.decodeSequence(frame)).isEqualTo(42L);
             assertThat(KafkaEventLogCodec.decodeStreamIdHigh(frame)).isEqualTo(original.streamIdHigh());
             assertThat(KafkaEventLogCodec.decodeStreamIdLow(frame)).isEqualTo(original.streamIdLow());
-            assertDescriptorsEqual(KafkaEventLogCodec.decodeDescriptor(frame), original);
+            assertDescriptorsEqual(KafkaEventLogCodec.decodeDescriptor(frame, 0), original);
             assertThat(KafkaEventLogCodec.decodePayloadSegment(frame).byteSize()).isZero();
         }
 
@@ -54,7 +55,7 @@ class KafkaEventLogCodecTest {
 
             assertThat(frame).hasSize(KafkaEventLogCodec.HEADER_SIZE + payload.length);
             assertThat(KafkaEventLogCodec.decodeSequence(frame)).isEqualTo(9_999L);
-            assertDescriptorsEqual(KafkaEventLogCodec.decodeDescriptor(frame), original);
+            assertDescriptorsEqual(KafkaEventLogCodec.decodeDescriptor(frame, 0), original);
             byte[] tail = KafkaEventLogCodec.decodePayloadSegment(frame).toArray(ValueLayout.JAVA_BYTE);
             assertThat(tail).containsExactly(payload);
         }
@@ -71,12 +72,42 @@ class KafkaEventLogCodecTest {
             assertThatThrownBy(() -> KafkaEventLogCodec.decodeSequence(tooShort))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining(String.valueOf(KafkaEventLogCodec.HEADER_SIZE));
-            assertThatThrownBy(() -> KafkaEventLogCodec.decodeDescriptor(tooShort))
+            assertThatThrownBy(() -> KafkaEventLogCodec.decodeDescriptor(tooShort, 0))
                     .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> KafkaEventLogCodec.decodeStreamIdHigh(tooShort))
                     .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> KafkaEventLogCodec.decodePayloadSegment(tooShort))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("isolation ordinal — carried by the header, never by the frame")
+    class IsolationOrdinal {
+
+        @Test
+        @DisplayName("a record without the header decodes as the unscoped ordinal 0")
+        void recordWithoutHeaderDecodesUnscoped() {
+            byte[] frame = KafkaEventLogCodec.encode(1L, sampleDescriptor(5, 0, 6L), EventPayload.empty());
+            ProducerRecord<byte[], byte[]> record = new ProducerRecord<>("log", frame);
+
+            int ordinal = KafkaIsolationHeader.read(record.headers());
+
+            assertThat(ordinal).isZero();
+            assertThat(KafkaEventLogCodec.decodeDescriptor(frame, ordinal).isolationOrdinal()).isZero();
+        }
+
+        @Test
+        @DisplayName("header value 0x00000065 decodes as isolation ordinal 101")
+        void headerValueDecodesAsOrdinal() {
+            byte[] frame = KafkaEventLogCodec.encode(1L, sampleDescriptor(5, 0, 6L), EventPayload.empty());
+            ProducerRecord<byte[], byte[]> record = new ProducerRecord<>("log", frame);
+            record.headers().add(KafkaIsolationHeader.NAME, new byte[] {0x00, 0x00, 0x00, 0x65});
+
+            int ordinal = KafkaIsolationHeader.read(record.headers());
+
+            assertThat(ordinal).isEqualTo(101);
+            assertThat(KafkaEventLogCodec.decodeDescriptor(frame, ordinal).isolationOrdinal()).isEqualTo(101);
         }
     }
 

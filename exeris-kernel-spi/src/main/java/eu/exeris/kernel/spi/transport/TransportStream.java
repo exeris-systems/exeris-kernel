@@ -40,6 +40,21 @@ import java.lang.foreign.MemorySegment;
  * @implSpec Implementations must not copy stream payload between heap and off-heap memory.
  *           A {@link #read} may block the owning virtual thread — which unmounts from its
  *           carrier — but must never pin the carrier thread.
+ *           A {@link #write} or {@link #queueWrite} on a closed stream, and a positive-{@code maxBytes}
+ *           {@link #read} on one that has no end of stream left to report, throws
+ *           {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException}, never a
+ *           bare {@link IllegalStateException}. A {@link #read} that can still report end of stream
+ *           returns {@code -1} instead of throwing. The exception carries {@code EX-NET-4008} when the
+ *           transport observed the remote end, or tore the stream down without a local {@code close()}
+ *           or {@code reset(long)} request, before the stream was closed through this endpoint, and
+ *           {@code EX-NET-4009} when the stream was closed through this endpoint first
+ *           ({@code close()}, {@code reset(long)} or the parent connection's {@code close()}).
+ *           Every transition that ends the stream — {@code close()}, {@code reset(long)}, the parent
+ *           connection's {@code close()}, a send failure that ends it, the peer's reset, or a teardown
+ *           by the transport — wakes every thread blocked in {@link #read} or {@link #write} on it. A
+ *           woken {@link #read} returns {@code -1} while it can still report end of stream and
+ *           otherwise throws the closed-stream signal; a woken {@link #write} throws the closed-stream
+ *           signal. Whether the peer's end of its output also ends writes is transport semantics.
  * @implNote A carrier driven by native asynchronous I/O completions writes into pre-registered
  *           slab buffers; the Community carrier reads directly from the underlying connection
  *           into the caller's segment. A future migration of hot-path stream metadata to a
@@ -70,8 +85,8 @@ public interface TransportStream extends AutoCloseable {
      *
      * <p>The no-op takes precedence over closed state: a non-positive request returns
      * {@code 0} even after this stream has been closed, rather than raising the
-     * {@code IllegalStateException} that a positive-{@code maxBytes} read on a closed
-     * stream throws.
+     * {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException} that a
+     * positive-{@code maxBytes} read on a closed stream throws.
      *
      * @param target   off-heap segment to read into (from {@link LoanedBuffer#segment()})
      * @param maxBytes maximum number of bytes to read (must be ≤ {@code target.byteSize()});
@@ -80,7 +95,9 @@ public interface TransportStream extends AutoCloseable {
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure —
      *         {@code EX-NET-4003} when a TLS handshake this read has to wait for does not
      *         complete within the driver's deadline
-     * @throws IllegalStateException if this stream has been closed
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
+     *         with the code the interface {@code @implSpec} defines;
+     *         a read that can still report end of stream returns {@code -1} instead
      * @implSpec Implementations must not throw on non-positive {@code maxBytes}, and must fill
      *           {@code target} from the transport's receive path with no intermediate heap copy.
      * @implNote A carrier driven by native asynchronous I/O fills the target segment directly
@@ -94,16 +111,24 @@ public interface TransportStream extends AutoCloseable {
      *
      * <p>The caller retains ownership of the segment.
      *
-     * <p><b>Backpressure.</b> If the peer's receive window is full, this call blocks the
-     * virtual thread until space becomes available or the stream is reset.
+     * <p><b>Backpressure.</b> A transport bounds the bytes a stream holds that its peer has not yet
+     * taken ({@link TransportConfig#maxQueuedWriteBytes()}). While that bound is reached, this call
+     * blocks the calling thread until enough of them drain or the stream ends. It never blocks while
+     * holding a monitor, and a transport never blocks its own event-loop thread here: a call made on
+     * one queues past the bound instead. With {@link TransportConfig#UNBOUNDED_QUEUED_WRITE_BYTES} it
+     * does not block for backpressure. A call that throws after blocking may already have queued a
+     * prefix of {@code source}.
      *
      * @param source off-heap segment containing data to send
      * @param length number of bytes to write (must be ≤ {@code source.byteSize()})
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure —
-     *         {@code EX-NET-4002} when the send itself fails, {@code EX-NET-4003} when a TLS
-     *         handshake this write has to wait for does not complete within the driver's
-     *         deadline
-     * @throws IllegalStateException if this stream has been closed
+     *         {@code EX-NET-4002} when the send itself fails and the peer has not ended the stream,
+     *         {@code EX-NET-4003} when a TLS handshake this write has to wait for does not complete
+     *         within the driver's deadline
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
+     *         with the code the interface {@code @implSpec} defines, including a send that fails
+     *         because the peer ended the stream, which reports {@code EX-NET-4008} with the transport
+     *         failure ({@code EX-NET-4002}) as its cause
      * @implSpec Implementations must not hold a reference to {@code source} after this call
      *           returns.
      */
@@ -115,10 +140,11 @@ public interface TransportStream extends AutoCloseable {
      * <p><strong>Ownership — callee-closes-on-success, caller-closes-on-throw:</strong>
      * this method takes ownership of {@code buffer}.
      * <ul>
-     *   <li><strong>On normal return</strong> the transport owns the loan and releases it —
-     *       immediately for a synchronous transmission, or after the asynchronous flush
-     *       completes. The caller MUST NOT close {@code buffer}.</li>
-     *   <li><strong>If this method throws</strong> (including {@link IllegalStateException}),
+     *   <li><strong>On normal return</strong> the transport owns the loan and releases it once its
+     *       bytes have left the stream's outbound queue, or when the stream ends. The caller MUST NOT
+     *       close {@code buffer}.</li>
+     *   <li><strong>If this method throws</strong> (including
+     *       {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException}),
      *       ownership returns to the caller, who MUST close {@code buffer} to avoid leaking it.
      *       Because {@link LoanedBuffer#close()} is idempotent, this caller-close is safe even
      *       if an implementation happened to release the loan while unwinding.</li>
@@ -127,27 +153,37 @@ public interface TransportStream extends AutoCloseable {
      * that never frees on exception leaks one buffer per failed write against a transport that
      * releases only on success.
      *
-     * <p><strong>Blocking is implementation-defined.</strong> Despite the {@code queue} in the
-     * name, the call is not guaranteed to be non-blocking: a synchronous transport completes
-     * the write before returning (blocking until the bytes are sent), while an asynchronous
-     * transport enqueues the buffer and flushes it on a carrier loop (returning before
-     * transmission).
+     * <p><strong>Never waits for the peer.</strong> The call returns once the loan is in this
+     * stream's outbound order, whatever the peer is reading. It may hand bytes to the network on the
+     * calling thread but does not wait for the peer to take them, and the outbound bound of
+     * {@link TransportConfig#maxQueuedWriteBytes()} counts these bytes without ever blocking on them.
+     * The one wait it may make is for the connection to finish being established, such as a TLS
+     * handshake, bounded by the driver's deadline and reported as {@code EX-NET-4003}.
+     *
+     * <p><strong>The release is the caller's backpressure signal.</strong> The transport releases the
+     * loan once its bytes have left the stream's outbound queue, or when the stream ends, and not
+     * before. A caller that does not bound the loans it has handed over and not yet seen released
+     * holds memory without bound.
      *
      * @param buffer loaned buffer to send; ownership transferred on normal return, retained by
      *               the caller on any thrown exception (the caller must then close it)
      * @param length number of valid bytes in the buffer (from offset 0); must be in
      *               {@code [0, buffer.capacity()]}
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure —
-     *         {@code EX-NET-4002} when the send fails, {@code EX-NET-4003} when a TLS handshake
-     *         this write has to wait for does not complete within the driver's deadline; in
-     *         either case the caller owns and must close {@code buffer}
-     * @throws IllegalStateException if this stream has been closed — the caller owns and must
-     *         close {@code buffer}
+     *         {@code EX-NET-4002} when the send itself fails and the peer has not ended the stream,
+     *         {@code EX-NET-4003} when a TLS handshake this write has to wait for does not complete
+     *         within the driver's deadline; in either case the caller owns and must close
+     *         {@code buffer}
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
+     *         with the code the interface {@code @implSpec} defines, including a send that fails
+     *         because the peer ended the stream, which reports {@code EX-NET-4008} with the transport
+     *         failure ({@code EX-NET-4002}) as its cause; the caller owns and must close
+     *         {@code buffer}
      * @throws IllegalArgumentException if {@code length} is negative or exceeds
      *         {@code buffer.capacity()} — the caller owns and must close {@code buffer}
-     * @apiNote Callers must not rely on non-blocking semantics: a stream whose transport writes
-     *          synchronously will park the calling virtual thread here for the duration of the
-     *          send.
+     * @apiNote A caller that must not block — a writer holding a lock that other senders wait on, or
+     *          an event loop — sends through this method and bounds its own outstanding loans by
+     *          their release; {@link #write} may block.
      */
     void queueWrite(LoanedBuffer buffer, int length);
 
@@ -196,7 +232,7 @@ public interface TransportStream extends AutoCloseable {
 
     /**
      * Returns {@code true} if this stream has pending outbound data queued
-     * via {@link #queueWrite} that has not yet been flushed.
+     * via {@link #write} or {@link #queueWrite} that has not yet been flushed.
      *
      * @return {@code true} if data is pending
      */

@@ -12,6 +12,8 @@ import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -36,9 +38,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -227,6 +231,59 @@ class CommunityHttpRequestProcessorTest {
     }
 
     @Test
+    void peerClosedSignalDoesNotEmitWarning() {
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
+        HttpHandler handler = exchange -> {
+        };
+
+        List<LogRecord> records = captureProcessorWarnings(
+                () -> processor.process(new ThrowingTransportStream(TransportStreamClosedException.peerClosed()), handler));
+
+        assertThat(records).isEmpty();
+    }
+
+    @Test
+    void peerClosedSignalCarryingASendFailureDoesNotEmitWarning() {
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
+        HttpHandler handler = exchange -> {
+        };
+        TransportStreamClosedException signal = TransportStreamClosedException.peerClosed();
+        signal.initCause(TransportException.sendFailure("test-engine", 0L, new IOException("Broken pipe")));
+
+        List<LogRecord> records = captureProcessorWarnings(
+                () -> processor.process(new ThrowingTransportStream(signal), handler));
+
+        assertThat(records).isEmpty();
+    }
+
+    @Test
+    void sendFailureWithoutAnEndedStreamStillEmitsWarning() {
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
+        HttpHandler handler = exchange -> {
+        };
+        TransportException failure = TransportException.sendFailure("test-engine", 0L, new IOException("disk full"));
+
+        List<LogRecord> records = captureProcessorWarnings(
+                () -> processor.process(new ThrowingTransportStream(failure), handler));
+
+        assertThat(records).hasSize(1);
+        assertThat(records.getFirst().getMessage()).isEqualTo("Community HTTP stream handling failed");
+        assertThat(records.getFirst().getThrown()).isSameAs(failure);
+    }
+
+    @Test
+    void locallyClosedSignalDoesNotEmitWarning() {
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
+        HttpHandler handler = exchange -> {
+        };
+
+        List<LogRecord> records = captureProcessorWarnings(
+                () -> processor.process(new ThrowingTransportStream(TransportStreamClosedException.locallyClosed()), handler));
+
+        assertThat(records).isEmpty();
+    }
+
+    @Test
     void runtimeStreamFaultStillEmitsWarning() {
         CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
         IllegalStateException failure = new IllegalStateException("boom");
@@ -302,6 +359,7 @@ class CommunityHttpRequestProcessorTest {
             Upgrade: h2c\r
             \r
             """).getBytes(StandardCharsets.US_ASCII));
+        inboundBytes.writeBytes(Http2Frames.PREFACE);
         inboundBytes.writeBytes(settings);
         inboundBytes.writeBytes(headersFrame);
 
@@ -310,16 +368,16 @@ class CommunityHttpRequestProcessorTest {
                 HttpResponseBodyEncoderRegistry.empty(),
                 HttpConfig.defaultServer());
         CapturingTransportStream stream = new CapturingTransportStream(inboundBytes.toByteArray());
-        AtomicBoolean handlerCalled = new AtomicBoolean(false);
+        List<String> handledPaths = new ArrayList<>();
 
         processor.process(stream, exchange -> {
-            handlerCalled.set(true);
             assertThat(exchange.request().version()).isEqualTo(HttpVersion.HTTP_2);
-            assertThat(exchange.request().path()).isEqualTo("/upgrade-demo");
+            handledPaths.add(exchange.request().path());
             exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_2));
         });
 
-        assertThat(handlerCalled.get()).isTrue();
+        assertThat(handledPaths).as("stream 1 is the upgrade request, stream 3 the next one")
+                .containsExactly("/upgrade", "/upgrade-demo");
 
         byte[] outbound = stream.responseBytes();
         int headerEnd = findHttp11HeadersEnd(outbound);
@@ -331,13 +389,14 @@ class CommunityHttpRequestProcessorTest {
         assertThat(http11Response).contains("Upgrade: h2c");
 
         List<FrameSnapshot> frames = decodeFramesFromOffset(outbound, headerEnd);
-        assertThat(frames).hasSizeGreaterThanOrEqualTo(3);
+        assertThat(frames).hasSizeGreaterThanOrEqualTo(4);
         assertThat(frames.get(0).header().frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frames.get(1).header().frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frames.get(1).header().isAck()).isTrue();
         assertThat(frames.get(2).header().frameType()).isEqualTo(Http2FrameType.HEADERS);
-        assertThat(frames.get(2).header().streamId()).isEqualTo(3);
-        assertThat(decodeStatusFromHeaderBlock(frames, 2)).isEqualTo("200");
+        assertThat(frames.get(2).header().streamId()).isEqualTo(1);
+        assertThat(frames.get(3).header().frameType()).isEqualTo(Http2FrameType.HEADERS);
+        assertThat(frames.get(3).header().streamId()).isEqualTo(3);
 
         assertThat(stream.closed()).isTrue();
     }
@@ -370,6 +429,9 @@ class CommunityHttpRequestProcessorTest {
             assertThat(frames.get(1).header().isAck()).isTrue();
             Http2FrameParser.FrameHeader goAway = frames.get(frames.size() - 1).header();
             assertThat(goAway.frameType()).isEqualTo(Http2FrameType.GOAWAY);
+            assertThat(readErrorCode(Arrays.copyOfRange(
+                    frames.get(frames.size() - 1).payload(), 4, 8)))
+                    .isEqualTo(Http2ErrorCode.FRAME_SIZE_ERROR.code());
         }
 
         @Test

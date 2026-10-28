@@ -26,9 +26,11 @@ last-verified: 2026-09-28
   `eu.exeris.kernel.community.health.HealthEndpointHandler`
 
 > `KernelBootstrap` (entry point) lives in `eu.exeris.kernel.core.bootstrap`.
-> The kernel installs no signal handler and no JVM shutdown hook. `boot()` runs the application's
-> `kernelMain` on the calling thread and calls `shutdown()` in a `finally` once `kernelMain` returns or
-> throws; turning `SIGTERM`/`SIGINT` into that return is the caller's job.
+> The kernel installs no signal handler. `boot()` runs the application's `kernelMain` on the calling
+> thread and stops the subsystems in a `finally` once `kernelMain` returns or throws. A standalone
+> `boot()` also registers one JVM shutdown hook that runs `KernelBootstrap.shutdown()`, so `SIGTERM`
+> stops the kernel in order; an embedding host that owns the process's signals disables the hook with
+> `Builder#registerShutdownHook(false)` and calls `shutdown()` from its own lifecycle.
 
 **Layer:** L0 (Orchestration)  
 **Status:** Validated Architectural Prototype (TRL‑3) — JDK 25 LTS baseline
@@ -52,8 +54,10 @@ never on a request path.
 
 - **Dependency‑Ordered Init**  
   A directed acyclic graph (DAG) built from each subsystem's `dependsOn()` resolves the order.  
-  Config is resolved first, before the orchestrator runs; Memory is the only `FOUNDATION` subsystem in
-  Community.
+  Config is resolved first, before the orchestrator runs. The Phase 0 contract gate
+  (`ContractBootstrapStep`, ADR-088 and ADR-089) then decides the execution contract, still before any
+  subsystem is initialized, so a refused boot has allocated no memory and bound no socket. Memory is the
+  only `FOUNDATION` subsystem in Community.
 
 - **Dependency-Round Start**  
   `SERVICES` and `RUNTIME` subsystems start in dependency-safe rounds on the booting thread — see "Phase
@@ -68,12 +72,33 @@ never on a request path.
       dropped together with its transitive dependents; every other failure still aborts. No Community
       subsystem declares itself optional, so on the Community tier alone `DEGRADE` boots exactly like
       `FAIL_FAST`.
+    - What counts as a failure: a `SubsystemException`, any other `RuntimeException`, and any `Error` other
+      than a `VirtualMachineError` — a `LinkageError` or `ServiceConfigurationError` from a missing native
+      binding or a provider that cannot load is a failure of that subsystem like any other. A
+      `VirtualMachineError` is not a subsystem failure: it is neither wrapped nor recorded, and it
+      propagates unchanged under both policies.
+
+- **Initialization Deadline**  
+  `SubsystemOrchestrator.Builder#initializeDeadline(Duration)`, forwarded by `KernelBootstrap.Builder#initializeDeadline(Duration)`,
+  bounds each `initialize()` call. The default is 300 seconds. `Duration.ZERO` disables the deadline, and a negative value
+  or a positive one under 1 ms throws `IllegalArgumentException`. With a deadline set, each `initialize()` gets its own platform daemon watchdog,
+  named `exeris-boot-init-deadline-<name>`. When the deadline passes, the watchdog emits the JFR event
+  `SubsystemInitDeadlineExceeded`, marks the subsystem `FAILED`, and interrupts the booting thread. The deadline holds even
+  when `initialize()` then returns normally: the boot fails with `SubsystemInitDeadlineException` (EX-BOOT-0003), and any
+  throwable `initialize()` threw becomes its cause. The failure policy then applies as it does to any initialization
+  failure, so an optional subsystem is dropped under `DEGRADE` together with its dependents. With the deadline disabled,
+  no watchdog is armed and nothing is allocated for it.
+  - *Scope.* Only `initialize()` is bounded. `start()` and `stop()` are not, and the orchestrator imposes no deadline on
+    them.
+  - *Limit.* `initialize()` runs on the booting thread, so the deadline can end it only when it responds to the
+    interrupt. An `initialize()` that ignores interruption still holds the boot until it returns. A blocking socket read on
+    a platform boot thread, such as `main`, is not interruptible. On a virtual thread the interrupt closes the socket.
 
 - **Ordered Shutdown**  
   `shutdown()` calls `stop()` in reverse topological order, and only on subsystems whose `isRunning()`
   reports `true`. The orchestrator imposes no deadline of its own: each `stop()` does whatever its
-  subsystem does, and one that throws is logged at `WARNING` and skipped. The transport subsystem's
-  `stop()` is the one that drains: `NativeTcpCarrier.stop()` closes ingress, keeps the reactors serving
+  subsystem does, and one that throws anything other than a `VirtualMachineError` is logged at `WARNING`
+  and skipped. The transport subsystem's `stop()` is the one that drains: `NativeTcpCarrier.stop()` closes ingress, keeps the reactors serving
   while `PaqsScheduler.close()` waits for streams in service to finish under a 60-second hard deadline,
   and only then force-closes what is left.
 
@@ -82,11 +107,13 @@ never on a request path.
 ## Diagram 1 — Boot DAG (Flowchart)
 
 The Community subsystem set as `CommunitySubsystemProvider` registers it. Arrows are declared
-`dependsOn()` edges; the subgraphs are `BootstrapPhase` values.
+`dependsOn()` edges; the subgraphs are `BootstrapPhase` values. Config and the contract gate are steps of
+`KernelBootstrap`, not subsystems, so they are drawn outside the phases with dashed edges.
 
 ```mermaid
 flowchart TD
     CFG["Config<br/>(resolved by KernelBootstrap<br/>via ServiceLoader of ConfigProvider<br/>before the orchestrator runs)"]
+    LIC["Contract gate<br/>(ContractBootstrapStep, boot() only:<br/>manifest, key scope, entitlement class, environment<br/>ADR-088 / ADR-089)"]
 
     subgraph FOUNDATION["FOUNDATION (sequential)"]
         MEM[memory]
@@ -109,7 +136,8 @@ flowchart TD
         WS[websocket]
     end
 
-    CFG -.-> MEM
+    CFG -.-> LIC
+    LIC -.-> MEM
     MEM --> CRP & SEC & PER & STO & GRP & TRP
     CRP --> TRP
     PER --> GRP
@@ -147,6 +175,7 @@ stateDiagram-v2
 
     REGISTERED --> INITIALIZED : initialize() returned
     REGISTERED --> FAILED      : initialize() threw (EX-BOOT-0002)
+    REGISTERED --> FAILED      : initialize() ran past the deadline (EX-BOOT-0003)
 
     INITIALIZED --> RUNNING    : start() returned
     INITIALIZED --> FAILED     : start() threw (EX-BOOT-0002)
@@ -189,9 +218,16 @@ sequenceDiagram
     participant ORC as SubsystemOrchestrator
     participant SUB as Subsystems (reverse topological order)
 
-    APP-->>KB: kernelMain returns or throws
-    KB->>KB: close DynamicConfigFileWatcher
-    KB->>ORC: shutdown()  (in finally)
+    participant HOOK as JVM hook / host thread
+
+    alt kernelMain returns or throws
+        APP-->>KB: kernelMain returns or throws
+        KB->>KB: close DynamicConfigFileWatcher
+        KB->>ORC: shutdown()  (in finally)
+    else SIGTERM, or the host calls KernelBootstrap.shutdown()
+        HOOK->>ORC: shutdown()  (via KernelBootstrap.shutdown())
+    end
+    Note over KB,ORC: one caller wins a compare-and-set and runs the stop; every other caller waits for it
     ORC->>ORC: markKernelState(SHUTTING_DOWN) — readiness 503
     loop each subsystem, last initialized first
         alt isRunning() == true
@@ -202,9 +238,14 @@ sequenceDiagram
         end
     end
     ORC->>ORC: KernelShutdownComplete JFR
-    ORC-->>KB: returns (never throws)
+    ORC-->>KB: returns (a stop() that throws is logged and skipped)
+    KB->>KB: remove the JVM shutdown hook
     KB-->>APP: boot() returns, or throws BootstrapException
 ```
+
+The last two steps belong to the `boot()` thread and run once `kernelMain` has returned. When the JVM shutdown
+hook starts the stop, the JVM is exiting: `boot()` does not return in that process, and `kernelMain` is neither
+interrupted nor ended.
 
 `shutdown()` has no timeout and no second attempt. A `stop()` that throws is caught, logged at `WARNING`, and
 the subsystem is not marked `STOPPED`.
@@ -217,6 +258,7 @@ the subsystem is not marked `STOPPED`.
 only the start. A phase starts only after every subsystem of the phase before it has returned from `start()`.
 
 ```
+contract:     ContractBootstrapStep, once, before any subsystem (boot() only; inspect() skips it)
 initialize:   all subsystems, topological order (Kahn's algorithm, ties broken by name)
 start:
   FOUNDATION: memory (sequential)
@@ -233,6 +275,64 @@ to declare it.
 
 > **Config** is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` (highest `priority()` wins)
 > before the orchestrator runs — it is not a `Subsystem`. `Exceptions` is not a Subsystem layer.
+>
+> **The contract gate** is not a `Subsystem` either. `KernelBootstrap.boot()` runs `ContractBootstrapStep`
+> after Config and before the orchestrator, and binds its result, a `ContractDecision` of the contract and a
+> `WorkloadAdmission`, to `ContractKernelProviders.EXECUTION_CONTRACT` and `WORKLOAD_ADMISSION` for
+> the whole kernel scope; the HTTP and transport drivers read the admission once in `start()`. The environment
+> comes from the configuration key `environment` (`development` when unset; the kernel profile plays no part).
+> `inspect()` initializes nothing, so it does not run the gate and binds no contract. The gate decides in every
+> environment alike; the environment is where the kernel says it runs, never a reason to skip a check:
+>
+> | Manifest | `EntitlementRequirement` declared | Decision |
+> |:--|:--|:--|
+> | none | no | Community contract, `UNGATED` |
+> | none | yes | `EX-LIC-0005`, in every environment |
+> | present | no | verified inside its key's scope; the declared environment must lie in that scope (`EX-LIC-0009`); `UNGATED` |
+> | present | yes | as above, then every declared requirement's class must be one the key may entitle, listed by the manifest or not (`EX-LIC-0012`), then the contract must authorize the environment (`EX-LIC-0007`) and each capability (`EX-LIC-0004`) at the level its enforcement rules set |
+>
+> A manifest signed by the developer key (`exeris-dev-…`), with a requirement declared, binds a
+> `DeveloperWorkloadAdmission`: 50 requests per second and 10 connections at `HARD`, and `Exeris-License:
+> development` on every response. Every other decision binds `WorkloadAdmission.UNGATED`, so a Community-only
+> classpath is never gated. A `HARD` capability or environment breach, and every scope breach, throws out of
+> `boot()` as `ContractBreachException` before any subsystem exists; a scope breach is `HARD` whatever the
+> manifest's `enforcementRules` say. The gate's own checks run after the verifier, including its validity
+> window: the class of a declared requirement (`EX-LIC-0012`) and the declared environment against the key's
+> scope (`EX-LIC-0009`) come last, so a manifest that is expired and also short of a class reports its time code
+> (`EX-LIC-0003` or `EX-LIC-0006`) first. The manifest's validity window is judged at the instant of
+> `TimeKernelProviders.timeSource()`, the platform clock until a time provider is bound.
+>
+> **A key's scope.** The embedded `TrustedIssuerKeyStore` pins three keys, each with an `IssuerKeyScope`.
+> `exeris-prod-…`: all six environments, no maximum validity, no workload ceiling, commercial artifacts.
+> `exeris-dev-…`: `development` only; at most 30 days from `issuer.issuedAt` to `validUntil` plus the grace
+> period, with `issuedAt` required and no `PERPETUAL_INTERNAL`; a workload envelope present and no higher than 50
+> requests per second, 10 connections and a growth allowance of 0; the `capability` and `environment` rules at
+> `HARD`; commercial artifacts. `exeris-ent-…`: as `prod`, and enterprise-private artifacts too. A manifest from a
+> key with no ceiling may not set `workloadEnvelope` to `HARD`: hard-dropping traffic is reserved for the
+> developer licence.
+>
+> **Issuance-facing surface of Core (preview until 1.0).** `IssuerKeyScope`, `TrustedIssuerKey`,
+> `IssuerKeyResolver.ofScoped` and `IssuerKeyResolver.embedded` (the pinned keys, for a post-check of what was signed), `LicenseManifestVerifier.verifyScoped` with `VerifiedManifest`,
+> `TrustedIssuerKeyStore.resolve` and `TrustedIssuerKeyStore.trustedKeyIds()` are public so that a tool which
+> signs licences can verify what it is about to sign under the same rules: a manifest signed by a key of the
+> tool's own, under `IssuerKeyScope.PROD`, `DEV` or `ENT`, either passes `verifyScoped` or fails with the
+> scope code the kernel would raise. `ContractBootstrapStep.decide(environment, requirements, manifest, now,
+> resolver)` is public for the same reason, so a conformance suite can run the gate's decision under a key it
+> holds; its result is never bound into a kernel scope. The bootstrap path never accepts a resolver.
+>
+> **Operators: declare the environment.** With `CommunityConfigProvider` the key `environment` is the system
+> property `-Dexeris.environment` or the variable `EXERIS_ENVIRONMENT`; the manifest path is
+> `-Dexeris.license.manifest.path` or `EXERIS_LICENSE_MANIFEST_PATH`. A deployment that declares nothing runs as
+> `development`, and a manifest whose key does not cover `development` refuses the boot. A value outside the six
+> environment ids fails the boot with `ConfigProviderException` `EX-CFG-1002`; a manifest path bound to a blank
+> value fails it with `EX-LIC-0001`. The manifest is read from `license.manifest.path` when that key is bound
+> (and only from there: the working directory and the classpath are not consulted), else from
+> `license-manifest.json` in the working directory, else from the classpath. The classpath may hold at most
+> one: more than one distinct `license-manifest.json` URL (the same URL reported twice by a loader chain
+> counts once) fails the boot with `EX-LIC-0001`, the message listing every URL, because the first one in
+> classpath order would otherwise decide the contract; bind `license.manifest.path` to choose. An
+> `EntitlementRequirement` that cannot be loaded, throws, or declares `null`, nothing, a malformed capability
+> id or no class, fails it with `EX-LIC-0008`, in every environment.
 
 ---
 
@@ -256,11 +356,21 @@ Bootstrap decides whether the Kernel comes up:
 
 A dependency cycle is fatal under either policy.
 
-### 3. Shutdown Is Driven by the Caller
+### 3. Who Starts the Stop
 
-The kernel does not listen for OS signals. Ordered shutdown happens when `kernelMain` returns; an application
-that must stop cleanly on `SIGTERM` has to make `kernelMain` return and let `boot()` finish before the JVM
-halts.
+The kernel handles no OS signal itself. The stop sequence starts from one of three triggers, and runs once
+however many fire: `kernelMain` returning or throwing (`boot()`'s `finally`); the JVM shutdown hook that a
+standalone `boot()` registers, which runs `KernelBootstrap.shutdown()` on `SIGTERM`; or a host calling
+`KernelBootstrap.shutdown()` from its own lifecycle. The caller that wins the orchestrator's compare-and-set
+runs the stop; every other caller returns only after it completed.
+
+- A `shutdown()` that arrives while `boot()` is still resolving configuration, initializing or starting
+  subsystems is recorded: `kernelMain` is not run, `boot()` stops what started and returns normally.
+- `shutdown()` never interrupts or ends `kernelMain`; application code decides when to return.
+- `stop()` may run on a thread with no kernel `ScopedValue` bindings, so it acts on references captured in
+  `initialize()`/`start()`; it must not call `System.exit`, `Runtime.exit` or `Runtime.halt`, nor wait without
+  bound for a thread of its own. `initialize()` and `start()` must not call `System.exit` either: they run on
+  the booting thread, which the hook waits for.
 
 ---
 
@@ -289,7 +399,9 @@ halts.
 - Tracks kernel state (`INITIALIZED → STARTED → SHUTTING_DOWN`, or `FAILED`) and per-subsystem state for
   probes (`KernelHealthMonitor`)
 - Offers `KernelBootstrap.inspect(Runnable)`, which resolves the sorted subsystem inventory without calling
-  any `initialize()` or `start()`
+  any `initialize()` or `start()`, and without running the contract gate
+- Runs the Phase 0 contract gate (`eu.exeris.kernel.core.contract.ContractBootstrapStep`) before the
+  orchestrator, and binds `ContractKernelProviders.EXECUTION_CONTRACT` and `WORKLOAD_ADMISSION`
 
 ---
 
@@ -298,8 +410,8 @@ halts.
 | Code             | Carried by | `rawArgs` | When |
 |------------------|------------|-----------|------|
 | **EX‑BOOT‑0001** | `SubsystemCircularDependencyException` — a plain `RuntimeException`, not an `ExerisKernelException` | None. Members are read from `cycleMembers()` (insertion-ordered `Set<String>`); the JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` carries them as one `String` joined with `", "`, plus `errorCode`. | Dependency cycle found by the sort, during `SubsystemOrchestrator.initialize()` or `resolveTopology()`, before any subsystem is initialized. The set holds every subsystem the sort could not order, including those that only depend on the cycle. `KernelBootstrap` rethrows it unwrapped. |
-| **EX‑BOOT‑0002** | `SubsystemException` | `[0] String subsystemName`, `[1] SubsystemException.Phase phase`, `[2] String detail` | `initialize()` or `start()` threw. The orchestrator wraps any other unchecked exception in one (`detail` = its message, original as cause) and, unless `DEGRADE` drops the subsystem, throws `SubsystemOrchestrator.BootstrapException` with it as cause. The orchestrator never raises it for `stop()`. The sorter's "depends on missing subsystem" `BootstrapException` cites this code in its message only, with no `rawArgs`. |
-| **EX‑BOOT‑0003** | — | Registry layout: `[0] String subsystemName`, `[1] long deadlineMs` | Defined in `KernelErrorCodes` only. The orchestrator enforces no deadline and nothing in this repository throws it. |
+| **EX‑BOOT‑0002** | `SubsystemException` | `[0] String subsystemName`, `[1] SubsystemException.Phase phase`, `[2] String detail` | `initialize()` or `start()` threw. The orchestrator wraps any other unchecked exception, including an `Error` other than a `VirtualMachineError`, in one (`detail` = the exception's message, or its `toString()` for an `Error`; original as cause) and, unless `DEGRADE` drops the subsystem, throws `SubsystemOrchestrator.BootstrapException` with it as cause. The orchestrator never raises it for `stop()`. The sorter's "depends on missing subsystem" `BootstrapException` cites this code in its message only, with no `rawArgs`. |
+| **EX‑BOOT‑0003** | `SubsystemInitDeadlineException` | `[0] String subsystemName`, `[1] long deadlineMs` | An `initialize()` ran past the initialization deadline (see "Initialization Deadline" above). The orchestrator throws `SubsystemOrchestrator.BootstrapException` with this as cause, unless `DEGRADE` drops the subsystem. The throwable `initialize()` threw, if any, is this exception's cause. Never raised for `start()` or `stop()`. |
 | **EX‑BOOT‑0004** | `MemoryBootstrapException` | `[0] String providerName`, `[1] long requestedBytes` (`-1` if unknown); the message-only constructor leaves `rawArgs` empty | `CommunityMemoryProvider` cannot create its allocator. Raised inside `memory`'s `initialize()`, so the caller sees it as the cause of an `EX-BOOT-0002`. |
 | **EX‑BOOT‑3001** | `TelemetryBootstrapException` | `[0] String providerName`, `[1] String reason` | `CommunityTelemetryProvider` cannot construct a sink. Telemetry is not a Boot DAG subsystem. |
 
@@ -308,8 +420,12 @@ halts.
 > surfaces it without touching infrastructure.
 
 A boot failure reaches the caller of `KernelBootstrap.boot()` as `KernelBootstrap.BootstrapException`
-wrapping `SubsystemOrchestrator.BootstrapException`; a missing `ConfigProvider` fails with a
-`KernelBootstrap.BootstrapException` whose message cites `EX-CFG-0001`.
+wrapping `SubsystemOrchestrator.BootstrapException` (a `VirtualMachineError` reaches it raw); a missing `ConfigProvider` fails with a
+`KernelBootstrap.BootstrapException` whose message cites `EX-CFG-0001`. A refusal by the contract gate
+reaches it unwrapped, as `ContractBreachException` with an `EX-LIC-` code (see
+[exceptions.md](exceptions.md)), and is raised before the orchestrator exists: no subsystem was initialized,
+so none is stopped, and no health state is recorded. The kernel never exits the JVM; the launcher decides
+what a refused boot does to the process.
 
 ---
 
@@ -410,8 +526,12 @@ failure is logged and never fails the subsystem.
   subsystem is initialized
 - `CoreBootstrapOrchestratorTckTest`, `CoreBootstrapOrchestratorRealSortTckTest` — `AbstractBootstrapOrchestratorTck`
 - `CoreFailurePolicyTckTest` — `AbstractFailurePolicyTck` (FAIL_FAST vs DEGRADE)
+- `CoreGracefulShutdownTckTest` — `AbstractGracefulShutdownTck` (stop order and drain, stub subsystems through the real bootstrap, with its trigger wired to `KernelBootstrap.shutdown()`)
+- `CoreSubsystemErrorRoutingTckTest` — `AbstractSubsystemErrorRoutingTck` (routing non-fatal `Error` through failure policy; `VirtualMachineError` raw propagation)
 - `CoreBootstrapZeroAllocTckTest` — `BootstrapZeroAllocTck`
 - `CoreHealthMonitorTckTest`, `CoreProviderBindingLifecycleTckTest`, `KernelBootstrapTest`, `ScopedValueBindingTest`
+- `KernelBootstrapShutdownTest`, `SubsystemOrchestratorShutdownTest` — the `shutdown()` entry point, the hook
+  lifecycle, and the concurrency rules (racing callers, re-entry, a stop requested during boot)
 
 ### Integration Tests (Community)
 
@@ -419,8 +539,12 @@ failure is logged and never fails the subsystem.
 - `AbstractSubsystemLifecycleTck` bindings for `memory`, `transport`, `http` and `websocket`
 - `HealthEndpointHandlerKernelMonitorIntegrationTest`, `CommunitySubsystemHealthWatcherTest`
 
-> **Note:** `AbstractGracefulShutdownTck` has no concrete binding in this repository, and there is no test
-> of signal handling, because the kernel handles no signal. The transport drain is covered by
+Community: `KernelSigtermShutdownTest` forks a kernel JVM and sends a real `SIGTERM` (in-flight request drained,
+ingress refused, subsystems stopped in reverse start order with memory last, exit status 143; a hook-disabled
+control; `System.exit` from `kernelMain` and from a subsystem's thread), and
+`CommunityShutdownUnboundThreadTest` stops the real subsystems from a thread with no bindings.
+
+> **Note:** The transport drain is covered by
 > `PaqsSchedulerTest`, `DrainCoordinatorTest` and `CommunityHttpDrainIntegrationTest`, not by this
 > subsystem's tests.
 
@@ -430,9 +554,10 @@ failure is logged and never fails the subsystem.
 
 The Bootstrap subsystem is the guardian of the Kernel's lifecycle. It enforces a dependency-aware boot
 sequence, starts each phase in dependency-safe rounds on the booting thread, fails the boot on the first
-mandatory failure, and stops running subsystems in reverse topological order when `kernelMain` returns. It
-does not handle signals or exit the JVM, and bounds shutdown time only where the transport drains its
-streams (60 s) — turning a signal into shutdown stays with the host.
+mandatory failure, and stops running subsystems in reverse topological order when `kernelMain` returns or
+`shutdown()` is called. A standalone boot registers one JVM shutdown hook that runs `shutdown()`; the kernel
+handles no signal itself and never exits the JVM, and it bounds shutdown time only where the transport drains
+its streams (60 s).
 
 ---
 
@@ -445,8 +570,8 @@ streams (60 s) — turning a signal into shutdown stays with the host.
 
 `KernelHealthMonitor` (Core) implements `eu.exeris.kernel.spi.bootstrap.HealthProbe` and exposes two snapshots:
 
-- **Readiness** — UP only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `DEGRADED` (not ready) when a **required** subsystem has gone `DEGRADED` — live but impaired after boot, e.g. its broker died — so the load balancer drains the instance; a still-initializing required subsystem outranks `DEGRADED` for the status label. A **degraded optional** subsystem never sheds readiness. Returns `FAILED` after `FAILED` state.
-- **Liveness** — UP after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state. A `DEGRADED` subsystem never affects liveness — the process stays alive so it can recover (`DEGRADED → RUNNING` is reversible).
+- **Readiness** — `READY` only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `DEGRADED` (not ready) when a **required** subsystem has gone `DEGRADED` — live but impaired after boot, e.g. its broker died — so the load balancer drains the instance; a still-initializing required subsystem outranks `DEGRADED` for the status label. A **degraded optional** subsystem never sheds readiness. Returns `FAILED` after `FAILED` state.
+- **Liveness** — `UP` after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state. A `DEGRADED` subsystem never affects liveness — the process stays alive so it can recover (`DEGRADED → RUNNING` is reversible).
 
 A subsystem is required when it is in `FOUNDATION` or reports `isOptional() == false`.
 
@@ -547,12 +672,19 @@ not counted.
 - every `start()`, phase by phase, including the per-subsystem JFR class warm-up
 
 **Not included:** the `KernelStart` event and `ConfigProvider` resolution before it (timed by
-`ConfigSettingsResolved.durationMs`), and `kernelMain`.
+`ConfigSettingsResolved.durationMs`), the contract gate after it, and `kernelMain`.
 
-The full event set, all in category `Exeris Kernel / Bootstrap`: `KernelStart`, `ConfigSettingsResolved`,
+The full event set, all in category `Exeris Kernel / Bootstrap` (`ConfigSettingsResolved` adds a `Config` sub-category and `CircularDependencyDetected` a `Fatal` one): `KernelStart`, `ConfigSettingsResolved`,
 `SubsystemInitialized` (also emitted on failure, with `success=false` and `errorMessage`),
 `SubsystemStarted`, `KernelBootReady`, `SubsystemStopped`, `KernelShutdownComplete`,
-`CircularDependencyDetected`, `SubsystemHealthTransition`.
+`CircularDependencyDetected`, `SubsystemHealthTransition`, `SubsystemInitDeadlineExceeded`. The contract gate records each decision as
+`eu.exeris.kernel.contract.Resolved` (`ContractResolvedEvent`, category `Exeris Kernel / Contract`): the
+environment, the manifest source, the bound contract or the error code that refused the boot, the signing
+`keyId`, whether the kernel runs under a developer licence (`developerLicence`), and `gateDuration`, which is the gate's time outside `KernelBootReady.totalDurationMs`. A `SOFT` or `AUDIT`
+violation, and a manifest verified inside its grace period, emit `eu.exeris.kernel.contract.Enforcement`
+(`ContractEnforcementEvent`); a `SOFT` one also logs a `WARNING` through `System.Logger`. Each distinct
+violation is reported once per process. Both events exist only while a JFR recording with them enabled is
+running, so an `AUDIT` violation with no recording leaves no trace.
 
 > **JVM warm-up note:** The first requests after boot will experience JIT compilation overhead while C2 compiles the hot path. This is expected and distinct from bootstrap completion — the readiness probe reflects DAG completion, not first-request throughput.
 
@@ -578,15 +710,15 @@ sequenceDiagram
     Note over K8s,OLD: Traffic shifts to new pod
     K8s->>K8s: Remove old pod from Service Endpoints
     K8s->>OLD: SIGTERM
-    Note over OLD: Application makes kernelMain return
+    Note over OLD: JVM shutdown hook runs shutdown()
     OLD->>OLD: shutdown(): readiness → 503 (SHUTTING_DOWN)
     OLD->>OLD: stop() running subsystems, reverse topological order
     OLD-->>K8s: process exits
 ```
 
 > **What holds:** with `HealthEndpointHandler`, readiness turns `503` as soon as `shutdown()` begins, before any
-> `stop()` runs. Nothing happens on `SIGTERM` by itself — the kernel installs no handler, so until the
-> application makes `kernelMain` return, readiness stays `200`.
+> `stop()` runs. In a standalone process the JVM shutdown hook starts that stop when `SIGTERM` arrives; a host
+> that disabled the hook (`registerShutdownHook(false)`) starts it by calling `KernelBootstrap.shutdown()`.
 
 > **`terminationGracePeriodSeconds`:** the orchestrator imposes no overall deadline; the transport's `stop()`
 > drains streams in service for up to 60 s. Size the grace period to the application's own drain plus that
@@ -691,3 +823,5 @@ coverage status.
 - [ADR-039](../adr/ADR-039-open-core-observability-boundary.md) — crash-file decoder cut (target-state crash buffer).
 - [ADR-061](../adr/ADR-061-declarable-http-route-authorization-policy.md) — §4: Community security subsystem binding `SECURITY_PROVIDER`.
 - [ADR-066](../adr/ADR-066-preview-clean-ga-baseline.md) — subsystems start on the booting thread, not in forked scopes.
+- [ADR-088](../adr/ADR-088.link.md) — the license manifest the contract gate reads and verifies.
+- [ADR-089](../adr/ADR-089.link.md) — the contract gate, its place ahead of FOUNDATION, and its enforcement levels.

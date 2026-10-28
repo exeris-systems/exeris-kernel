@@ -33,4 +33,17 @@ import jdk.jfr.FlightRecorder;
         event.begin();
         return event;
     }
+
+    /**
+     * Returns {@code event} when Flight Recorder is initialized and the event type is enabled, and
+     * {@code null} otherwise. Unlike {@link #beginIfEnabled(Event)} it does not begin the event: the caller
+     * populates the fields and commits once, which is the single-phase form.
+     *
+     * @param event the newly constructed event to check
+     * @param <E>   the JFR event type
+     * @return {@code event}, or {@code null} when it would not be recorded
+     */
+    /* default */ static <E extends Event> E enabledOrNull(E event) {
+        return FlightRecorder.isInitialized() && event.isEnabled() ? event : null;
+    }
 }

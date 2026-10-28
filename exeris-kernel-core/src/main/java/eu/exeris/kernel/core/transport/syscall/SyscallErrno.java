@@ -4,14 +4,16 @@
  */
 package eu.exeris.kernel.core.transport.syscall;
 
-import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 import java.util.Locale;
 
-import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 
 /**
@@ -32,6 +34,11 @@ public final class SyscallErrno {
     private static final int WSAEINTR = 10_004;
     private static final int WSAEWOULDBLOCK = 10_035;
     private static final int WSAEINPROGRESS = 10_036;
+    private static final int EPIPE = 32;
+    private static final int ECONNRESET_LINUX = 104;
+    private static final int ECONNRESET_MAC = 54;
+    private static final int WSAECONNABORTED = 10_053;
+    private static final int WSAECONNRESET = 10_054;
 
     private static final MethodHandle ERRNO_LOCATION = resolveErrnoLocation();
 
@@ -82,6 +89,30 @@ public final class SyscallErrno {
     }
 
     /**
+     * Runs the errno readers once, so that their first use, which initialises this class and links the
+     * downcalls, cannot happen between a failed syscall and the read of its errno: that first use
+     * resolves symbols and overwrites errno. {@link SyscallHandles} calls it when it is constructed, and
+     * a handle is the only way to issue a syscall whose errno is read afterwards.
+     *
+     * <p>The Windows reader is a handle the caller supplies, so it is passed in; the POSIX reader needs
+     * none. Reading is harmless: the value is discarded.
+     *
+     * @param socketLastError the Windows {@code WSAGetLastError} handle, or {@code null}
+     */
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    /* default */ static void warmUp(MethodHandle socketLastError) {
+        currentPosixErrno();
+        if (socketLastError != null) {
+            try {
+                // the value is meaningless here; the call is what links the downcall
+                Objects.requireNonNull(String.valueOf((int) socketLastError.invokeExact()));
+            } catch (Throwable _) {
+                // a reader that cannot be invoked here is reported by the read that needs it
+            }
+        }
+    }
+
+    /**
      * Returns whether the errno denotes a retryable non-fatal socket condition.
      *
      * @param errno current socket errno / last-error value
@@ -105,6 +136,21 @@ public final class SyscallErrno {
         return errno == EAGAIN || errno == EWOULDBLOCK_MAC || errno == WSAEWOULDBLOCK;
     }
 
+    /**
+     * Returns whether the errno says the peer ended the connection: a send into a connection the
+     * peer reset or closed fails with it, and retrying never succeeds.
+     *
+     * @param errno current socket errno / last-error value
+     * @return {@code true} for a broken pipe, or a connection reset or aborted by the peer; {@code false}
+     *     for anything else, retryable values and an unavailable errno ({@code <= 0}) included
+     */
+    public static boolean isPeerReset(int errno) {
+        if (IS_WINDOWS) {
+            return errno == WSAECONNRESET || errno == WSAECONNABORTED;
+        }
+        return errno == EPIPE || errno == (IS_MAC ? ECONNRESET_MAC : ECONNRESET_LINUX);
+    }
+
     private static MethodHandle resolveErrnoLocation() {
         if (IS_WINDOWS) {
             return null;
@@ -112,12 +158,18 @@ public final class SyscallErrno {
         try {
             Linker linker = Linker.nativeLinker();
             SymbolLookup lookup = linker.defaultLookup();
-            String[] candidates = IS_MAC
-                    ? new String[]{"__error", "__errno_location"}
-                    : new String[]{"__errno_location", "__error"};
-            for (String symbol : candidates) {
-                MethodHandle handle = lookup.find(symbol)
-                        .map(address -> linker.downcallHandle(address, FunctionDescriptor.of(ADDRESS)))
+            List<SyscallDowncall> candidates = new ArrayList<>();
+            for (SyscallDowncall row : SyscallDowncall.values()) {
+                if (SyscallDowncall.Group.ERRNO.equals(row.anyOf())) {
+                    candidates.add(row);
+                }
+            }
+            if (IS_MAC) {
+                Collections.reverse(candidates);
+            }
+            for (SyscallDowncall candidate : candidates) {
+                MethodHandle handle = lookup.find(candidate.symbol())
+                        .map(address -> linker.downcallHandle(address, candidate.descriptor()))
                         .orElse(null);
                 if (handle != null) {
                     return handle;

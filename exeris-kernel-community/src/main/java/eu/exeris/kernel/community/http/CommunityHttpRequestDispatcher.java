@@ -97,7 +97,7 @@ final class CommunityHttpRequestDispatcher {
         // same carrier the authorization decision reads and the handling branch needs it too. One
         // resolution, one path match: asking the policy twice would let two answers disagree about
         // what a route is.
-        RouteRequirement requirement = resolveRequirement(request);
+        RouteRequirement requirement = resolveRequirement(request, handler);
         boolean longRunning = requirement != null
                 && requirement.execution() == RouteRequirement.Execution.LONG_RUNNING;
 
@@ -122,7 +122,8 @@ final class CommunityHttpRequestDispatcher {
      *
      * <p>The binding holds for the stream's whole life, not just its open: the stream dispatcher runs
      * the handler's emit loop on the calling thread, so it executes inside
-     * {@link SecurityInterceptor#intercept}'s scope.
+     * {@link SecurityInterceptor#intercept}'s scope. The calling thread is the connection's on HTTP/1.1
+     * and the thread forked for the one stream on HTTP/2, where many streams share a connection.
      *
      * @param request    the parsed request that opened the stream
      * @param denial     supplies an exchange used ONLY to write a denial. A supplier rather than an
@@ -135,10 +136,11 @@ final class CommunityHttpRequestDispatcher {
                                       Runnable openStream) {
         // The streaming counterpart of what handleRequest establishes for a PROMPT route, and deliberately
         // not the same set. The reactor thread inherits no kernel carrier binding, and a stream
-        // handler runs INLINE for the whole life of the stream (CommunityHttpStreamDispatcher calls
-        // handler.handle(engine) and returns when the emit loop ends), so whatever is bound here is
-        // bound for that entire duration. That is what makes the allocator and the decoder registry
-        // right to bind — both stateless engine-scoped instances — and exactly why REQUEST_SESSION is
+        // handler runs INLINE on the calling thread for the whole life of the stream
+        // (CommunityHttpStreamDispatcher calls handler.handle(engine) and returns when the emit loop
+        // ends), so whatever is bound here is bound for that entire duration. That is what makes the
+        // allocator and the decoder registry right to bind — both stateless engine-scoped instances —
+        // and exactly why REQUEST_SESSION is
         // left out: PersistenceSessionBox lazily takes a pooled JDBC connection and holds it for the
         // scope's duration, so one read inside a live feed would pin a connection for as long as the
         // client stays connected. A streaming handler that needs the database wants a short-lived
@@ -149,7 +151,7 @@ final class CommunityHttpRequestDispatcher {
                     HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry);
         }
         ScopedValue.Carrier streamScope = carrier;
-        authorize(request, resolveRequirement(request), denial, () -> streamScope.run(openStream));
+        authorize(request, resolveRequirement(request, null), denial, () -> streamScope.run(openStream));
     }
 
 
@@ -161,14 +163,19 @@ final class CommunityHttpRequestDispatcher {
      * refined by amendment A1), so an application that declares nothing carries no edge authorization
      * at all.
      *
+     * <p>The policy is asked about the route the request is dispatched to, as {@link RoutePolicyQuery}
+     * resolves it, not about the request-target as sent.
+     *
      * @param request the parsed request whose route is being resolved
+     * @param handler the root handler a respond-once request is dispatched to, or {@code null} for a
+     *                stream open
      * @return the requirement the bound {@link HttpRoutePolicy} declares for this route, or an
      *         unconditional permit-all requirement when no policy is bound
      */
-    private RouteRequirement resolveRequirement(HttpRequest request) {
+    private RouteRequirement resolveRequirement(HttpRequest request, HttpHandler handler) {
         return routePolicy == null
                 ? RouteRequirement.permitAll()
-                : routePolicy.requirementFor(request.method(), request.path());
+                : RoutePolicyQuery.requirementFor(routePolicy, request, handler);
     }
 
     /**

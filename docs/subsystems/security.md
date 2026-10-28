@@ -14,8 +14,8 @@ last-verified: 2026-09-08
 - SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig, **`@RequiresRole` + `RoleMatch` + `KernelRoles` + `RoleRegistry` + `PrincipalContext.roleMask()`** since 0.7.0; `identity/` sub-package — `IdentityProvider`, `IdentityProviderRegistry`, `TokenValidator`, `ClaimsMapper`, `IdentityStorageMapping`, `KeyRotationPolicy`, `VerifiedClaims` — since 0.10)
   > **Note:** the SPI surface for compile-time RBAC ships in 0.7.0 — annotation + role-bit catalogue (Sprint 8a), `RoleRegistry` interface + `roleMask()` carrier (Sprint 8b-ii). The APT processor in `exeris-kernel-build-config` ships in Sprint 8b-i; the Core `RoleCheckEnforcer` runtime decision helper ships in Sprint 8b-ii.
   >
-  > **Corrected 2026-08-05.** This note previously said that wiring the generated registry into a bootstrap loader and auto-binding the enforcer into the transport admission path "remain operator concerns until the auto-bind landing". Both halves of that were wrong by 0.8.0 and the sentence misled a later audit, so it is replaced rather than amended. Registry wiring **shipped** in Sprint 4 (SEC-080): `GeneratedRoleRegistryLoader.load()` is called in production from `CommunityHttpRequestProcessor`, and `SecurityInterceptor` binds a `MaskedPrincipal` carrying the precomputed `roleMask()`. Enforcer auto-binding is not pending either — kernel-edge `methodId` enforcement was **descoped**, for the reason recorded in §"`@RequiresRole` Processing" below, which is the authoritative statement.
-- Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityOidcIdentityProvider`, `CommunityOidcTokenValidator`, `CommunityClaimsMapper` + `CommunityClaimsMapperResolver`, `CommunityJwksHttpKeySetSource` + `CommunityRotatingKeySet` + `StaticJwksKeyResolver`)
+  > Registry wiring shipped in Sprint 4 (SEC-080): `GeneratedRoleRegistryLoader.load()` is called in production from `CommunityHttpRequestProcessor`, and `SecurityInterceptor` binds a `MaskedPrincipal` carrying the precomputed `roleMask()`. Enforcer auto-binding is not pending — kernel-edge `methodId` enforcement is **descoped**, for the reason recorded in §"`@RequiresRole` Processing" below, which is the authoritative statement.
+- Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityOidcIdentityProvider`, `CommunityOidcTokenValidator`, `CommunityClaimsMapper` + `CommunityClaimsMapperResolver`, `CommunityJwksHttpKeySetSource` + `CommunityRotatingKeySet` + `StaticJwksKeyResolver`, `JwsVerificationKey` + `PinnedJwsAlgorithm`, `CommunityEd25519JwsVerifier` + `Ed25519PublicKeys`)
 - Core: `eu.exeris.kernel.core.security.*` (`SecurityInterceptor`, `StorageContextBridge`, `CitadelGuard`, `RouteAuthorizationEnforcer`, `RoleCheckEnforcer`, `GeneratedRoleRegistryLoader`, `MaskedPrincipal`)
 
 **Layer:** L1 (Data & Integrity)
@@ -106,12 +106,19 @@ into the DB connection state. A missing `StorageContext` is equivalent to a miss
 > persistence it receives a `GLOBAL`-scoped connection — not an aborted query and not an `EX-SEC-2004`.
 >
 > **What the database does with that connection.** `GLOBAL` declares no tenant, so
-> `RlsConnectionInterceptor` publishes `exeris.tenant_id` as `''`. Under the documented `FORCE`'d policy
-> (`tenant_id = current_setting('exeris.tenant_id', true)`, the canonical example in
-> `RlsConnectionInterceptor`'s javadoc) that key matches no tenant row, and `WITH CHECK` refuses every
-> write: a conforming deployment fails closed at the database. Rows are exposed only where the deployment
-> departs from that policy — a policy with an arm that admits the empty key (a "system" arm), or a
-> scoped table that is not `FORCE`'d while the application connects as its owner.
+> `RlsConnectionInterceptor` publishes `exeris.tenant_id` as `''`. Under the reference `FORCE`'d policy
+> (`tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))`, the canonical example in
+> `RlsConnectionInterceptor`'s javadoc and in `docs/subsystems/persistence.md`) an absent tenant key
+> raises, so a read or a write that touches a scoped table fails with `EX-PERS-5003` (SQLSTATE `42501`)
+> and a message naming the key: a conforming deployment fails closed at the database, and a handler on a
+> public route that touches a scoped table gets an error, not an empty result. The plain form,
+> `tenant_id = current_setting('exeris.tenant_id', true)`, is not conforming: it returns an empty result
+> for a read, and its `WITH CHECK` admits a row whose `tenant_id` is `''`, which every later
+> tenant-less request reads back. Rows are exposed only where the deployment departs from the reference
+> policy — a policy with an arm that admits the empty key (a "system" arm), or one that compares the
+> key without raising, or a scoped table that is not `FORCE`'d while the application connects as its
+> owner, or an application that connects as a role with `SUPERUSER` or `BYPASSRLS` (refused at boot
+> since 0.13 unless `persistence.rlsAllowBypassRole` is set).
 >
 > **What the kernel reports.** When a `permitAll()` route's request session was opened for a storage
 > context that declares no tenant — an absent or blank isolation key, the case in which the tenant key is
@@ -157,9 +164,14 @@ public interface PrincipalContext {
 
 ### 2. Context Binding with Scope Inheritance (Core)
 
-The `ScopedValue` bound here is automatically inherited by every child task forked within a
-`StructuredTaskScope`. There is no need to pass `PrincipalContext` as a method parameter — it flows
-invisibly into all subtasks for the lifetime of the scope.
+The `ScopedValue` bound here is visible to code running inside the binding scope on the thread that
+established it. A thread started with `Thread.ofVirtual()` or `Thread.ofPlatform()` inherits nothing,
+and a `StructuredTaskScope` fork (a preview API) inherits the bindings in effect when its scope opened.
+The kernel's own forks on the default line go through `eu.exeris.kernel.core.concurrent.StructuredScope`
+(ADR-066), whose subtasks see only the carrier passed to `open(ScopedValue.Carrier)`, and nothing after
+`openWithoutBindings()`. Within a request, the handler reads `PrincipalContext` without a method
+parameter; a handler that forks work through `StructuredScope` or a plain thread re-binds what that work
+needs.
 
 > **Citadel Contract:** `SecurityInterceptor.interceptPreAuthenticated(PrincipalContext, Runnable)` does
 > **not** accept a `StorageContext` parameter from the caller.
@@ -192,7 +204,34 @@ public final class SecurityInterceptor {
 
 ### 3. Fail-Closed Enforcement at Transport Edge
 
-> **Corrected 2026-09-08.** This note previously said `TokenValidator` does not exist as a class. It does, since 0.10: `eu.exeris.kernel.spi.security.identity.TokenValidator` is the SPI interface for the cryptographic-verification half of an `IdentityProvider` (`kid → key → algorithm → signature → issuer → audience → time`), implemented by Community's `CommunityOidcTokenValidator`. Fail-closed token rejection at the transport edge is still handled inside `SecurityInterceptor.intercept()`, which catches `SecurityAuthenticationException` (raised by `TokenValidator` and by the `SecurityProvider`/`IdentityProvider` chain above it), emits `SecurityContextMissingEvent` (JFR), and returns `false` without propagating the exception.
+`eu.exeris.kernel.spi.security.identity.TokenValidator` (since 0.10) is the SPI interface for the cryptographic-verification half of an `IdentityProvider` (`kid → key → algorithm → signature → issuer → audience → time`), implemented by Community's `CommunityOidcTokenValidator`, which then types the isolation claims. Fail-closed token rejection at the transport edge is handled inside `SecurityInterceptor.intercept()`: a `SecurityAuthenticationException` (raised by `TokenValidator` and by the `SecurityProvider`/`IdentityProvider` chain above it) emits `SecurityContextMissingEvent` (JFR) with reason `TOKEN_INVALID`, any other provider failure with `PROVIDER_ERROR`, and `intercept()` returns `false` without propagating the exception; an `Error` is recorded with `PROVIDER_ERROR`, then rethrown.
+
+### Signing algorithms (Community OIDC)
+
+The Community validator verifies two JWS algorithms: RS256 over an RSA key, and EdDSA over an Ed25519 key. The
+key decides the algorithm, never the token:
+
+- **The pin is fixed when the key is installed.** A JWKS entry is pinned to the `alg` it declares when it declares
+  one, and otherwise to what its `kty` and `crv` verify: an RSA key to RS256, an `OKP` key on `Ed25519` to EdDSA. A
+  header spelling the algorithm `Ed25519` is accepted as EdDSA.
+- **The header must agree before the signature is checked.** A token whose header names any algorithm other than its
+  key's is denied with `EX-SEC-2002` (reason `signature-invalid`) without reaching a verifier, so a token cannot move
+  a key onto an algorithm it was not published for: not RS512 or PS256 under an RSA key, not RS256 or HS256 under an
+  Ed25519 key, not EdDSA under an RSA key. A `crit` header parameter is denied on both algorithms.
+- **Some JWKS entries are not installed**, and the rest of the document still loads: an entry without a `kid`, with
+  a `use` other than `sig`, of a key type or curve this validator does not verify (EC, `oct`, `X25519`, `X448`,
+  `Ed448`), or declaring an `alg` that its key type does not verify (for example an RSA key declaring `RSA-OAEP`). A
+  `kid` that two installable entries publish is installed for neither; a skipped entry does not count. A supported key whose material is invalid, an
+  Ed25519 `x` that is not 32 bytes for one, fails the load as `jwks-key-invalid`; a document with no installed key
+  fails it as `jwks-no-usable-keys`.
+- **A map of `RSAPublicKey` values is RS256.** The constructors and the `initialKeys` of `overJwksEndpoint` take RSA
+  keys and pin each to RS256; an Ed25519 key reaches the validator through a JWKS document.
+- **Ed25519 is verified by the JDK's default provider**, as Core's licence verifier does. No optional Nimbus crypto
+  dependency is added.
+- **There is no allow-list of algorithms.** The set is what the key types above verify, not a configuration; ES\*, PS\*
+  and Ed448 are out of scope.
+
+The contract is ADR-040 Amendment A1; `AbstractSecurityProviderTck.PerKeyAlgorithmPinContract` pins it.
 
 ---
 
@@ -207,8 +246,9 @@ public final class SecurityInterceptor {
 ### Integration Tests
 
 - Token extraction and validation in the Community HTTP request processor (`CommunityHttpRequestProcessor` / `CommunityHttpRequestDispatcher`, layered over the native TCP carrier) — `SecurityInterceptor` is wired at the HTTP layer, not inside the raw TCP transport driver itself.
-- `ScopedValue` inheritance during parallel processing: verify `PrincipalContext` is accessible
-  in all subtasks forked within a `StructuredTaskScope` without explicit parameter passing.
+- `ScopedValue` propagation during parallel processing: verify `PrincipalContext` is accessible in a
+  `StructuredScope` subtask only when the opener passes the binding, accessible in a `StructuredTaskScope`
+  fork, and unbound in a plainly started thread.
 - RLS enforcement: DB queries are physically restricted to the bound tenant — verified by attempting
   cross-tenant access and asserting row count is zero.
 - Fail-Closed: invalid token at transport edge results in `EX-SEC-2002` and zero downstream calls.
@@ -216,19 +256,16 @@ public final class SecurityInterceptor {
 - **Which routes require what is declared by the application, not by the driver (since 0.11, ADR-061).** `CommunityHttpRequestDispatcher` no longer gates on a `/secure` path prefix with the literal scopes `security:read` / `security:write` compiled into it. It resolves the route through `HttpRoutePolicy` (bound at `HttpKernelProviders.HTTP_ROUTE_POLICY`) and hands the resulting `RouteRequirement` to `RouteAuthorizationEnforcer` in Core, so every transport shares one decision layer. With no policy bound the requirement is permit-all, which means an application that never declares a policy has **no edge authorization**. Read that as written: it is not "unchanged behaviour". Up to 0.10 the driver enforced `/secure` by convention, so an application that declares nothing does not keep what it had — it serves those routes to anonymous callers. Migrating means declaring the routes the prefix used to cover. A route that wants an identity established without demanding a scope declares `authenticated()`; `permitAll()` runs no interceptor, so its handler sees no `PrincipalContext` even when the caller presented a valid token. The unmatched route is the application's call: `HttpRoutePolicy.unmatched()` is fail-closed, and a policy returning `null` is treated as a defect and denies outright rather than being read as unmatched. **Since 0.12 (ADR-061 amendment A2) a policy may also abstain** — `RouteRequirement.abstain()` states that this policy does not describe the route, so `HttpRoutePolicy.firstDeclared` can fold an ordered list of policies (a generated one and a hand-written one, say) and take the first that answers. Abstention is not permit-all: an abstention that reaches `RouteAuthorizationEnforcer` unfolded is a defect and denies in the same shape `null` does, and the fold's all-abstain fallback is a required argument so the unmatched stance stays the application's single call. See [`http.md`](http.md) for the fold's ordering rule.
 - **The token grants what it claims, and nothing else (since 0.11).** `CommunityClaimsMapper` reads
   `scope` (OAuth 2.0 space-delimited, RFC 6749 §3.3), `scp` (the array form some identity providers
-  emit, unioned with the former) and `roles`. Until 0.11 it handed every authenticated principal a
-  hardcoded `security:read` and no roles regardless of the token — the deferral ADR-040 left open,
-  although that ADR already specifies this mapper as "sub → principalId, roles/scopes claims →
-  PrincipalContext". Two consequences: no route could tell one caller's permissions from another's,
-  and `security:write` was a scope **nothing could grant**, so any policy requiring it denied
-  everyone. There is deliberately **no fallback** — a token carrying no scope claim yields an empty
-  scope set and a route requiring any scope denies it. Roles now reach `PrincipalContext.roles()`,
-  so the `roleMask` behind `@RequiresRole` is no longer permanently `0L`.
-- **The mapping is substitutable (since 0.11).** `ClaimsMapper` is documented as the only application-customisable point in the identity pipeline, but `CommunityOidcIdentityProvider` constructed the default inline, so there was no way to supply one — an application needing a different subject or scope shape had to reimplement `IdentityProvider` outright. `withClaimsMapper(ClaimsMapper)` returns a provider using the supplied mapping, mirroring `enforcingSharedScope()`: a new provider rather than a mutation, because the mapping takes part in a security decision on every request and must be fixed at construction, never swapped behind a live provider. The two withers compose in either order. Declaring nothing still gets `CommunityClaimsMapper`.
+  emit, unioned with the former) and `roles`, as ADR-040 specifies the mapper: "sub → principalId,
+  roles/scopes claims → PrincipalContext". Two consequences: a route can tell one caller's permissions
+  from another's, and `security:write` is a scope a token can grant. There is deliberately **no
+  fallback** — a token carrying no scope claim yields an empty scope set and a route requiring any
+  scope denies it. Roles reach `PrincipalContext.roles()`, so the `roleMask` behind `@RequiresRole`
+  is populated from the token's `roles` claim whenever a generated registry is loaded.
+- **The mapping is substitutable (since 0.11).** `ClaimsMapper` is the only application-customisable point in the identity pipeline: an application needing a different subject or scope shape supplies one instead of reimplementing `IdentityProvider`. `withClaimsMapper(ClaimsMapper)` returns a provider using the supplied mapping, mirroring `enforcingSharedScope()`: a new provider rather than a mutation, because the mapping takes part in a security decision on every request and must be fixed at construction, never swapped behind a live provider. The two withers compose in either order. Declaring nothing still gets `CommunityClaimsMapper`.
 - **And it is substitutable from a booted kernel, not only from the API (since 0.11).** The wither
-  above was reachable only by constructing the provider yourself, which the ServiceLoader boot path
-  does not do — so until this landed, a deployment that registered a mapping had no way to make the
-  kernel use it, and the bullet above was true of the API and false of a running process.
+  above is reachable only by constructing the provider yourself, which the ServiceLoader boot path
+  does not do, so a deployment that registers a mapping relies on the resolver below.
   `CommunityClaimsMapperResolver` discovers a `ClaimsMapper` through `ServiceLoader` on the context
   class loader, and `CommunitySecurityProvider` assembles through it. **Exactly one may be
   registered**: `ClaimsMapper` declares no `priority()`, so two would leave classpath order deciding
@@ -236,7 +273,7 @@ public final class SecurityInterceptor {
   class names rather than resolved by accident. None registered keeps `CommunityClaimsMapper`, so an
   unconfigured deployment is unchanged.
 - **Substituting the mapper cannot widen isolation.** A custom mapper produces a `PrincipalContext` only. Tenant routing stays with `IdentityStorageMapping`, which every provider passes through (ADR-012 §4a), so a mapper cannot reach a tenant the token does not entitle it to — the customisable surface is identity shape, the non-negotiable surface is isolation deny semantics. This is also the seam a host-runtime binding uses: kernel scopes and a framework's own authority objects are **two mappings of the same verified token**, derived independently from the same claims, not one derived from the other. Neither is the source of truth for the other, and a kernel-side decision never consults framework authorities.
-- `KernelProviders.SECURITY_PROVIDER` is bound by `CommunitySecuritySubsystem` (since 0.11). Before that it was bound by nothing, so the interceptor was never constructed and the whole Citadel path was unreachable in a default boot.
+- `KernelProviders.SECURITY_PROVIDER` is bound by `CommunitySecuritySubsystem` (since 0.11); the interceptor is constructed from it, so the Citadel path is reachable in a default boot.
 
 ---
 
@@ -251,16 +288,12 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 | Token expires during **active execution**         | The security layer does NOT interrupt in-flight requests. The token was valid at admission — the Kernel honours admission-time decisions. |
 | Token is **revoked** (not merely expired)         | The Community `TokenValidator` checks signature, issuer, audience and expiry against the JWKS — it has no revocation-list or introspection check, so a self-contained JWT that is still cryptographically valid and unexpired is accepted regardless of revocation. Revocation therefore only takes effect once the token itself expires or a rotated JWKS makes its signature invalid. Operators requiring tighter revocation windows must issue short-lived tokens. |
 
-> **Corrected 2026-09-08 — "Saga Parking Security Contract" withdrawn, and the Vault rows above it
-> removed.** This section previously described a `PrincipalContext` captured at PAQS admission and
-> re-bound at `state.wake(event)`, plus a Vault-backed secret-rotation and boot-failure contract with
-> a `config.vault.timeoutMs` key. Neither exists in this codebase. There is no Vault integration
-> anywhere in the kernel, and no `config.vault.timeoutMs` property; `Config` is an L0 FOUNDATION
+> **There is no Vault integration anywhere in the kernel** and no `config.vault.timeoutMs` property,
+> so no secret-rotation or Vault boot-failure contract exists; `Config` is an L0 FOUNDATION
 > subsystem, so a boot-time Config failure is always `FAIL_FAST` — `SubsystemOrchestrator`'s `DEGRADE`
-> policy explicitly cannot apply to a FOUNDATION subsystem, which rules out the described
-> "last-known configuration" fallback for Config specifically.
+> policy cannot apply to a FOUNDATION subsystem.
 >
-> On the Saga side: a Saga (`RuntimeFlowInstance`) runs each schedule or wake on a **freshly created,
+> **A parked Saga holds no captured identity.** A Saga (`RuntimeFlowInstance`) runs each schedule or wake on a **freshly created,
 > bare virtual thread that inherits no `ScopedValue` binding at all** — not `PrincipalContext`, not
 > `StorageContext`. `CoreFlowRuntime` captures only an `EventEngine`, an `IdempotencyGuard` and a
 > `TimeSource` at schedule/wake time and holds them as fields for exactly this reason; there is no
@@ -269,7 +302,7 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 > `PrincipalContext`** unless the step's own business logic explicitly re-establishes one (e.g. via
 > `SecurityInterceptor.runAsSystem(...)`) — RLS enforcement and role checks that depend on the
 > ScopedValue slots do not apply inside a Saga step by default. A saga cancellation API on the
-> `FlowEngine` SPI is not implemented as of 0.12.
+> `FlowEngine` SPI is not implemented.
 
 ---
 
@@ -360,6 +393,13 @@ contract end-to-end.
    (reflective `Class.forName` by FQN, then `MethodHandle` binding of the five static accessors). The
    per-request accessors invoke the bound handles via `invokeExact` — no `Method.invoke`, allocation-free.
    When the class is absent the loader returns a fail-closed empty registry (Sprint 4 SEC-080).
+4. **Native-image reachability metadata (ADR-103 obligation 5):** When annotated methods exist,
+   `RequiresRoleProcessor` also emits reachability metadata at
+   `META-INF/native-image/eu.exeris.kernel.security.generated/role-check-registry/reachability-metadata.json`
+   (configurable via the `exeris.requiresrole.nativeImageMetadataDir` processor option, which must
+   start with `META-INF/native-image/`). The metadata registers `RoleCheckRegistry` and the five
+   static accessors reflectively bound by `GeneratedRoleRegistryLoader`; without it, a native image
+   loads the fail-closed empty registry (every `@RequiresRole` denies).
 
 ```text
 Hot-path check (RoleMatch.ANY): (principal.roleMask() & registry.requiredAny(methodId)) != 0L
@@ -419,7 +459,7 @@ under the Performance Contract.
 
 ## mTLS — Service-to-Service Authentication
 
-**Community tier:** TLS 1.3 server authentication (single-direction) is supported. mTLS (client certificate validation), SPIFFE/SVID identity, and TLS hot-reload without restart are not supported in the Community tier.
+**Community tier:** TLS server authentication (single-direction) is supported, with a TLS 1.3 floor by default and a TLS 1.2 floor when `crypto.tls.minVersion` is `TLSv1.2` ([config.md](config.md)). mTLS (client certificate validation), SPIFFE/SVID identity, and TLS hot-reload without restart are not supported in the Community tier.
 
 For mTLS requirements, operate an mTLS-terminating proxy (e.g., Envoy, Nginx) in front of the Exeris transport layer.
 
@@ -439,7 +479,7 @@ bound, under `exeris.transport.tls=false`, or with a provider that cannot verify
 builds no provider (`EX-NET-4004`). An `http` URI is plaintext by the application's request, for an
 identity provider on a trusted network or in development. The provider owns that engine and
 `close()` releases it. The carrier's `eu.exeris.kernel.transport.TransportTlsClientPosture` event
-records the outcome: `VERIFIED`, `PLAINTEXT_REQUIRED`, or the `REFUSED_*` reason.
+records the outcome: `VERIFIED`, a `PLAINTEXT_*` value (`PLAINTEXT_REQUIRED` where the owner asked for plaintext), or a `REFUSED_*` reason.
 
 ---
 
@@ -488,10 +528,10 @@ where the request is decoded, and each transport has to emit them at its own sit
 does not is not wrong on the wire and is dark in the recording, which is exactly the failure this
 section describes.
 
-**Until 0.12 two of these were advertised and never emitted.** The JFR event's own description named
-`NO_PROVIDER` and `TOKEN_MISSING`, and nothing produced either — so an operator filtering on
-`NO_PROVIDER` got an empty result and could reasonably conclude no deployment had ever been
-misconfigured. Both now emit at the site that knows the reason.
+**Every reason the event's description names is emitted.** `NO_PROVIDER` and `TOKEN_MISSING` are
+emitted by `CommunityHttpRequestDispatcher`, the site that knows them; the other three come from
+`SecurityInterceptor`. An operator filtering on `NO_PROVIDER` who gets an empty result can conclude
+that no deployment on an instrumented transport was misconfigured.
 
 ---
 
@@ -529,7 +569,7 @@ Community implementation: `Argon2idPasswordEncoder` (Bouncy Castle Argon2id, PHC
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.security.*`) is classified **preview** in the
-[SPI Stability Matrix](../stability-matrix.md): JWKS rotation in v0.9 Sprint 4 changes the contract,
-and the `IdentityProvider` SPI arrives in v0.10. See the matrix for the semver policy and TCK
-coverage status.
+This subsystem's SPI surface (`eu.exeris.kernel.spi.security.*`) and `eu.exeris.kernel.spi.security.identity.*` are **stable** from 0.13.0 in the
+[SPI Stability Matrix](../stability-matrix.md) ([ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md)).
+`SecretProvider` is outside the surface; adding that seam later is additive. See the matrix for the
+semver policy and TCK coverage status.

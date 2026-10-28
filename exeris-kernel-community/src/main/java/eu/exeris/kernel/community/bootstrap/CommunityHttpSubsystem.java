@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -20,7 +21,6 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
 /**
@@ -76,10 +76,8 @@ final class CommunityHttpSubsystem implements Subsystem {
             return;
         }
 
-        provider = ServiceLoader.load(HttpProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(HttpProvider::priority))
+        provider = BootstrapProviderSelector.loadHighestPriority(
+                        HttpProvider.class, Comparator.comparingInt(HttpProvider::priority))
                 .orElseThrow(() -> new IllegalStateException("No HttpProvider found on classpath"));
 
         if (httpConfig.mode() == HttpMode.SERVER || httpConfig.mode() == HttpMode.DUAL) {

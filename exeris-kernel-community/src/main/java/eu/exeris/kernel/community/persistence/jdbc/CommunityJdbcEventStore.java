@@ -4,6 +4,8 @@
  */
 package eu.exeris.kernel.community.persistence.jdbc;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
 import eu.exeris.kernel.spi.persistence.EventStore;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
@@ -13,6 +15,7 @@ import eu.exeris.kernel.spi.persistence.RowCursor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -29,8 +32,8 @@ public final class CommunityJdbcEventStore implements EventStore {
 
     private static final String SQL_APPEND =
             "INSERT INTO exeris_outbox " +
-                    "(id, aggregate_id, aggregate_type, event_type, payload, occurred_at) " +
-                    "VALUES ($1, $2, $3, $4, $5, $6)";
+                    "(id, aggregate_id, aggregate_type, event_type, payload, occurred_at, isolation_ordinal) " +
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7)";
 
     private static final String SQL_POLL_PENDING =
             "SELECT id, aggregate_id, aggregate_type, event_type, payload, occurred_at " +
@@ -59,6 +62,17 @@ public final class CommunityJdbcEventStore implements EventStore {
         this.connection = Objects.requireNonNull(connection, "connection must not be null");
     }
 
+    /**
+     * Appends {@code event} to the outbox, recording the isolation ordinal of the caller's bound
+     * storage context (ADR-101).
+     *
+     * <p>The ordinal is resolved on the calling thread, because only that thread has the context
+     * bound. An unbound context, an unscoped one, or a key the engine does not know writes {@code 0}.
+     * The append never refuses on account of the context: the outbox records the event, and the
+     * publish path is where isolation is enforced.
+     *
+     * @param event the outbox event to append (non-null)
+     */
     @Override
     public void append(OutboxEvent event) {
         ensureTransactionActive();
@@ -71,6 +85,7 @@ public final class CommunityJdbcEventStore implements EventStore {
                     .bindString(3, event.eventType())
                     .bindBytes(4, event.payload())
                     .bindLong(5, event.occurredAt())
+                    .bindInt(6, resolveIsolationOrdinal())
                     .executeUpdate();
         }
     }
@@ -117,6 +132,26 @@ public final class CommunityJdbcEventStore implements EventStore {
     private void ensureTransactionActive() {
         if (!connection.inTransaction()) {
             throw new IllegalStateException("EventStore operation requires an active transaction");
+        }
+    }
+
+    /**
+     * Resolves the bound isolation key to its ordinal, or {@code 0} when no scoped key can be
+     * resolved: no context or event engine bound, an empty key, a key the registry does not hold,
+     * or an engine that does not implement isolation scoping.
+     */
+    private static int resolveIsolationOrdinal() {
+        if (!KernelProviders.STORAGE_CONTEXT.isBound() || !KernelProviders.EVENT_ENGINE.isBound()) {
+            return 0;
+        }
+        Optional<String> key = KernelProviders.STORAGE_CONTEXT.get().isolationKey();
+        if (key.isEmpty()) {
+            return 0;
+        }
+        try {
+            return Math.max(0, KernelProviders.EVENT_ENGINE.get().isolationRegistry().ordinalOf(key.get()));
+        } catch (EventEngineException notScoped) {
+            return 0;
         }
     }
 }

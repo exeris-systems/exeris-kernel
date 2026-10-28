@@ -24,6 +24,387 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.12.x → 0.13 — the reference policy raises when the tenant key is absent (ADR-012 §4c.3)
+
+The kernel still publishes `exeris.tenant_id` as `''` for a context that declares no tenant and still
+does not refuse such a context. The reference policy now decides that a statement against a scoped table
+fails, where it used to return an empty result and let `WITH CHECK` admit a row owned by the empty tenant.
+
+**Who is affected.** A deployment that copied the reference policy from `RlsConnectionInterceptor` or
+`docs/subsystems/persistence.md`, and an out-of-repo binding of `AbstractSharedScopeAccessMatrixTck` or
+`PersistenceIsolationLeakTck`. The kernel ships no DDL, so nothing changes until you change the policy.
+
+1. **Install the function** once per database (the kernel does not):
+
+   ```sql
+   CREATE FUNCTION public.exeris_required_setting(key text) RETURNS text
+     LANGUAGE plpgsql STABLE AS $$
+   DECLARE v text := current_setting(key, true);
+   BEGIN
+     IF v IS NULL OR v = '' THEN
+       RAISE EXCEPTION 'session key % is not published', key USING ERRCODE = 'insufficient_privilege';
+     END IF;
+     RETURN v;
+   END $$;
+   ```
+
+2. **Alter the owner policy** on every scoped table with a `TEXT` tenant column. Where the table also
+   carries a shared-scope tag, keep the tag clause from the previous section:
+
+   ```sql
+   ALTER POLICY tenant_isolation ON table_name
+     USING (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id')))
+     WITH CHECK (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))
+                 AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
+   ```
+
+3. **On a `uuid` tenant column, drop the `NULLIF`.** A policy written as
+   `tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid` returns an empty result for
+   an absent tenant; the unguarded `tenant_id = current_setting('exeris.tenant_id', true)::uuid` raises
+   on `''` and is the conforming form. The shared-scope arm keeps its `NULLIF`.
+4. **Expect the new failure.** A statement against a scoped table from a context that declares no
+   tenant (`ImmutableStorageContext.GLOBAL`, a `permitAll()` route, a handler outside any request) fails
+   with `EX-PERS-5003` (SQLSTATE `42501`; `22P02` for the `uuid` cast) instead of returning an empty
+   result. A system path that touches only kernel-owned tables, which carry no policy, is unaffected.
+   A path that needs a scoped table without a tenant must bind a tenant context, or the deployment adds
+   an explicit arm for it, which is a deployment decision the reference does not make.
+5. **Bind the TCK.** `AbstractSharedScopeAccessMatrixTck` gains four cells and the template method
+   `tenantlessOwner()`, which names the owner-column value an unpublished key would match (`""` for a
+   text column); its default throws, so a binding that does not override it fails the write cell
+   instead of skipping it. `PersistenceIsolationLeakTck` gains the same read and write refusals through
+   its existing template methods and needs no new override.
+
+---
+
+## 0.12.x → 0.13 — the shared-scope reference policy pins the tag on write (ADR-012 §4c.2)
+
+The reference `tenant_isolation` policy used to pin only `tenant_id` on write, so an owner could insert or
+update its own row carrying any `shared_scope` value, including a scope its request does not hold. Its
+`WITH CHECK` now pins the tag too.
+
+**Who is affected.** A deployment that copied the reference policy from `RlsConnectionInterceptor` or
+`docs/subsystems/persistence.md`, and an out-of-repo binding of `AbstractSharedScopeAccessMatrixTck`.
+The kernel ships no DDL, so nothing changes until you change the policy.
+
+1. **Replace the `WITH CHECK` of the owner policy** on every table that carries a shared-scope column:
+
+   ```sql
+   ALTER POLICY tenant_isolation ON table_name
+     WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)
+                 AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
+   ```
+
+   On a `uuid` tag column, use this `WITH CHECK` instead. The `TEXT` clause above does not apply: it
+   casts `''` to `uuid` and `CREATE POLICY` / `ALTER POLICY` fails with SQLSTATE `22P02`
+   (`invalid input syntax for type uuid: ""`).
+
+   ```sql
+   ALTER POLICY tenant_isolation ON table_name
+     WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)::uuid
+                 AND (shared_scope IS NULL
+                      OR shared_scope = NULLIF(current_setting('exeris.shared_scope', true), '')::uuid));
+   ```
+
+2. **Expect the new failure.** An insert or update that tags a row with a scope the request does not
+   publish, or that leaves a scope tag in place from a request lacking that scope, fails with
+   `EX-PERS-5003` (SQLSTATE `42501`), on a `uuid` tag column as on `TEXT`. To stop sharing such a row, re-tag
+   it to `''` (or `NULL` where the column allows it; `NULL` only on `uuid`), which the policy admits.
+3. **Bind the matrix TCK.** An implementation of `AbstractSharedScopeAccessMatrixTck` overrides the new
+   `retagScope(StorageContext, String, String)`, which sets a row's tag (`null` for none) and returns the
+   affected row count or throws `PersistenceProviderException`. The default throws
+   `UnsupportedOperationException`, so a binding that does not fails the tag cells instead of skipping them.
+
+---
+
+## 0.12.x → 0.13 — RLS deployments must not connect as a role that bypasses RLS (ADR-012 §4c.4)
+
+A deployment with `persistence.rlsEnabled=true` on PostgreSQL stops booting with `EX-PERS-5009` when its
+database role is a superuser or has `BYPASSRLS`: such a role skips every policy, `FORCE`d ones included.
+Local quick-starts that connect as `postgres` are affected.
+
+1. **Preferred: connect as an ordinary role.** `ALTER ROLE app_user NOSUPERUSER NOBYPASSRLS;`, or create a
+   dedicated login role for the application and keep the owner role for migrations.
+2. **Or consent explicitly.** Set `persistence.rlsAllowBypassRole=true`. The engine boots, logs an ERROR line
+   and emits the JFR event `eu.exeris.kernel.persistence.RlsBypassRole` on every boot.
+3. **A dedicated datasource is checked at its first request**, not at boot, with the same code; the consent
+   key of the main engine applies to it.
+4. **A role probe that cannot run** (`pg_roles` unreadable) is refused with `EX-PERS-5001`, whatever the key says.
+5. **An Enterprise persistence binding that installs a row-level-security interceptor adopts the contract.**
+   `AbstractRlsBypassRoleCheckTck` is the suite.
+
+---
+
+## 0.12.x → 0.13 — `write` blocks at the outbound bound, `queueWrite` never waits, `TransportConfig` gains a component (ADR-007, ADR-071)
+
+A Community stream now honours the backpressure `TransportStream#write` documents. It holds at most
+`transport.maxQueuedWriteBytes` (default 262144) bytes its peer has not taken, and a `write` that finds
+the bound reached parks its caller until half of it has drained or the stream ends. It never parks a
+reactor thread.
+
+1. **Do not hold a lock across `write`.** A thread that parks in `write` while holding a monitor or a
+   lock orders every other sender behind a slow peer. Send through `queueWrite` instead, which never
+   waits for the peer, and bound the loans you have handed over and not yet seen released: the
+   transport releases a loan once its bytes have left the stream's queue, or when the stream ends, and
+   not before.
+2. **Expect `IllegalStateException` from a second blocking writer.** One thread at a time may park as a
+   stream's writer; a second that would park is refused. A write that throws after parking may already
+   have queued a prefix of its source.
+3. **Set the bound for your load.** `transport.maxQueuedWriteBytes` fills `TransportConfig#maxQueuedWriteBytes()`
+   at the transport subsystem and at the HTTP and WebSocket listeners. `-1` restores the unbounded queue;
+   `0` and other negatives stop the boot. With `transport.idleTimeoutMillis = 0` a writer to a peer that
+   never reads waits until the stream is closed or reset.
+4. **A `TransportConfig` built in code gets the default bound.** The nine-argument constructor that
+   `maxActiveStreams` introduced and the eight-argument one before it stay, and both apply 256 KiB, so
+   an embedded host is protected without a change and a host that wants the old behaviour passes `-1`
+   through the ten-argument canonical constructor. The record gained a component, so a record
+   deconstruction pattern over `TransportConfig` or reflection over `getRecordComponents()` sees ten
+   components; no gate reports that.
+5. **An implementor of `TransportStream` must make `queueWrite` non-waiting.** It returns once the loan
+   is in the stream's outbound order, apart from a wait for the connection to finish being established
+   (reported as `EX-NET-4003`), and releases the loan once its bytes have left the queue or the stream
+   ends. A transport that sends synchronously inside `queueWrite` fails
+   `AbstractTransportStreamTck.QueueWriteDoesNotWait`. A transport that bounds its outbound overrides
+   `supportsWriteBackpressure()` to opt into `WriteBackpressure`.
+
+---
+
+## 0.12.x → 0.13 — a send to a peer that ended the stream throws the closed-stream signal
+
+A `write` or `queueWrite` on a Community TCP or TLS stream whose peer reset or closed it, or ended the TLS
+session with `close_notify`, throws `TransportStreamClosedException` (`EX-NET-4008`) instead of
+`TransportException` (`EX-NET-4002`). It extends `IllegalStateException`, so a catch of that type keeps
+working; a catch of `TransportException` around a send does not see the peer's end any more.
+
+1. **Catch `TransportStreamClosedException` around sends.** Treat it as the end of the connection, as you
+   treat the same type from `read` and from a send on a closed stream. A send failure that is not the peer's
+   end is still `TransportException`.
+2. **Read the transport failure from the cause.** The `EX-NET-4002` failure is available through
+   `getCause()`, and its own cause is the I/O failure when there is one.
+3. **An Enterprise transport that binds `AbstractTransportStreamTck` adopts the contract.** A send after the
+   peer's `reset(long)` has to fail first with `EX-NET-4008`; the suite has a case for it.
+
+---
+
+## 0.12.x → 0.13 — entitlement-requiring artifacts: a class, a manifest in every environment, a developer licence (ADR-088, ADR-089)
+
+Five changes land together, and an artifact that registers an `EntitlementRequirement` is affected by all of them.
+
+1. **Implement `entitlementClass()`.** `EntitlementRequirement` has a new abstract method with no default. A
+   commercial artifact returns the commercial class; an enterprise-private artifact returns the other:
+
+   ```java
+   @Override
+   public EntitlementClass entitlementClass() {
+       return EntitlementClass.COMMERCIAL;   // or ENTERPRISE_PRIVATE
+   }
+   ```
+
+   The class applies to every identifier `requiredCapabilities()` returns. An artifact whose identifiers differ in
+   class registers one provider per class; one identifier under two classes fails the boot with `EX-LIC-0008`.
+2. **Give every environment a manifest.** A kernel with an `EntitlementRequirement` on its classpath and no
+   license manifest now stops with `EX-LIC-0005` in every environment, `development` and `staging` included. It
+   used to boot under the Community contract with a warning outside the production classes. A deployment that
+   has no manifest for a non-production environment obtains one: `production`, `staging` and the other
+   environments are covered by a licence signed by the production or the enterprise key, and local development
+   and CI by a developer licence. A kernel that carries no entitlement-requiring artifact is not affected.
+3. **The developer licence.** A developer licence is a manifest signed by the developer key. It is valid for
+   `development` only, for at most 30 days (`issuer.issuedAt` to `validUntil` plus the grace period), and runs
+   the kernel at no more than 50 requests per second and 10 connections: a request over the limit is answered
+   `429` with `Retry-After: 1`, a connection over it is closed at accept, and every HTTP response carries
+   `Exeris-License: development`. It cannot be used to run `staging` or `production`; the gate refuses a declared
+   environment outside the signing key's scope with `EX-LIC-0009`. Renew it before it expires: a developer
+   manifest past its window stops the boot with `EX-LIC-0003`. Bind it with `license.manifest.path`
+   (`-Dexeris.license.manifest.path` or `EXERIS_LICENSE_MANIFEST_PATH`) or place `license-manifest.json` in the
+   working directory.
+4. **Rename `requiresEntitlement()`.** `ExecutionEnvironment.requiresEntitlement()` is now `isProductionClass()`;
+   change the call and nothing else, it answers the same set of environments. It no longer decides whether a
+   manifest is needed.
+5. **A manifest signed by `exeris-root-2026-k1` no longer verifies.** The key is retired and resolves to
+   `EX-LIC-0002`; manifests are signed by the production, developer or enterprise key of the 2026 epoch.
+
+`IssuerKeyResolver.of(...)` gives every key the unrestricted enterprise scope. A test manifest that sets
+`enforcementRules.workloadEnvelope` to `HARD` and is verified through it now fails with `EX-LIC-0001`, because a
+key with no workload ceiling may not sign that rule; use `IssuerKeyResolver.ofScoped(...)` with a developer-scoped
+key for such a manifest.
+
+A test of your own that boots `KernelBootstrap` with an entitlement-requiring artifact on the classpath binds
+a developer licence, or stops running the real gate, or it fails with `EX-LIC-0005`. Code that calls
+`IssuerKeyResolver.resolve` as a lambda returns a `TrustedIssuerKey` now; `IssuerKeyResolver.of` is unchanged.
+
+---
+
+## 0.12.x → 0.13 — contract gate: one license manifest on the classpath (ADR-088)
+
+The contract gate reads `license-manifest.json` from the classpath when `license.manifest.path` is unbound
+and the working directory holds none. It used to take the first one in classpath order; more than one
+distinct manifest now fails the boot with `EX-LIC-0001`, the message listing every URL.
+
+1. **Find the second manifest.** The message names each URL; a dependency jar that bundles its own
+   `license-manifest.json` is the usual source.
+2. **Choose one.** Remove the stray file from the packaging, or bind `license.manifest.path`
+   (`-Dexeris.license.manifest.path` or `EXERIS_LICENSE_MANIFEST_PATH`) to the manifest to use. A bound path is
+   read alone, so the classpath is not consulted and the check does not apply.
+
+---
+
+## 0.12.x → 0.13 — a finished saga keeps its snapshot row (ADR-013 A1)
+
+With a snapshot store bound, the flow engine writes a `COMPLETED` snapshot over a finished saga's row
+whatever `terminalCatalogMaxSize` is, and never deletes it; 0.12 deleted the row on completion when the
+catalog was unbounded, the default. A `Start` redelivered after a restart is now absorbed while that row
+exists, where it used to run the saga again.
+
+**What to change.** Nothing breaks, but the table grows. `exeris_saga_state` gains one row per finished
+saga, kept until you delete it, so a deployment on `JdbcFlowSnapshotStore` needs a purge job:
+
+```sql
+DELETE FROM exeris_saga_state
+ WHERE state IN ('COMPLETED', 'FAILED_ROLLEDBACK') AND last_update < ?
+```
+
+`idx_exeris_saga_state_parked (state, last_update)` serves it, and `last_update` is the completion wall
+time.
+
+**Retention rule.** Keep terminal rows at least as long as broker retention plus the worst consumer lag
+of anything that can send a `Start`. Deleting a row lets that instance id run again, so a purge shorter
+than that window reopens the redelivery the row closes.
+
+**Heap store.** The default `CommunityFlowSnapshotStore` holds one snapshot per finished saga for the life
+of the process, so a long-running process on it grows within that process. Bind a durable store, or
+restart the process, to bound it.
+
+A custom `FlowSnapshotStore` has to accept and return a snapshot in any `FlowState`, and nothing in the
+engine calls its `delete` any more. Out-of-tree `AbstractSagaRecoveryTck` bindings are described in the
+stability matrix note on `spi.flow`.
+
+---
+
+## 0.12.x → 0.13 — embedding hosts: disable the kernel's shutdown hook (ADR-007 §5)
+
+`KernelBootstrap.boot()` now registers one JVM shutdown hook that runs `KernelBootstrap.shutdown()`, so a
+standalone process stops its subsystems in order on `SIGTERM`. A host that embeds the kernel and already
+stops it from its own lifecycle must opt out, or one `SIGTERM` starts two stop sequences.
+
+1. **Disable the hook if your host owns the lifecycle.** In the release that adopts 0.13:
+
+   ```java
+   KernelBootstrap.builder()
+           .registerShutdownHook(false)
+           // ...
+           .build();
+   ```
+2. **Stop the kernel with the typed call.** Call `KernelBootstrap.shutdown()` from your lifecycle in place of
+   a reflective lookup or `close()`. It is idempotent and returns after the stop completed.
+3. **Interrupt a stuck boot thread before `shutdown()`.** Called while `boot()` is still initializing or
+   starting subsystems, `shutdown()` records the request and waits for the boot to unwind; it does not
+   interrupt the boot thread. A host that aborts a startup that hangs interrupts (and optionally joins) its
+   boot thread first, then calls `shutdown()`.
+4. **`Subsystem.stop()` implementers.** `stop()` may run on a thread with none of the kernel's `ScopedValue`
+   bindings (the hook's thread or your lifecycle thread), so it acts on references captured in
+   `initialize()` or `start()` and does not read `KernelProviders`. It must not call `System.exit`,
+   `Runtime.exit` or `Runtime.halt`.
+5. **One boot at a time.** A second `boot()` on a `KernelBootstrap` instance that is still booting throws
+   `IllegalStateException`. Booting again after `boot()` returned is unchanged.
+
+---
+
+## 0.12.x → 0.13 — events: a tenant publish needs a registered key (ADR-101)
+
+Publishing under a tenant's `StorageContext` now stamps the event with that tenant's isolation ordinal,
+and an ordinal exists only for a key the engine has been told about. This is the step for an application
+that publishes under a tenant context.
+
+1. **Register every tenant key before the first publish under its context.** The engine's registry is
+   reached through `EventEngine.isolationRegistry()`, and the ordinal is one you choose and keep for the
+   life of the deployment:
+
+   ```java
+   EventEngine engine = KernelProviders.EVENT_ENGINE.get();
+   engine.isolationRegistry().register(IsolationKeySpec.of("tenant-a", 101));
+   ```
+
+   Use the same key-to-ordinal mapping on every node, and do not reuse an ordinal for a different key.
+   Registration is idempotent for an identical spec, and a conflict raises `EX-EVENT-6012`.
+2. **Expect `EX-EVENT-6009` for an unregistered key.** A publish under a bound key that is not registered
+   is refused with `EX-EVENT-6009`, reason `"unregistered-isolation-key"`. Before 0.13 it was accepted.
+   This is the behaviour, with no escape hatch: an accepted publish under a key the engine does not know
+   would be delivered to unscoped subscribers only, which is the fail-open reading this change removes.
+   Code that publishes from a request or job bound to a tenant (for example, an authenticated request
+   handled by `SecurityInterceptor`, or a job restored with `CapturedContext`) sees the refusal on its
+   first such publish, so register the keys before the first request is served.
+3. **Scoped subscribers.** A subscriber serving one tenant calls `EventBus.subscribeScoped`, made under
+   that tenant's bound context. `EventBus.subscribe` is unchanged and still receives every event. The
+   scoped call refuses with `EX-EVENT-6011` when no key is bound, the bound key is empty, or the key is not
+   registered.
+4. **Schema.** Migration `V0.13.0__add_event_isolation_ordinal.sql` adds `isolation_ordinal INT NOT NULL
+   DEFAULT 0` to `exeris_outbox` and `exeris_event_log` through the schema ledger. Existing rows read as
+   unscoped. No consumer edit is needed.
+
+---
+
+## 0.12.x → 0.13 — HTTP/2 header values reach handlers one char per octet (ADR-071)
+
+The HTTP/2 decoder hands each header name and value to the handler one char per octet received
+(ISO-8859-1), as the HTTP/1.1 parser always has. Before, HTTP/2 decoded them as UTF-8 and replaced an
+invalid sequence with U+FFFD, so the same request reached a handler as different Strings over HTTP/1.1
+and HTTP/2. Names are lowercase ASCII tokens, so only values outside ASCII are affected.
+
+1. **Find handlers that read non-ASCII header values.** A value sent as UTF-8 `é` (`C3 A9`) arrives as
+   `Ã©`. If the handler expects UTF-8 text, decode the octets:
+
+   ```java
+   String text = new String(value.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+   ```
+
+2. **Nothing changes for ASCII values**, which are what HTTP field values carry in practice; and a value
+   carrying obs-text octets now reaches the handler unchanged instead of as U+FFFD.
+
+## 0.12.x → 0.13 — the Community OIDC validator reads each JWKS key's `use` and `alg` (ADR-040 A1)
+
+The Community validator installs a JWKS key only when it can verify tokens with it: `use` absent or
+`sig`, an RSA key whose `alg` is absent or `RS256`, or an Ed25519 `OKP` key whose `alg` is absent,
+`EdDSA` or `Ed25519`. A `kid` that two such keys publish is installed for neither. Before, `use` and
+`alg` were ignored, so a key published for encryption, or under another algorithm, verified RS256
+tokens.
+
+1. **Check the issuer's JWKS.** Fetch the document and confirm that the key that signs your tokens
+   has `use` absent or `sig`, an `alg` absent or matching its type, and a `kid` no other signing key
+   shares. A token signed by a key that fails this is refused with `EX-SEC-2002`.
+2. **Ed25519 keys are now honoured.** A JWKS that already publishes an Ed25519 key has tokens signed
+   by it accepted. The key comes from the issuer you configured.
+
+## 0.12.x → 0.13 — graph: multi-hop paths, explicit shortest path and refused traversals (ADR-102)
+
+`…spi.graph` is `preview`, and 0.13 changes its shape for implementers and its behaviour for callers.
+This section covers both.
+
+1. **An out-of-tree `GraphSession` implements three methods.** `traversePath(GraphPathSpec)` returns the
+   node ids a multi-hop path reaches (`List<UUID>`). `streamPathJson(GraphPathSpec)` returns the same
+   result as a JSON `LoanedBuffer`. `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract. The
+   two-argument `findShortestPath(UUID, UUID)` is a default that throws `GraphQueryException`
+   (`EX-GRPH-5002`, query type `SHORTEST_PATH`), so an implementation can no longer inherit a
+   descriptor-less shortest path.
+2. **An out-of-tree `GraphDialect` implements `buildPathQuery(List<GraphHop>)`.** `buildMatchQuery` and
+   `buildMultiHopQuery` are expressed through it on both Community dialects. Their result column is `id`,
+   where it was `target_id`, and the SQL binds the start node through `CAST($1 AS uuid)` in a leading CTE.
+   A caller that reads the column of a transpiled query by name moves to `id`.
+3. **Callers of shortest path pass a descriptor.** Replace `findShortestPath(source, target)` with
+   `findShortestPath(edge, source, target)`. The two-argument form is refused, and deprecated for removal.
+4. **Traversals honour the descriptor's direction.** `traverseBreadthFirst` and `streamBfsJson` with an
+   `INCOMING`, `BOTH` or bidirectional descriptor return a different set than in 0.12. A caller that
+   relied on the 0.12 result uses an explicit `OUTGOING` descriptor.
+5. **Expect two new refusals on Community.**
+   - A traversal whose path bound (`Σ maxRepeat`, or `maxDepth` for breadth-first) exceeds 64 is refused
+     before any I/O with `EX-GRPH-5002`, query type `PATH_LIMIT`.
+   - A traversal under a tenant context the backend cannot scope is refused before any I/O:
+     - SQL/PGQ serves `SEPARATED_SCHEMA` and `DEDICATED`, and refuses `SHARED`, or any tenant context
+       when no `PersistenceEngine` is bound;
+     - Cypher refuses every tenant context;
+     - system-scope callers are unaffected.
+6. **TCK bindings.** A binding of `AbstractGraphSessionLiveContractTck` implements
+   `scopableStrategies()` and `tenantContexts(IsolationStrategy)`, and an implementation that cannot scope
+   a traversal refuses it.
+
 ## 0.11.x → 0.12.x
 
 Where each `### Breaking` entry of [`CHANGELOG.md`](CHANGELOG.md#0120--2026-09-30) is handled:

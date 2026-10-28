@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-10-28
 ---
 
 # Kernel Subsystem: Graph (L2 Data Synthesis)
@@ -27,9 +27,9 @@ The **Graph subsystem** is a semantic synthesis engine. It transforms structured
 traversable relationships using a unified **MATCH DSL**, bridging the gap between relational storage and graph
 logic.
 
-- **The Allocation Gap Mitigation:** Standard Bolt/JDBC drivers measure 17.4–20.8x allocation-to-data ratio in
-  practice, settling into one of two allocation regimes on the Community Bolt path (see §2). Exeris Community
-  supports these drivers against a documented `< 20x` contract, met in the faster regime.
+- **The Allocation Gap Mitigation:** On the Community Neo4j Bolt path the measured allocation-to-data ratio is
+  17.5–20.8x across two per-JVM regimes, against a `< 23x` contract that `GraphChurnRatioTck` enforces
+  (see §2). The SQL/PGQ path is not measured.
 - **Unified MATCH DSL:** A protocol-blind query surface — the same `GraphSession` calls render to plain SQL
   (PostgreSQL, via recursive CTEs) or Cypher (Neo4j / Memgraph / FalkorDB) depending on the active
   `GraphDialect` — the same business code works on both. A separate Core class, `MatchDslTranspiler`,
@@ -38,6 +38,7 @@ logic.
 - **No-Arena Enforcement:** All graph-related native memory is carved exclusively from L0 `MemoryAllocator` slabs.
   Drivers are prohibited from opening independent FFM `Arena` instances, ensuring full visibility to
   `GlobalMemoryArbiter` and JFR Telemetry.
+- **Slots:** the `ScopedValue` slots are `GraphKernelProviders.GRAPH_PROVIDER` and `GraphKernelProviders.GRAPH_ENGINE`, read through `GraphKernelProviders.graphEngine()`; the `KernelProviders` names of the same slots are deprecated for removal in the first 1.0 release candidate (ADR-100 §3).
 
 ---
 
@@ -49,7 +50,7 @@ We use the **MATCH** pattern to express relationship intent. The Kernel is respo
 efficient way to execute this intent on the active driver — business code never changes when the driver is
 swapped.
 
-> **Correction — not native GDS.** BFS traversal is pushed down as a query on both backends (SQL/PGQ recursive
+> **Not native GDS.** BFS traversal is pushed down as a query on both backends (SQL/PGQ recursive
 > CTE, Cypher variable-length `MATCH`), but shortest-path is not: on Community, `findShortestPath` always runs
 > the same in-JVM Dijkstra (`CommunityPathFinder`, a heap `ArrayList`/`PriorityQueue` implementation) after
 > loading the relevant adjacency, for **both** the PostgreSQL and the Neo4j backend — it does not call Neo4j's
@@ -61,41 +62,48 @@ swapped.
 
 ### 2. Metric Transparency (Churn-to-Data Ratio)
 
-Exeris does not mask the cost of its abstraction. In TCK mode, every driver reports a **Churn-to-Data Ratio**:
-bytes allocated per byte of graph data transferred. `GraphChurnRatioTck` measures the ratio over a fan-out
-traversal. The tier contract is Community
-`< 20x`, Enterprise `< 1x`; what the TCK *fails the build on* is a regression bound at or above it, for the
-reason set out below.
+Exeris does not mask the cost of its abstraction. A driver's **Churn-to-Data Ratio** is the bytes it
+allocates per byte of graph data it returns, and `GraphChurnRatioTck` measures it over a 1-hop
+traversal returning 500 ids. The figure the TCK fails the build on is the published contract:
+Community `< 23x`, Enterprise `< 1x`.
 
 Two properties of that measurement follow from what the ratio is *about*, and both are load-bearing:
 
 - **The numerator counts driver allocation.** The documented cost is the driver's, not the kernel's, so the
-  measurement uses the exact per-thread allocated-bytes delta, not a JFR event
-  stream filtered to `eu.exeris.*` types. On the Community Bolt path the kernel's own share is ~1% of the total;
-  a filtered numerator would exclude the thing being measured, and would report a perfect `0.0` for a driver that
-  allocated gigabytes outside the `eu.exeris` namespace.
-- **The traversal must return a result set.** The ratio is per byte of data transferred, so the workload has to
-  carry enough data for the fixed per-round-trip cost to amortise. A 1-hop traversal returning a single id costs
-  ~11.7 KB of allocation for 16 bytes of payload — a ratio in the 700s that measures session and protocol setup
-  rather than churn per data byte.
+  measurement uses the exact per-thread allocated-bytes delta, not a JFR event stream filtered to
+  `eu.exeris.*` types. On the Community Bolt path the kernel's own share is ~1% of the total; a filtered
+  numerator would exclude the thing being measured.
+- **The traversal must return a result set.** The ratio is per byte of data returned, so the workload has to
+  carry enough data for the fixed per-round-trip cost to amortise. A 1-hop traversal returning a single id
+  costs ~11.7 KB of allocation for 16 bytes of payload, a ratio in the 700s that measures session and
+  protocol setup rather than churn per data byte.
 
-**Measured, and it does not land on one number.** On the Community Bolt path the ratio settles into one of two
-regimes, chosen once per JVM and then held for the life of the process (three JVMs × 4 200 traversals each, no
-window mixing):
+**Measured: two regimes, one bound.** On the Community Neo4j Bolt path (`CommunityGraphChurnRatioTckIT`)
+the ratio settles into one of two allocation regimes, chosen once per JVM and held for the life of the
+process:
 
-| Regime | Bytes / traversal | Ratio | Against the `< 20x` contract |
-|:---|---:|---:|:---|
-| fast | ~142 000 | 17.4 – 18.0x | inside |
-| slow | ~166 000 | 20.5 – 20.8x | **breached** |
+| Regime | Bytes / traversal | Ratio |
+|:---|---:|---:|
+| fast | ~142 000 | 17.5 – 17.9x |
+| slow | ~166 500 | 20.8x |
 
-Roughly two runs in seven take the slow regime (4 of 14 observed processes). The `< 20x` figure above is
-therefore the contract, not a description of every run; `GraphChurnRatioTck` enforces a higher *regression* bound so that a pre-existing regime
-choice does not read as a regression, and reports the contract alongside each measurement. Closing the gap — or
-deciding which figure is the honest one to publish — is tracked in `docs/ROADMAP.md`.
+1 of 16 fresh processes took the slow regime. The Community contract covers both: a process in either
+regime meets `< 23x`, and the published figure is the observed range, 17.5–20.8x, not the fast regime
+alone. The bound sits about 10% above the slow-regime ceiling, and a change adding 128 bytes per
+returned row breaches it from either regime. Kernel-owned allocation is ~1% of the total, so the split
+lies in the driver path or in how the JIT compiles it; its cause is not established.
 
-A cold process does not meet the contract at all: allocation runs 18.0–18.3x over the first hundred traversals
-and 19.9–20.6x over the second, a JIT recompilation transient, before settling from traversal ~200 onward. The
-published ratio is a steady-state figure.
+What the figure covers:
+
+- **Steady state.** A fresh JVM allocates 18.0–18.3x over its first hundred traversals and 19.9–20.6x over
+  the second, a JIT recompilation transient, before settling. The transient stays inside the bound; the
+  published range is the settled one, and the TCK discards 300 warm-up traversals before measuring.
+- **The Bolt path only.** The SQL/PGQ (JDBC) path has no churn binding and no published figure. A PGQ
+  binding has to run its traversals inside a caller-supplied persistence scope, which
+  `GraphChurnRatioTck` does not offer, and Exeris publishes no churn figure for a path a binding does
+  not measure.
+- **Semantic bytes.** The denominator counts 16 bytes per returned UUID, not the 36-character string the
+  wire carries, which makes the ratio larger and the bound stricter than counting transferred bytes.
 
 ### 3. No-Arena Policy (L0 Enforcement at L2)
 
@@ -111,14 +119,10 @@ segments exclusively through the `MemoryAllocator` SPI. This ensures that graph-
 Built-in `GraphSyncService` orchestration ensures that relational state changes in L1 are atomically reflected
 in L2 graph structure — or rolled back together on failure (`EX-GRPH-5003`).
 
-> **Known gap in the node-delete path (#468):** `GraphSyncService.syncNodeDelete` reaches L2 through
-> `GraphSession.deleteNode`, and that method's two Community backends do not agree on what "reflected"
-> means. The Cypher backend issues `DETACH DELETE`, which removes the node and every edge that touched
-> it. The SQL/PGQ backend issues a bare `DELETE FROM graph_nodes …` — the edge tables have no foreign
-> key back to `graph_nodes` (see `CommunityGraphDialect.buildCreateEdgeTable`) and nothing else in the
-> write path cleans them up, so edge rows referencing the deleted node survive and a later traversal
-> still walks them. Which behaviour a caller gets depends on which backend is bound; the SQL/PGQ path
-> does not honour the "and all connected edges" half of `GraphSession#deleteNode`'s contract.
+Both the Cypher and SQL/PGQ backends remove the node and its connected edges on `deleteNode`. On
+SQL/PGQ, connected edges in registered edge tables whose descriptor names the deleted node's label on
+the source or target side are removed; a registered table that does not exist in the current scope
+fails the call and nothing is deleted.
 
 ---
 
@@ -138,7 +142,7 @@ in L2 graph structure — or rolled back together on failure (`EX-GRPH-5003`).
    (`buildMatchQuery`, `buildMultiHopQuery`) themselves (see Core Philosophy §1 above).
 2. Manage the `GraphSyncService` for cross-subsystem consistency.
 3. Execute shortest-path algorithms (Dijkstra, Yen's k-shortest) via the pluggable `PathFinder` SPI.
-   BFS traversal (`traverseBreadthFirst`, `streamBfsJson`) does not go through `PathFinder` — it is
+   BFS traversal (`traverseBreadthFirst`, `streamBfsJson`) is the single-hop case of `traversePath`,
    pushed down as one dialect-generated query per call (see the Cycle Detection section below).
 4. Enforce the No-Arena Policy by verifying all driver allocations go through `MemoryAllocator`.
 
@@ -154,21 +158,13 @@ in L2 graph structure — or rolled back together on failure (`EX-GRPH-5003`).
 | `EX-GRPH-5002` | Query Execution Failure   | `[0] String queryType, [1] String detail`                            |
 | `EX-GRPH-5003` | Dual-Write Sync Failure   | `[0] String edgeType, [1] String detail`                             |
 | `EX-GRPH-5004` | Path Not Found            | `[0] long sourceMost, [1] long sourceLeast, [2] long targetMost, [3] long targetLeast` |
-| `EX-GRPH-5005` | Excessive Allocation      | `[0] String driverName, [1] long bytesAllocated, [2] long bytesXfer` — Thrown as: `ExcessiveAllocationException` (`eu.exeris.kernel.spi.exceptions.graph.ExcessiveAllocationException`) |
+| `EX-GRPH-5005` | Excessive Allocation      | `[0] String driverName, [1] long bytesAllocated, [2] long bytesXfer` — Reserved: declared as `ExcessiveAllocationException` (`eu.exeris.kernel.spi.exceptions.graph.ExcessiveAllocationException`); nothing throws it |
 
-**`EX-GRPH-5005` status:** `ExcessiveAllocationException` is declared in the SPI and its `rawArgs` layout is
-covered by `GraphExceptionLayoutTest`, but no kernel code path throws it — a driver self-reporting a breach at
-runtime would be its first caller. TCK enforcement of the ratio does not go through it: `GraphChurnRatioTck`
-fails the build with an assertion carrying the measured ratio, the allocated bytes and the transferred bytes.
-
-**`GraphSession#findShortestPath(source, target)` status (#466):** the two-argument overload — the one the
-SPI documents as returning "path result (may indicate not found)" — never searches for a distinct pair on the
-Community binding. `CommunityGraphSession` returns a zero-hop path only when `source.equals(target)`, and
-`PathResult.notFound(...)` for every other pair, unconditionally; it has no edge descriptor to load adjacency
-from. The capability exists — `findShortestPath(GraphEdgeDescriptor, source, target)` loads adjacency for the
-given relationship type into a `CommunityPathFinder` and runs Dijkstra correctly — but the two-argument entry
-point cannot reach it. A caller holding two connected node IDs and calling the SPI method as documented gets
-"not found" every time.
+**`EX-GRPH-5005` status: reserved.** `ExcessiveAllocationException` is declared in the stable `spi.exceptions`
+surface and its `rawArgs` layout is covered by `GraphExceptionLayoutTest`, but no kernel code path throws it.
+It is kept for a driver that reports a churn-budget breach at runtime. The churn contract itself is enforced at
+build time by `GraphChurnRatioTck`, which fails with an assertion carrying the measured ratio, the allocated
+bytes and the transferred bytes.
 
 ---
 
@@ -199,14 +195,13 @@ try (GraphSession session = engine.openSession()) {
 }
 ```
 
-> **Note:** The fluent DSL (`GraphQueryBuilder`) described in earlier documentation does not exist in the current SPI. The current traversal API uses `GraphTraversal` record directly.
+> **Note:** The SPI has no fluent `GraphQueryBuilder`; the traversal API takes the `GraphTraversal` record (or a `GraphPathSpec`) directly.
 
 ### 2. GraphDialect Extension Point (SPI)
 
-> **Corrected:** earlier documentation showed a `transpile(GraphQuery)` / `supportsNativePathAlgorithms()`
-> shape. Neither method, nor a `GraphQuery` type, exists anywhere in this tree. The real contract below is
-> transcribed from `eu.exeris.kernel.spi.graph.GraphDialect` (abridged; see the source for the DDL-building
-> methods and full Javadoc).
+> The contract below is transcribed from `eu.exeris.kernel.spi.graph.GraphDialect` (abridged; see the source
+> for the full Javadoc). There is no `transpile(GraphQuery)` method, no `supportsNativePathAlgorithms()`, and
+> no `GraphQuery` type.
 
 ```java
 package eu.exeris.kernel.spi.graph;
@@ -214,6 +209,7 @@ package eu.exeris.kernel.spi.graph;
 public interface GraphDialect {
     String buildMatchQuery(GraphEdgeDescriptor edge);
     String buildMultiHopQuery(GraphEdgeDescriptor edge, int minHops, int maxHops);
+    String buildPathQuery(List<GraphHop> hops);
     String buildShortestPathQuery(GraphEdgeDescriptor edge, int maxDepth);
     String buildCreatePropertyGraph(List<GraphNodeDescriptor> nodes, List<GraphEdgeDescriptor> edges);
     String buildCreateEdgeTable(GraphEdgeDescriptor edge);
@@ -224,13 +220,101 @@ public interface GraphDialect {
 
 ---
 
+## Multi-Hop Traversal (`GraphPathSpec`)
+
+The multi-hop traversal primitive executes an ordered path specification as one statement / query,
+honouring direction and returning the terminal frontier with walk semantics.
+
+### Semantics
+
+- **Path specification:** `GraphPathSpec(startNodeId, hops)` with ordered `GraphHop` steps. Hop *i* is
+  `GraphHop(edge, minRepeat, maxRepeat)`, with `1 <= minRepeat <= maxRepeat`.
+- **Direction:** Evaluated via effective direction `edge.bidirectional() ? BOTH : edge.direction()`:
+  - `OUTGOING`: step from `u` reaches `t` where `s = u`.
+  - `INCOMING`: step from `u` reaches `s` where `t = u`.
+  - `BOTH`: step from `u` reaches `t` where `s = u`, and `s` where `t = u`.
+- **Walk semantics:** Edges and nodes may repeat within and across hops. Cycles terminate by step bounds.
+- **Terminal frontier:** Result is the set of nodes reached at the end of the last hop (not the union of
+  intermediate frontiers), returned as `List<UUID>` without duplicates in unspecified order.
+- **Empty hop:** A hop that matches nothing yields an empty result (`[]`), never an error.
+- **Single-hop equivalence:** `traverseBreadthFirst(GraphTraversal(start, edge, d, ...))` is equivalent
+  to `traversePath(new GraphPathSpec(start, List.of(new GraphHop(edge, 1, d))))`. Both honour direction.
+- **Streaming:** `streamPathJson` returns one caller-owned `LoanedBuffer` holding a UTF-8 JSON array of
+  quoted UUID strings (`["...","..."]`, `[]` when empty). The session never closes it.
+- **Community limit:** Community bounds paths to `Σ maxRepeat <= 64` (and `maxDepth <= 64` for BFS). Exceeding
+  the bound is refused before any I/O with `GraphQueryException` (`EX-GRPH-5002`, `queryType = "PATH_LIMIT"`).
+
+### Generated Query Shapes
+
+For hops `[GraphHop.of(PURCHASED), new GraphHop(SIMILAR_TO, 1, 2)]`:
+
+**PostgreSQL (SQL/PGQ):**
+```sql
+WITH RECURSIVE
+f0 (id) AS (SELECT CAST($1 AS uuid)),
+f1 (id) AS (SELECT DISTINCT e.target_id AS id FROM f0 p INNER JOIN tck_purchased_edges e ON e.source_id = p.id),
+h2 (id, depth) AS (SELECT p.id, 0 FROM f1 p UNION SELECT e.target_id, h.depth + 1 FROM h2 h INNER JOIN tck_similar_to_edges e ON e.source_id = h.id WHERE h.depth < 2),
+f2 (id) AS (SELECT DISTINCT id FROM h2 WHERE depth >= 1)
+SELECT id FROM f2
+```
+
+**Neo4j (Cypher):**
+```cypher
+MATCH (source) WHERE source.id = $sourceId
+WITH DISTINCT source
+MATCH (source)-[:PURCHASED]->(n1)
+WITH DISTINCT n1
+MATCH (n1)-[:SIMILAR_TO]->(n2)
+WITH DISTINCT n2
+MATCH (n2)-[:SIMILAR_TO*0..1]->(target)
+WITH DISTINCT target
+RETURN DISTINCT target.id AS id
+```
+
+### Java Example
+
+```java
+GraphPathSpec path = new GraphPathSpec(userId, List.of(
+        GraphHop.of(PURCHASED),
+        new GraphHop(SIMILAR_TO, 1, 2)
+));
+List<UUID> recommendations = session.traversePath(path);
+```
+
+### Tenant Scoping
+
+Graph traversals execute under the ambient `StorageContext` (`KernelProviders.storageContextOrSystem()`).
+A context is system-scope if its strategy is `SHARED` with an empty isolation key (such as `ImmutableStorageContext.GLOBAL`).
+A non-system context whose isolation strategy the backend cannot scope is refused before any database I/O with
+`GraphQueryException` (`EX-GRPH-5002`, `queryType = "ISOLATION_SCOPE"`).
+
+| Binding | `SHARED` (tenant) | `SEPARATED_SCHEMA` | `DEDICATED` | system context |
+|:---|:---:|:---:|:---:|:---:|
+| SQL/PGQ | refused | scoped (`search_path`) | scoped (pool routing) | served |
+| Cypher | refused | refused | refused | served |
+
+A tenant context under SQL/PGQ is also refused when no `PersistenceEngine` is bound in the calling scope
+(`KernelProviders.PERSISTENCE_ENGINE`): only the engine opens a connection under the ambient context,
+while the request-session fallback serves a pooled connection that no interceptor has scoped.
+System-scope calls are still served through that fallback.
+
+Precondition for `SEPARATED_SCHEMA`: the connection's `search_path` is `<schema>, public`, so a graph table
+that is missing from the tenant schema resolves to the table in `public`, the system graph, without an error.
+Scoping holds only when every registered node and edge table exists in the tenant schema.
+`registerNodes` and `registerEdges` create tables only in the scope they run under, so a deployment creates
+them under each tenant context or provisions them per tenant. `DEDICATED` fails with an error on a missing table.
+
+Guarded: the four traversal methods (`traverseBreadthFirst`, `streamBfsJson`, `traversePath`, `streamPathJson`). Not guarded: writes, `getRootNode`, `findShortestPath`.
+
+---
+
 ## Driver Roadmap and Production Readiness
 
 | Driver                          | Tier        | Status      | Production Ready? | Notes                                                    |
 |:--------------------------------|:------------|:-----------:|:-----------------:|:---------------------------------------------------------|
-| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible. `deleteNode` does not remove connected edges (#468, dangling rows — see §4 above); `findShortestPath(source, target)` never searches a distinct pair (#466, shared with the Bolt backends below). No test in this tree runs the SQL/PGQ dialect against a live PostgreSQL instance — the only integration coverage (`CommunityGraphBackendParityIT`) exercises Cypher against Neo4j and checks SQL/PGQ only for non-blank generated query text. |
-| Neo4j Bolt (Java driver)        | Community   | ✅ TRL-3    | ✅ Yes             | Standard Bolt driver, heap allocating (17.4–20.8x churn measured across two regimes, see §2). `findShortestPath(source, target)` never searches a distinct pair (#466). |
-| Memgraph Bolt                   | Community   | ✅ TRL-3    | ✅ Yes             | Same driver as Neo4j Bolt (Bolt protocol compatible). Same `findShortestPath(source, target)` gap (#466). |
+| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible. Shortest-path adjacency treats `INCOMING` as outgoing (known gap). `CommunityGraphSessionPostgresContractTckIT` runs the SQL/PGQ dialect against a live PostgreSQL instance. Churn is not measured (see §2). |
+| Neo4j Bolt (Java driver)        | Community   | ✅ TRL-3    | ✅ Yes             | Standard Bolt driver, heap allocating (17.5–20.8x churn across two regimes, `< 23x` contract, see §2). Shortest-path adjacency treats `INCOMING` as outgoing (known gap). |
+| Memgraph Bolt                   | Community   | ✅ TRL-3    | ✅ Yes             | Same driver as Neo4j Bolt (Bolt protocol compatible). Shortest-path adjacency treats `INCOMING` as outgoing (known gap). |
 
 ---
 
@@ -269,24 +353,25 @@ try (GraphCursor cursor = graphService.bfsCursor(query)) {
 
 ### Cycle Detection
 
-Community's `traverseBreadthFirst` and `streamBfsJson` do not run a BFS loop in kernel code at all — they
-delegate to one push-down query per call (`GraphDialect.buildMatchQuery` for a single hop,
-`buildMultiHopQuery` otherwise: a `WITH RECURSIVE` CTE on SQL/PGQ, a bounded variable-length `MATCH` on
-Cypher), so cycle safety is a property of that query, not of a heap-resident visited set.
+Community's `traversePath`, `streamPathJson`, `traverseBreadthFirst` and `streamBfsJson` do not run a
+traversal loop in kernel code at all — they delegate to one push-down query per call
+(`GraphDialect.buildPathQuery`: a `WITH RECURSIVE` CTE on SQL/PGQ with `UNION` deduplicating `(id, depth)`
+rows, bounded step `MATCH` clauses on Cypher), so cycle safety is a property of that query, not of a
+heap-resident visited set.
 
 | Control                        | Where it lives                                                              | Default |
 |:--------------------------------|:-----------------------------------------------------------------------------|:-------:|
-| **Max traversal depth**         | `GraphTraversal`'s canonical constructor: `maxDepth` (`int`), rejected below 1 with `IllegalArgumentException` | none — always explicit |
+| **Max traversal depth**         | Community limit: `Σ maxRepeat <= 64` (and `maxDepth <= 64` for `GraphTraversal`); exceeding the limit is refused before I/O with `EX-GRPH-5002` (`PATH_LIMIT`) | — (Community refuses above 64) |
 | **Max visited nodes**            | not implemented — `GraphTraversal` has no `maxNodes` field and no such cap exists anywhere in the traversal path | — |
-| **Cycle termination mechanism** | the query itself: the recursive CTE stops recursing once `depth` reaches `maxDepth` (`WHERE t.depth < maxHops`), and the Cypher form bounds the same range in `*minHops..maxHops` — a cyclic edge can produce duplicate visits within that bound, deduplicated by `SELECT DISTINCT` / `RETURN DISTINCT`, but the depth bound alone is what stops the query, not a visited-node set | — |
+| **Cycle termination mechanism** | the query itself: SQL recursive CTE bounds each hop by `depth < maxRepeat` and deduplicates `(id, depth)` rows with `UNION` (never `UNION ALL`); Cypher bounds per-hop repetition with explicit step `MATCH` clauses joined by `WITH DISTINCT`. Step bounds guarantee termination without a heap-resident visited set | — |
 
-There is no `exeris.graph.bfs.max-depth` or `exeris.graph.bfs.max-nodes` configuration key anywhere in this
-tree, and no code path emits `EX-GRPH-5002` for a depth or node-count limit — `maxDepth` is a required,
-always-explicit constructor argument with no default to fall back to, so "leave it at the default" does not
-apply: every caller of `GraphTraversal`'s constructor (directly or via `GraphTraversal.create`) must choose a
-value. `CommunityPathFinder` — the Dijkstra implementation behind `findShortestPath(GraphEdgeDescriptor, …)`,
-not the BFS traversal methods — does hold a heap `HashSet<UUID>` of visited nodes while it walks adjacency;
-that is a shortest-path detail, not a BFS one.
+The 64 cap bounds the length of the generated query, not the work a Cypher ranged tail does: a variable-length
+segment enumerates relationship-unique paths, which can grow exponentially on a dense cyclic graph, and nothing in
+the traversal path verifies that the planner prunes it.
+
+`CommunityPathFinder` — the Dijkstra implementation behind `findShortestPath(GraphEdgeDescriptor, …)`,
+not the traversal methods — does hold a heap `HashSet<UUID>` of visited nodes while it walks adjacency;
+that is a shortest-path detail, not a traversal one.
 
 ## Testing Strategy
 
@@ -296,8 +381,10 @@ that is a shortest-path detail, not a BFS one.
 - Metadata discovery: verify extraction from annotated `record` nodes/edges.
 - Pathfinding: `AbstractAlgoOrchestratorTck` (bound in `CommunityAlgoOrchestratorTckTest`) validates
   Dijkstra correctness — found/not-found, hop count, cost — against `PathFinder` directly, not through
-  a `GraphSession`; there is no separate unit test for BFS traversal logic, since BFS has none of its
-  own to test (see Cycle Detection above).
+  a `GraphSession`.
+- Dialect path query generation: `AbstractGraphDialectTck` and `CommunityGraphDialectTest` validate
+  multi-hop SQL CTE and Cypher generation, directional arrows, and bound validation.
+- Session path limit guard: `CommunityGraphSessionGuardTest` verifies the 64-hop cap and `PATH_LIMIT` refusal.
 
 ### Integration Tests (TCK)
 
@@ -309,15 +396,26 @@ that is a shortest-path detail, not a BFS one.
   does not test an automatic L1-write-triggers-L2-sync wiring, and none exists — but `GraphSyncService`
   itself has no call site anywhere in this tree outside test code: nothing in application code calls
   it at all.
+- **Live Contract:** `AbstractGraphSessionLiveContractTck` asserts `GraphSession` operations against
+  a live backend: connected-pair shortest path, unconnected pairs, `deleteNode` edge cascade and
+  re-creation, heterogeneous two-hop terminal frontier
+  (`heterogeneousTwoHopPathReturnsTerminalFrontierInOrder`), empty hop
+  (`hopMatchingNothingYieldsEmptyResult`), ranged depth bounds
+  (`rangedHopFollowedByFixedHopHonoursLengths`), deduplication (`resultHoldsEachNodeOnce`), walk
+  semantics (`hopMayTraverseEdgePreviousHopTraversed`), cycle termination
+  (`cyclicGraphTerminatesAndHonoursExactLengthsWithWalkSemantics`), direction coverage
+  (`eachDirectionSelectsItsOwnEdgesAndOneHopAgrees`), streaming parity and buffer ownership
+  (`streamPathJsonReturnsSameIdSetInCallerOwnedBuffer`).
+  Tenant scoping: `crossTenantIsolationPreventsReachingOutsideScope` (a dynamic test per scopable
+  strategy) and `unscopableStorageContextRefusesTraversals` (a dynamic test per unscopable strategy, all
+  four traversal methods). Against PostgreSQL both run; against Neo4j no strategy is scopable, so the first
+  yields no tests and only the refusal cases run.
+  Bound in Community by `CommunityGraphSessionPostgresContractTckIT` (live PostgreSQL) and
+  `CommunityGraphSessionNeo4jContractTckIT` (live Neo4j).
+  `CommunityGraphSessionGuardTest` covers the refusal and the unbound-engine case without a database.
 
-The following three checks are described in earlier documentation but have no backing test or type in
-this tree today — listed here as gaps, not coverage:
+The following two checks have no backing test or type in this tree — listed here as gaps, not coverage:
 
-- No test exercises `StorageContext`-based tenant isolation for graph traversals; `CommunityGraphDialect`'s
-  generated edge-table DDL deliberately has no `tenant_id` column (`CommunityGraphDialectTest`'s
-  `tenantIdNotPresent()` asserts exactly that), so any tenant scoping for the SQL/PGQ backend would have
-  to come from the connection `StorageContext` routes to, not from a column the graph layer owns — and
-  nothing in this tree proves that routing holds for a graph traversal specifically.
 - There is no `TraversalResult` type anywhere in the codebase, and no test comparing PostgreSQL and Neo4j
   output bit-for-bit; `CommunityGraphBackendParityIT` (Testcontainers Neo4j, `@Tag("integration")`) proves
   the Cypher backend executes real writes and reads, and separately asserts both dialects produce
@@ -338,7 +436,12 @@ this tree today — listed here as gaps, not coverage:
   `openSession() → findShortestPath() → close()` hot path (`CarrierPinnedEvent` must not fire). No
   Community (or any other tier) binding subclasses it, so this check does not run in this tree today.
 
-> **TCK bindings:** Both `ExecutionGraphZeroAllocTck` and `GraphChurnRatioTck` now have Community-tier concrete bindings in `exeris-kernel-community/src/test/`. `CommunityExecutionGraphZeroAllocTckTest` runs in the main `build-and-verify` lane (in-process shortest-path hot path, no database). `CommunityGraphChurnRatioTckIT` is `@Tag("integration")` (live Neo4j via Testcontainers) and runs in the `persistence-rls-gate` CI job — gating the Community churn-to-data ratio below the **regression** bound described in §2, not below the published 20x contract, which this path meets in only one of its two allocation regimes.
+> **TCK bindings:** `ExecutionGraphZeroAllocTck`, `AbstractGraphSessionLiveContractTck` and
+> `GraphChurnRatioTck` have Community-tier concrete bindings in `exeris-kernel-community/src/test/`.
+> `CommunityExecutionGraphZeroAllocTckIT`, `CommunityGraphSessionPostgresContractTckIT`,
+> `CommunityGraphSessionNeo4jContractTckIT` and `CommunityGraphChurnRatioTckIT` are
+> `@Tag("integration")` and run in the `persistence-rls-gate` CI job (live PostgreSQL / Neo4j via
+> Testcontainers). `GraphCarrierPinningTck` remains unbound.
 
 ---
 
@@ -354,11 +457,13 @@ Community drivers without changing a single line of business code.
 
 ## Owning ADRs
 
-**No ADR in this repository decides this subsystem.** The only registry entry naming the
-kernel graph SPI is [ADR-030](../adr/ADR-030.link.md), which is owned by `exeris-spring-runtime` and
-decides the Spring-side seam *onto* this SPI rather than the SPI itself. The one graph decision the
-roadmap requires — heterogeneous multi-hop traversal, which `docs/ROADMAP.md` places **in 1.0** and
-sequences out of 0.12 — is an RFC that has not been written.
+[ADR-102](../adr/ADR-102-graph-spi-anchor-and-multi-hop-traversal.md) anchors this subsystem and decides heterogeneous multi-hop traversal
+(`GraphPathSpec`, `traversePath`, `streamPathJson`), the refusal of the two-argument `findShortestPath`,
+and tenant scoping for graph access; it was written from
+[RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md). Its obligations landed in 0.13 and this
+document describes them as shipped. The other registry entry naming the kernel
+graph SPI is [ADR-030](../adr/ADR-030.link.md), owned by `exeris-spring-runtime`, which decides the
+Spring-side seam *onto* this SPI rather than the SPI itself.
 
 ## Stability
 

@@ -85,6 +85,22 @@ class CommunityPersistenceEngineMigrationTest {
         }
     }
 
+    /**
+     * The isolation-ordinal columns (ADR-101) exist on both tables that carry a publication: the
+     * outbox, which the relay reads, and the event log, which the appender writes.
+     */
+    @Test
+    @DisplayName("the ADR-101 isolation_ordinal column exists on the outbox and the event log")
+    void isolationOrdinalColumnsExist() {
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(testConfig(true));
+             PersistenceConnection connection = engine.openConnection()) {
+            assertThat(countColumn(connection, "EXERIS_OUTBOX", "ISOLATION_ORDINAL"))
+                    .as("V0.13.0 (ADR-101): outbox").isEqualTo(1);
+            assertThat(countColumn(connection, "EXERIS_EVENT_LOG", "ISOLATION_ORDINAL"))
+                    .as("V0.13.0 (ADR-101): event log").isEqualTo(1);
+        }
+    }
+
     private static List<String> migrationResourcesOnClasspath() {
         java.net.URL directory = CommunityPersistenceEngine.class.getResource("/db/migration");
         assertThat(directory)

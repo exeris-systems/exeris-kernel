@@ -11,8 +11,11 @@ import org.junit.jupiter.api.Test;
 import java.io.BufferedWriter;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -49,10 +52,7 @@ class DiagnosticsCliShadedJarIT {
 
     @BeforeAll
     static void runTheShippedJar() throws Exception {
-        Path jar = Path.of(System.getProperty("exeris.cli.jar", ""));
-        assertThat(jar)
-                .as("shaded jar under test — set by the module POM as exeris.cli.jar")
-                .isRegularFile();
+        Path jar = jarPath();
 
         Path capturedStdout = Files.createTempFile("diagnostics-cli-it-", ".out");
         Path capturedStderr = Files.createTempFile("diagnostics-cli-it-", ".err");
@@ -92,6 +92,14 @@ class DiagnosticsCliShadedJarIT {
     private static String javaBinary() {
         return ProcessHandle.current().info().command().orElseGet(
                 () -> Path.of(System.getProperty("java.home"), "bin", "java").toString());
+    }
+
+    private static Path jarPath() {
+        Path jar = Path.of(System.getProperty("exeris.cli.jar", ""));
+        assertThat(jar)
+                .as("shaded jar under test — set by the module POM as exeris.cli.jar")
+                .isRegularFile();
+        return jar;
     }
 
     @Test
@@ -149,5 +157,153 @@ class DiagnosticsCliShadedJarIT {
         DiagnosticsProtocolContract.assertBootstrapDagPopulated(responses);
         DiagnosticsProtocolContract.assertDescribeSubsystemBothWays(responses);
         DiagnosticsProtocolContract.assertErgonomicsDescribeThisJvm(responses);
+    }
+
+    /**
+     * When no KernelDiagnosticsProvider is registered on the classpath, inspect mode fails
+     * early during loadDiagnostics(). KernelBootstrap rewraps the IllegalStateException in
+     * BootstrapException, which terminates the process with a non-zero exit status.
+     */
+    @Test
+    @DisplayName("missing provider exits non-zero with BootstrapException wrapping IllegalStateException")
+    void missingProviderFailsWithBootstrapExceptionWrappingIllegalStateException() throws Exception {
+        Path jar = jarPath();
+        Path modifiedJar = Files.createTempFile("diagnostics-cli-no-provider-", ".jar");
+        Path capturedStdout = Files.createTempFile("diagnostics-cli-no-provider-", ".out");
+        Path capturedStderr = Files.createTempFile("diagnostics-cli-no-provider-", ".err");
+        Process child = null;
+        try {
+            Files.copy(jar, modifiedJar, StandardCopyOption.REPLACE_EXISTING);
+            try (FileSystem fs = FileSystems.newFileSystem(modifiedJar)) {
+                Path serviceFile = fs.getPath(
+                        "META-INF/services/eu.exeris.kernel.spi.diagnostics.KernelDiagnosticsProvider");
+                Files.delete(serviceFile);
+            }
+
+            child = new ProcessBuilder(javaBinary(), "--enable-preview", "-jar", modifiedJar.toString())
+                    .redirectOutput(capturedStdout.toFile())
+                    .redirectError(capturedStderr.toFile())
+                    .start();
+            child.getOutputStream().close();
+
+            boolean exited = child.waitFor(CHILD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!exited) {
+                child.destroyForcibly();
+            }
+            assertThat(exited).as("the CLI process must exit on missing provider").isTrue();
+
+            String err = Files.readString(capturedStderr, StandardCharsets.UTF_8);
+            assertThat(child.exitValue())
+                    .as("non-zero exit when no diagnostics provider is registered; stderr was:%n%s", err)
+                    .isNotZero();
+            assertThat(err)
+                    .as("stderr must show BootstrapException wrapping IllegalStateException")
+                    .contains("eu.exeris.kernel.core.bootstrap.KernelBootstrap$BootstrapException")
+                    .contains("java.lang.IllegalStateException")
+                    .contains("No KernelDiagnosticsProvider found on the classpath");
+        } finally {
+            if (child != null && child.isAlive()) {
+                child.destroyForcibly();
+            }
+            Files.deleteIfExists(modifiedJar);
+            Files.deleteIfExists(capturedStdout);
+            Files.deleteIfExists(capturedStderr);
+        }
+    }
+
+    /**
+     * Closing the child's stdin while a request is in flight signals session end after
+     * the current read loop reaches EOF. The in-flight request is served and the process
+     * exits cleanly with zero status rather than an escaping UncheckedIOException.
+     */
+    @Test
+    @DisplayName("closing stdin mid-session completes in-flight request and exits 0 without escaping UncheckedIOException")
+    void closingStdinMidSessionCompletesInFlightRequestAndExitsCleanly() throws Exception {
+        Path jar = jarPath();
+        Path capturedStdout = Files.createTempFile("diagnostics-cli-midsession-", ".out");
+        Path capturedStderr = Files.createTempFile("diagnostics-cli-midsession-", ".err");
+        Process child = null;
+        try {
+            child = new ProcessBuilder(javaBinary(), "--enable-preview", "-jar", jar.toString())
+                    .redirectOutput(capturedStdout.toFile())
+                    .redirectError(capturedStderr.toFile())
+                    .start();
+
+            try (BufferedWriter toChild = new BufferedWriter(
+                    new OutputStreamWriter(child.getOutputStream(), StandardCharsets.UTF_8))) {
+                toChild.write("{\"method\":\"listProviders\"}\n");
+                toChild.flush();
+            }
+
+            boolean exited = child.waitFor(CHILD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!exited) {
+                child.destroyForcibly();
+            }
+            assertThat(exited).as("the CLI must exit on stdin EOF").isTrue();
+
+            String err = Files.readString(capturedStderr, StandardCharsets.UTF_8);
+            assertThat(child.exitValue())
+                    .as("clean exit on EOF; stderr was:%n%s", err)
+                    .isZero();
+            assertThat(err)
+                    .as("closing stdin must not escape as UncheckedIOException or BootstrapException")
+                    .doesNotContain("UncheckedIOException")
+                    .doesNotContain("BootstrapException");
+
+            List<String> out = Files.readAllLines(capturedStdout, StandardCharsets.UTF_8);
+            assertThat(out)
+                    .as("in-flight request must be answered before EOF ends the session")
+                    .hasSize(1);
+            assertThat(out.getFirst()).contains("\"schemaVersion\":\"1.0\"");
+        } finally {
+            if (child != null && child.isAlive()) {
+                child.destroyForcibly();
+            }
+            Files.deleteIfExists(capturedStdout);
+            Files.deleteIfExists(capturedStderr);
+        }
+    }
+
+    /**
+     * Closing the child's stdin before sending any request ends the session immediately.
+     * The process exits cleanly with zero status and no error output.
+     */
+    @Test
+    @DisplayName("closing stdin with no request in flight exits cleanly with zero status")
+    void closingStdinWithNoRequestInFlightExitsCleanly() throws Exception {
+        Path jar = jarPath();
+        Path capturedStdout = Files.createTempFile("diagnostics-cli-empty-", ".out");
+        Path capturedStderr = Files.createTempFile("diagnostics-cli-empty-", ".err");
+        Process child = null;
+        try {
+            child = new ProcessBuilder(javaBinary(), "--enable-preview", "-jar", jar.toString())
+                    .redirectOutput(capturedStdout.toFile())
+                    .redirectError(capturedStderr.toFile())
+                    .start();
+            child.getOutputStream().close();
+
+            boolean exited = child.waitFor(CHILD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!exited) {
+                child.destroyForcibly();
+            }
+            assertThat(exited).as("the CLI must exit on stdin EOF").isTrue();
+
+            String err = Files.readString(capturedStderr, StandardCharsets.UTF_8);
+            assertThat(child.exitValue())
+                    .as("clean exit on immediate stdin EOF; stderr was:%n%s", err)
+                    .isZero();
+            assertThat(err)
+                    .as("clean exit must not report an exception")
+                    .doesNotContain("Exception");
+
+            List<String> out = Files.readAllLines(capturedStdout, StandardCharsets.UTF_8);
+            assertThat(out).as("no requests were sent, so stdout must be empty").isEmpty();
+        } finally {
+            if (child != null && child.isAlive()) {
+                child.destroyForcibly();
+            }
+            Files.deleteIfExists(capturedStdout);
+            Files.deleteIfExists(capturedStderr);
+        }
     }
 }

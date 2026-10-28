@@ -12,9 +12,9 @@ import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.tck.contract.persistence.PersistenceIsolationLeakTck;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -30,7 +30,7 @@ import java.util.Map;
 class CommunityPersistenceIsolationLeakTckIT extends PersistenceIsolationLeakTck {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
 
     private static final String APP_USER     = "exeris_app";
     private static final String APP_PASSWORD = "exeris_app_pw";
@@ -58,7 +58,7 @@ class CommunityPersistenceIsolationLeakTckIT extends PersistenceIsolationLeakTck
         return engine;
     }
 
-    private static void bootstrapSchema(PostgreSQLContainer<?> container) {
+    private static void bootstrapSchema(PostgreSQLContainer container) {
         try (Connection conn = DriverManager.getConnection(
                      container.getJdbcUrl(), container.getUsername(), container.getPassword());
              Statement st = conn.createStatement()) {
@@ -67,14 +67,15 @@ class CommunityPersistenceIsolationLeakTckIT extends PersistenceIsolationLeakTck
                        "    CREATE ROLE exeris_app LOGIN NOSUPERUSER PASSWORD 'exeris_app_pw'; " +
                        "  END IF; " +
                        "END $$");
+            st.execute(RlsReferencePolicy.REQUIRED_SETTING_FUNCTION);
             st.execute("DROP TABLE IF EXISTS tenant_docs CASCADE");
             st.execute("CREATE TABLE tenant_docs (tenant_id TEXT NOT NULL, value TEXT NOT NULL)");
             st.execute("ALTER TABLE tenant_docs ENABLE ROW LEVEL SECURITY");
             st.execute("ALTER TABLE tenant_docs FORCE ROW LEVEL SECURITY");
             st.execute("DROP POLICY IF EXISTS tenant_isolation ON tenant_docs");
             st.execute("CREATE POLICY tenant_isolation ON tenant_docs " +
-                       "USING (tenant_id = current_setting('exeris.tenant_id', true)) " +
-                       "WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true))");
+                       "USING (" + RlsReferencePolicy.TENANT_ARM + ") " +
+                       "WITH CHECK (" + RlsReferencePolicy.TENANT_ARM + ")");
             st.execute("GRANT USAGE ON SCHEMA public TO exeris_app");
             st.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_docs TO exeris_app");
         } catch (SQLException e) {

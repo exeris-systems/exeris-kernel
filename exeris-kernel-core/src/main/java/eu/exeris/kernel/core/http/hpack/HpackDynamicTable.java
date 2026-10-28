@@ -43,14 +43,11 @@ public final class HpackDynamicTable {
      * {@code Class::isValue} in the module's value-carrier registry test. Each instance is
      * referenced from the {@code entries} array for as long as it remains in the table, so it
      * does not escape-analyze away.
+     *
+     * <p>The size is fixed at insertion from the octets the peer encoded, because a decoded
+     * String does not determine them.
      */
-    private value record Entry(String name, String value) {
-        /* package */ long byteSize() {
-            return HpackUtf8.byteLength(name)
-                    + HpackUtf8.byteLength(value)
-                    + (long) ENTRY_OVERHEAD;
-        }
-    }
+    private value record Entry(String name, String value, long size) { }
 
     /**
      * Creates a dynamic table with the given maximum size in bytes.
@@ -119,12 +116,29 @@ public final class HpackDynamicTable {
      * insertion empties the table instead, per §4.4's "not an error" clause for oversized
      * entries.
      *
+     * <p>The entry is sized as the UTF-8 encoding of {@code name} and {@code value}, which is
+     * the form {@link HpackEncoder} writes them in.
+     *
      * @param name  header field name
      * @param value header field value
      */
     public void add(String name, String value) {
-        Entry entry = new Entry(name, value);
-        long entrySize = entry.byteSize();
+        add(name, value, (long) HpackUtf8.byteLength(name) + HpackUtf8.byteLength(value));
+    }
+
+    /**
+     * Inserts an entry sized by the octets the peer put on the wire (RFC 7541 §4.1). A decoding
+     * context must use this form: both endpoints evict by the same arithmetic only if both count
+     * the same octets, and a String decoded from those octets need not re-encode to the same
+     * length.
+     *
+     * @param name   header field name
+     * @param value  header field value
+     * @param octets octets of the name plus octets of the value, without the entry overhead
+     */
+    /* package */ void add(String name, String value, long octets) {
+        Entry entry = new Entry(name, value, octets + ENTRY_OVERHEAD);
+        long entrySize = entry.size();
 
         while (currentSize + entrySize > maxSize && count > 0) {
             evictOldest();
@@ -219,7 +233,7 @@ public final class HpackDynamicTable {
     // Internal
     // =========================================================================
 
-    private void clear() {
+    /* default */ void clear() {
         head = 0;
         count = 0;
         currentSize = 0;
@@ -228,7 +242,7 @@ public final class HpackDynamicTable {
     @SuppressWarnings("PMD.NullAssignment")
     private void evictOldest() {
         int tailIndex = (head + count - 1) % entries.length;
-        currentSize -= entries[tailIndex].byteSize();
+        currentSize -= entries[tailIndex].size();
         entries[tailIndex] = null;
         count--;
     }

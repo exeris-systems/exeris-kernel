@@ -40,6 +40,15 @@ class CommunityPersistenceEngineLifecycleTest {
     }
 
     @Test
+    @DisplayName("registering the RLS interceptor on a database without role attributes is not probed")
+    void registerRlsInterceptor_onNonPostgres_isSkipped() {
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(testConfig(false))) {
+            assertThatCode(() -> engine.registerInterceptor(RlsConnectionInterceptor.INSTANCE))
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Test
     @DisplayName("DEDICATED strategy routes to dedicated datasource when key is configured")
     void dedicatedStrategy_knownKey_acquiresConnectionFromDedicatedPool() {
         PersistenceConfig dedicatedCfg = testConfig(false);

@@ -13,16 +13,21 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.events.IsolationKeySpec;
 import eu.exeris.kernel.spi.persistence.EventStore;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -108,6 +113,84 @@ class CommunityEventEngineOutboxIntegrationTest {
                     eventEngine.close();
                 }
             });
+        }
+    }
+
+    @Test
+    @DisplayName("An outbox row appended under a tenant reaches that tenant's scoped subscriber and the unscoped one only")
+    void outboxRowRelaysWithItsIsolationScope() throws Exception {
+        String jdbcUrl = "jdbc:h2:mem:community_event_outbox_scoped_" + System.nanoTime()
+                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        PersistenceConfig persistenceConfig = new PersistenceConfig(
+                jdbcUrl, "sa", "", 16, 2, 5_000L, 60_000L, 60_000L,
+                false, false, false, 0, Map.of("run.migrations", "true"));
+
+        try (PersistenceEngine persistenceEngine = new CommunityPersistenceProvider().createEngine(persistenceConfig)) {
+            ScopedValue.where(KernelProviders.PERSISTENCE_ENGINE, persistenceEngine).call(() -> {
+                EventEngineConfig config = new EventEngineConfig(
+                        "community-events-outbox-scoped-it", 1_024, 64, "events",
+                        0L, 0, 0, 0, 0, true, 32);
+
+                EventEngine eventEngine = new CommunityEventProvider().createEngine(config);
+                String eventType = "OrderPersistedScoped";
+                eventEngine.registry().register(EventTypeSpec.ofPersistent(eventType, 903));
+                eventEngine.isolationRegistry().register(IsolationKeySpec.of("tenant-a", 101));
+                eventEngine.isolationRegistry().register(IsolationKeySpec.of("tenant-b", 102));
+
+                Queue<String> deliveries = new ConcurrentLinkedQueue<>();
+                CountDownLatch expected = new CountDownLatch(2);
+                eventEngine.bus().subscribe(eventType, (descriptor, payload) -> {
+                    try (payload) {
+                        deliveries.add("unscoped");
+                    }
+                    expected.countDown();
+                });
+                tenantSubscribe(eventEngine, "tenant-a", eventType, deliveries, expected);
+                tenantSubscribe(eventEngine, "tenant-b", eventType, deliveries, expected);
+
+                ScopedValue.where(KernelProviders.EVENT_ENGINE, eventEngine)
+                        .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared("tenant-a"))
+                        .run(() -> appendOutboxRow(persistenceEngine, eventType,
+                                "scoped-payload".getBytes(StandardCharsets.UTF_8)));
+
+                eventEngine.start();
+                try {
+                    assertThat(expected.await(5, TimeUnit.SECONDS))
+                            .as("the unscoped and the tenant-A subscribers both receive the relayed row")
+                            .isTrue();
+                    Thread.sleep(200L);
+                    assertThat(deliveries)
+                            .as("tenant B's scoped subscriber MUST NOT receive tenant A's row")
+                            .containsExactlyInAnyOrder("unscoped", "tenant-a");
+                    assertThat(intColumnOf(persistenceEngine,
+                            "SELECT isolation_ordinal FROM exeris_outbox"))
+                            .as("the appended row recorded tenant A's ordinal")
+                            .isEqualTo(101);
+                } finally {
+                    eventEngine.close();
+                }
+                return null;
+            });
+        }
+    }
+
+    private static void tenantSubscribe(EventEngine eventEngine, String tenant, String eventType,
+                                        Queue<String> deliveries, CountDownLatch expected) throws Exception {
+        ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared(tenant))
+                .call(() -> eventEngine.bus().subscribeScoped(eventType, (descriptor, payload) -> {
+                    try (payload) {
+                        deliveries.add(tenant);
+                    }
+                    if (!tenant.equals("tenant-b")) {
+                        expected.countDown();
+                    }
+                }));
+    }
+
+    private static long intColumnOf(PersistenceEngine persistenceEngine, String sql) {
+        try (PersistenceConnection connection = persistenceEngine.openConnection();
+             var result = connection.executeQuery(sql)) {
+            return result.next() ? result.row().getInt(0) : -1L;
         }
     }
 
@@ -228,7 +311,7 @@ class CommunityEventEngineOutboxIntegrationTest {
     private static final class AlwaysFailingBrokerPort implements OutboxBrokerPort {
 
         @Override
-        public int publish(java.util.List<OutboxEntry> batch) {
+        public int publish(List<OutboxEntry> batch) {
             return 0;
         }
 

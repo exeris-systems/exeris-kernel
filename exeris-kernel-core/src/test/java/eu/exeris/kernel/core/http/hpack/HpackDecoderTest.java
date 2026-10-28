@@ -5,12 +5,16 @@
 package eu.exeris.kernel.core.http.hpack;
 
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.memory.AllocationHint;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.memory.MemoryStats;
 import org.junit.jupiter.api.*;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -536,6 +540,423 @@ class HpackDecoderTest {
     }
 
     // =========================================================================
+    // Size-limit refusal keeps the dynamic table in step with the peer
+    // =========================================================================
+
+    @Nested
+    @DisplayName("A size-limit overrun reads the block to its end — RFC 9113 §4.3")
+    class SizeLimitRefusal {
+
+        private static final int UNBOUNDED = 1 << 20;
+
+        @Test
+        @DisplayName("list overrun: insertions after the overflow point leave the table identical to a reference decode")
+        void listOverrunKeepsTableInStep() {
+            byte[] block = new BlockBuilder()
+                    .indexed(2)
+                    .literalNoIndex("x-pad", "p".repeat(200))
+                    .literalIncremental("x-one", "1")
+                    .literalIncremental("x-two", "2")
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            List<String> delivered = new ArrayList<>();
+
+            assertThatThrownBy(() -> new HpackDecoder(table, allocator, 100, UNBOUNDED)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> delivered.add(n + "=" + v)))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
+                    .hasMessageContaining("header list size");
+
+            assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
+            assertThat(contents(table)).containsExactly("x-two=2", "x-one=1");
+            assertThat(delivered).as("nothing is delivered from the overflowing field on")
+                    .containsExactly(":method=GET");
+        }
+
+        @Test
+        @DisplayName("literal overrun that fits the table: the entry is still inserted, in order")
+        void literalOverrunThatFitsTheTableIsStillInserted() {
+            String big = "v".repeat(40);
+            byte[] block = new BlockBuilder()
+                    .literalIncremental("x-big", big)
+                    .literalIncremental("x-after", "a")
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+
+            assertThatThrownBy(() -> new HpackDecoder(table, allocator, UNBOUNDED, 16)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
+                    .hasMessageContaining("string literal");
+
+            assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
+            assertThat(contents(table)).containsExactly("x-after=a", "x-big=" + big);
+        }
+
+        @Test
+        @DisplayName("Huffman literal overrun that fits the table: the entry is still inserted")
+        void huffmanLiteralOverrunThatFitsTheTableIsStillInserted() {
+            String big = "v".repeat(40);
+            byte[] block = new BlockBuilder()
+                    .literalIncrementalHuffmanValue("x-big", big)
+                    .literalIncremental("x-after", "a")
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            CountingAllocator counting = new CountingAllocator(allocator);
+
+            assertThatThrownBy(() -> new HpackDecoder(table, counting, UNBOUNDED, 16)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit);
+
+            assertThat(counting.networkLoans()).as("the entry is decoded, so its scratch is loaned").isEqualTo(1);
+            assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
+            assertThat(contents(table)).containsExactly("x-after=a", "x-big=" + big);
+        }
+
+        @Test
+        @DisplayName("a non-indexed literal over the bound is passed over without being decoded")
+        void nonIndexedLiteralOverTheBoundIsNotDecoded() {
+            byte[] block = new BlockBuilder()
+                    .literalNoIndexHuffmanValue("x-big", "v".repeat(40))
+                    .literalIncremental("x-after", "a")
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            CountingAllocator counting = new CountingAllocator(allocator);
+
+            assertThatThrownBy(() -> new HpackDecoder(table, counting, UNBOUNDED, 16)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
+                    .hasMessageContaining("string literal");
+
+            assertThat(counting.networkLoans()).as("a skipped literal is never Huffman-decoded").isZero();
+            assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
+            assertThat(contents(table)).containsExactly("x-after=a");
+        }
+
+        @Test
+        @DisplayName("after an overrun, a later non-indexed literal within the bound is passed over without being decoded")
+        void nonIndexedLiteralAfterAnOverrunIsNotDecoded() {
+            byte[] block = new BlockBuilder()
+                    .literalNoIndex("x-pad", "p".repeat(200))
+                    .literalNoIndexHuffmanValue("x-late", "v".repeat(40))
+                    .literalIncremental("x-after", "a")
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            CountingAllocator counting = new CountingAllocator(allocator);
+
+            assertThatThrownBy(() -> new HpackDecoder(table, counting, 100, UNBOUNDED)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
+                    .hasMessageContaining("header list size");
+
+            assertThat(counting.networkLoans()).as("a literal after an overrun is never Huffman-decoded").isZero();
+            assertThat(contents(table)).containsExactly("x-after=a");
+        }
+
+        @Test
+        @DisplayName("literal overrun that cannot fit the table: the table is emptied as RFC 7541 §4.4 says, then refilled")
+        void literalOverrunThatCannotFitTheTableEmptiesIt() {
+            byte[] seed = new BlockBuilder().literalIncremental("x-seed", "s").build();
+            byte[] block = new BlockBuilder()
+                    .literalIncremental("x-huge", "h".repeat(100))
+                    .literalIncremental("x-after", "a")
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(96);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, UNBOUNDED, 16);
+            decoder.decode(segment(seed), 0, seed.length, (n, v, s) -> { });
+            assertThat(contents(table)).containsExactly("x-seed=s");
+
+            assertThatThrownBy(() -> decoder.decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit);
+
+            HpackDynamicTable reference = new HpackDynamicTable(96);
+            HpackDecoder referenceDecoder = new HpackDecoder(reference, allocator, UNBOUNDED, UNBOUNDED);
+            referenceDecoder.decode(segment(seed), 0, seed.length, (n, v, s) -> { });
+            referenceDecoder.decode(segment(block), 0, block.length, (n, v, s) -> { });
+
+            assertThat(contents(table)).containsExactlyElementsOf(contents(reference));
+            assertThat(contents(table)).containsExactly("x-after=a");
+        }
+
+        @Test
+        @DisplayName("the decoder serves the next block from the entries the refused block inserted")
+        void nextBlockReferencesTheEntriesOfTheRefusedBlock() {
+            byte[] refused = new BlockBuilder()
+                    .literalNoIndex("x-pad", "p".repeat(200))
+                    .literalIncremental("x-one", "1")
+                    .build();
+            byte[] next = new BlockBuilder().indexed(62).build();
+
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 100, UNBOUNDED);
+            assertThatThrownBy(() -> decoder.decode(segment(refused), 0, refused.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit);
+
+            List<String> delivered = new ArrayList<>();
+            decoder.decode(segment(next), 0, next.length, (n, v, s) -> delivered.add(n + "=" + v));
+
+            assertThat(delivered).containsExactly("x-one=1");
+        }
+
+        @Test
+        @DisplayName("a dynamic table size update is applied even though the block is refused")
+        void sizeUpdateIsAppliedInARefusedBlock() {
+            byte[] seed = new BlockBuilder().literalIncremental("x-seed", "s").build();
+            byte[] block = new BlockBuilder()
+                    .sizeUpdate(0)
+                    .literalNoIndex("x-pad", "p".repeat(200))
+                    .build();
+
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 100, UNBOUNDED);
+            decoder.decode(segment(seed), 0, seed.length, (n, v, s) -> { });
+
+            assertThatThrownBy(() -> decoder.decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit);
+
+            assertThat(table.maxSize()).isZero();
+            assertThat(table.size()).isZero();
+        }
+
+        @Test
+        @DisplayName("a malformed block raises the non-size error, even after a size overrun")
+        void malformedBlockIsNotASizeRefusal() {
+            byte[] invalidIndex = new BlockBuilder().literalIncremental("x-one", "1").indexed(70).build();
+            byte[] overrunThenMalformed = new BlockBuilder()
+                    .literalNoIndex("x-pad", "p".repeat(200))
+                    .indexed(70)
+                    .build();
+            byte[] truncated = new BlockBuilder().literalNoIndex("x-pad", "p".repeat(200)).build();
+            int cut = truncated.length - 10;
+
+            for (byte[] block : List.of(invalidIndex, overrunThenMalformed)) {
+                HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 100, UNBOUNDED);
+                assertThatThrownBy(() -> decoder.decode(segment(block), 0, block.length, (n, v, s) -> { }))
+                        .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                        .satisfies(SizeLimitRefusal::assertMalformed);
+            }
+
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 100, UNBOUNDED);
+            assertThatThrownBy(() -> decoder.decode(segment(truncated), 0, cut, (n, v, s) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertMalformed);
+        }
+
+        private static void assertSizeLimit(Throwable thrown) {
+            assertThat(((HpackDecoder.HpackDecodingException) thrown).kind())
+                    .isEqualTo(HpackDecoder.HpackDecodingException.Kind.SIZE_LIMIT_EXCEEDED);
+        }
+
+        private static void assertMalformed(Throwable thrown) {
+            assertThat(((HpackDecoder.HpackDecodingException) thrown).kind())
+                    .isEqualTo(HpackDecoder.HpackDecodingException.Kind.MALFORMED);
+        }
+
+        private List<String> referenceTable(byte[] block, long tableSize) {
+            HpackDynamicTable reference = new HpackDynamicTable(tableSize);
+            new HpackDecoder(reference, allocator, UNBOUNDED, UNBOUNDED)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> { });
+            return contents(reference);
+        }
+
+        private List<String> contents(HpackDynamicTable table) {
+            List<String> entries = new ArrayList<>();
+            for (int i = 0; i < table.size(); i++) {
+                entries.add(table.getName(i) + "=" + table.getValue(i));
+            }
+            return entries;
+        }
+    }
+
+    // =========================================================================
+    // Wire-octet sizing
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Entry and field-section sizes are the octets on the wire — RFC 7541 §4.1, RFC 9113 §6.5.2")
+    class WireOctetSizing {
+
+        private static final int UNBOUNDED = 1 << 20;
+        private static final byte[] OBS = {
+                (byte) 0xFF, (byte) 0x80, (byte) 0xC3, 0x28, (byte) 0xE2, (byte) 0x82, (byte) 0xC3, (byte) 0xA9, 0x7A};
+
+        private byte[] ff(int count) {
+            byte[] octets = new byte[count];
+            java.util.Arrays.fill(octets, (byte) 0xFF);
+            return octets;
+        }
+
+        private String latin1(byte[] octets) {
+            return new String(octets, StandardCharsets.ISO_8859_1);
+        }
+
+        private List<String> decodeAll(HpackDecoder decoder, byte[] block) {
+            List<String> delivered = new ArrayList<>();
+            decoder.decode(segment(block), 0, block.length, (n, v, s) -> delivered.add(n + "=" + v));
+            return delivered;
+        }
+
+        @Test
+        @DisplayName("a raw obs-text value is sized by its octets and reaches the table octet for octet")
+        void rawObsTextIncremental() {
+            byte[] block = new BlockBuilder()
+                    .literalIncremental("x-a", "1")
+                    .literalIncrementalOctets("x-obs", OBS)
+                    .build();
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+
+            decodeAll(new HpackDecoder(table, allocator, 65_536, 65_536), block);
+
+            assertThat(table.byteSize()).isEqualTo(36 + (5 + OBS.length + 32));
+            assertThat(table.getName(0)).isEqualTo("x-obs");
+            assertThat(table.getName(1)).isEqualTo("x-a");
+            assertThat(table.getValue(0).getBytes(StandardCharsets.ISO_8859_1)).isEqualTo(OBS);
+        }
+
+        @Test
+        @DisplayName("a Huffman obs-text value is sized by its octets, with one scratch loan")
+        void huffmanObsTextIncremental() {
+            byte[] block = new BlockBuilder()
+                    .literalIncremental("x-a", "1")
+                    .literalIncrementalHuffmanOctets("x-obs", OBS)
+                    .build();
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            CountingAllocator counting = new CountingAllocator(allocator);
+
+            decodeAll(new HpackDecoder(table, counting, 65_536, 65_536), block);
+
+            assertThat(counting.networkLoans()).isEqualTo(1);
+            assertThat(table.byteSize()).isEqualTo(36 + (5 + OBS.length + 32));
+            assertThat(table.getName(0)).isEqualTo("x-obs");
+            assertThat(table.getValue(0).getBytes(StandardCharsets.ISO_8859_1)).isEqualTo(OBS);
+        }
+
+        @Test
+        @DisplayName("a table of exactly the wire size holds both entries; one octet less holds only the newer")
+        void tableBoundaryFollowsTheWireOctets() {
+            byte[] insert = new BlockBuilder()
+                    .literalIncremental("x-a", "1")
+                    .literalIncrementalOctets("x-obs", ff(20))
+                    .build();
+            String obs = "\u00ff".repeat(20);
+
+            HpackDynamicTable holds = new HpackDynamicTable(93);
+            HpackDecoder holder = new HpackDecoder(holds, allocator, UNBOUNDED, UNBOUNDED);
+            decodeAll(holder, insert);
+            assertThat(decodeAll(holder, new BlockBuilder().indexed(63).indexed(62).build()))
+                    .containsExactly("x-a=1", "x-obs=" + obs);
+
+            HpackDynamicTable evicts = new HpackDynamicTable(92);
+            HpackDecoder evictor = new HpackDecoder(evicts, allocator, UNBOUNDED, UNBOUNDED);
+            decodeAll(evictor, insert);
+            assertThat(evicts.size()).isEqualTo(1);
+            assertThat(evicts.getName(0)).isEqualTo("x-obs");
+            byte[] stale = new BlockBuilder().indexed(63).build();
+            assertThatThrownBy(() -> decodeAll(evictor, stale))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertMalformed);
+        }
+
+        @Test
+        @DisplayName("a field section is sized by wire octets: at the limit it is delivered, one under it is refused")
+        void fieldSectionBoundFollowsTheWireOctets() {
+            byte[] block = new BlockBuilder().literalNoIndexOctets("x-obs", ff(10)).build();
+
+            assertThat(decodeAll(new HpackDecoder(new HpackDynamicTable(4096), allocator, 47, UNBOUNDED), block))
+                    .containsExactly("x-obs=" + "\u00ff".repeat(10));
+
+            assertThatThrownBy(() -> decodeAll(
+                    new HpackDecoder(new HpackDynamicTable(4096), allocator, 46, UNBOUNDED), block))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
+                    .hasMessageContaining("header list size");
+        }
+
+        @Test
+        @DisplayName("an indexed reference to an obs-text entry counts the wire octets against the next section")
+        void indexedReferenceCountsWireOctets() {
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 47, UNBOUNDED);
+
+            assertThat(decodeAll(decoder, new BlockBuilder().literalIncrementalOctets("x-obs", ff(10)).build()))
+                    .containsExactly("x-obs=" + "\u00ff".repeat(10));
+            assertThat(decodeAll(decoder, new BlockBuilder().indexed(62).build()))
+                    .containsExactly("x-obs=" + "\u00ff".repeat(10));
+        }
+
+        @Test
+        @DisplayName("an HTTP/2 value equals what the HTTP/1.1 parser materialises from the same octets")
+        void valueMatchesTheHttp1Parser() {
+            byte[] block = new BlockBuilder().literalNoIndexOctets("x-obs", OBS).build();
+            List<String> h2 = new ArrayList<>();
+            new HpackDecoder(new HpackDynamicTable(4096), allocator, UNBOUNDED, UNBOUNDED)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> h2.add(v));
+
+            java.io.ByteArrayOutputStream wire = new java.io.ByteArrayOutputStream();
+            wire.writeBytes("x-obs: ".getBytes(StandardCharsets.US_ASCII));
+            wire.writeBytes(OBS);
+            wire.writeBytes("\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+            byte[] h1Bytes = wire.toByteArray();
+            List<String> h1 = new ArrayList<>();
+            eu.exeris.kernel.core.http.http1.Http1RequestParser.parseHeaders(
+                    segment(h1Bytes), 0, h1Bytes.length, (n, v) -> h1.add(v));
+
+            assertThat(h2).hasSize(1);
+            assertThat(h1).hasSize(1);
+            assertThat(h2.get(0)).isEqualTo(h1.get(0)).isEqualTo(latin1(OBS));
+        }
+
+        @Test
+        @DisplayName("a valid UTF-8 value reaches the listener one char per octet, not decoded as UTF-8")
+        void validUtf8ValueIsDeliveredOctetForOctet() {
+            byte[] eAcute = {(byte) 0xC3, (byte) 0xA9};
+            byte[] block = new BlockBuilder().literalNoIndexOctets("x-text", eAcute).build();
+            List<String> values = new ArrayList<>();
+            new HpackDecoder(new HpackDynamicTable(4096), allocator, UNBOUNDED, UNBOUNDED)
+                    .decode(segment(block), 0, block.length, (n, v, s) -> values.add(v));
+
+            assertThat(values).containsExactly("\u00C3\u00A9");
+            assertThat(new String(values.get(0).getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8))
+                    .isEqualTo("\u00E9");
+        }
+
+        @Test
+        @DisplayName("an indexed name with an obs-text value is sized by the octets of both")
+        void indexedNameObsTextValue() {
+            byte[] block = new BlockBuilder().literalIncrementalIndexedName(58, ff(10)).build();
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+
+            decodeAll(new HpackDecoder(table, allocator, UNBOUNDED, UNBOUNDED), block);
+
+            assertThat(table.byteSize()).isEqualTo(10 + 10 + 32);
+        }
+
+        @Test
+        @DisplayName("an obs-text name is sized by its octets, and an indexed reuse of it by the same")
+        void obsTextName() {
+            byte[] name = {'x', '-', (byte) 0xFF};
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, UNBOUNDED, UNBOUNDED);
+
+            decodeAll(decoder, new BlockBuilder().literalIncrementalOctetName(name, "a").build());
+            decodeAll(decoder, new BlockBuilder().literalIncrementalIndexedName(62, "b".getBytes(StandardCharsets.US_ASCII)).build());
+
+            assertThat(table.byteSize()).isEqualTo(36 + 36);
+            assertThat(table.getName(0).getBytes(StandardCharsets.ISO_8859_1)).isEqualTo(name);
+        }
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 
@@ -572,6 +993,175 @@ class HpackDecoderTest {
         }
         return pos;
     }
+
+    private static MemorySegment segment(byte[] bytes) {
+        MemorySegment seg = testArena.allocate(Math.max(bytes.length, 1));
+        MemorySegment.copy(MemorySegment.ofArray(bytes), ValueLayout.JAVA_BYTE, 0,
+                seg, ValueLayout.JAVA_BYTE, 0, bytes.length);
+        return seg;
+    }
+
+    /** Counts the network buffers the decoder loans for scratch space. */
+    private static final class CountingAllocator implements MemoryAllocator {
+
+        private final MemoryAllocator delegate;
+        private int networkLoans;
+
+        CountingAllocator(MemoryAllocator delegate) {
+            this.delegate = delegate;
+        }
+
+        int networkLoans() {
+            return networkLoans;
+        }
+
+        @Override
+        public LoanedBuffer allocate(AllocationHint hint) {
+            return delegate.allocate(hint);
+        }
+
+        @Override
+        public LoanedBuffer allocateNetwork(int estimatedBytes) {
+            networkLoans++;
+            return delegate.allocateNetwork(estimatedBytes);
+        }
+
+        @Override
+        public LoanedBuffer allocateCarrierSlab(int carrierIndex) {
+            return delegate.allocateCarrierSlab(carrierIndex);
+        }
+
+        @Override
+        public LoanedBuffer allocateInfrastructure(long sizeBytes) {
+            return delegate.allocateInfrastructure(sizeBytes);
+        }
+
+        @Override
+        public MemoryStats stats() {
+            return delegate.stats();
+        }
+
+        @Override
+        public void close() {
+            delegate.close();
+        }
+    }
+
+    /** Builds an HPACK block, encoding string lengths and integers with their full prefix rules. */
+    private static final class BlockBuilder {
+
+        private final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+
+        BlockBuilder indexed(int index) {
+            integer(0x80, 7, index);
+            return this;
+        }
+
+        BlockBuilder sizeUpdate(int size) {
+            integer(0x20, 5, size);
+            return this;
+        }
+
+        BlockBuilder literalNoIndex(String name, String value) {
+            out.write(0x00);
+            string(name);
+            string(value);
+            return this;
+        }
+
+        BlockBuilder literalIncremental(String name, String value) {
+            out.write(0x40);
+            string(name);
+            string(value);
+            return this;
+        }
+
+        BlockBuilder literalIncrementalHuffmanValue(String name, String value) {
+            out.write(0x40);
+            string(name);
+            huffmanString(value);
+            return this;
+        }
+
+        BlockBuilder literalNoIndexHuffmanValue(String name, String value) {
+            out.write(0x00);
+            string(name);
+            huffmanString(value);
+            return this;
+        }
+
+        BlockBuilder literalIncrementalOctets(String name, byte[] value) {
+            out.write(0x40);
+            string(name);
+            octets(value);
+            return this;
+        }
+
+        BlockBuilder literalIncrementalHuffmanOctets(String name, byte[] value) {
+            out.write(0x40);
+            string(name);
+            huffmanOctets(value);
+            return this;
+        }
+
+        BlockBuilder literalNoIndexOctets(String name, byte[] value) {
+            out.write(0x00);
+            string(name);
+            octets(value);
+            return this;
+        }
+
+        BlockBuilder literalIncrementalOctetName(byte[] name, String value) {
+            out.write(0x40);
+            octets(name);
+            string(value);
+            return this;
+        }
+
+        BlockBuilder literalIncrementalIndexedName(int nameIndex, byte[] value) {
+            integer(0x40, 6, nameIndex);
+            octets(value);
+            return this;
+        }
+
+        byte[] build() {
+            return out.toByteArray();
+        }
+
+        private void huffmanString(String value) {
+            huffmanOctets(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+
+        private void huffmanOctets(byte[] raw) {
+            MemorySegment input = segment(raw);
+            MemorySegment output = testArena.allocate(raw.length * 4L + 8);
+            long length = eu.exeris.kernel.core.http.hpack.huffman.Huffman.encode(input.asSlice(0, raw.length), output);
+            integer(0x80, 7, (int) length);
+            out.writeBytes(output.asSlice(0, length).toArray(ValueLayout.JAVA_BYTE));
+        }
+
+        private void string(String text) {
+            octets(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+
+        private void octets(byte[] bytes) {
+            integer(0x00, 7, bytes.length);
+            out.writeBytes(bytes);
+        }
+
+        private void integer(int highBits, int prefixBits, int value) {
+            int max = (1 << prefixBits) - 1;
+            if (value < max) {
+                out.write(highBits | value);
+                return;
+            }
+            out.write(highBits | max);
+            int remaining = value - max;
+            while (remaining >= 0x80) {
+                out.write((remaining & 0x7F) | 0x80);
+                remaining >>>= 7;
+            }
+            out.write(remaining);
+        }
+    }
 }
-
-

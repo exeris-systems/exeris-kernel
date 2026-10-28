@@ -45,6 +45,12 @@ public interface FlowScheduler {
      * Admits the instance for execution, binding it to the plan it will run: from here the engine
      * owns the stepping of it.
      *
+     * <p>When the context names an instance the engine already holds, the call does not start a
+     * second execution and the supplied plan is ignored: a running instance keeps running, a parked
+     * instance stays parked, and a terminal instance is not run again. The limits on that no-op,
+     * across engine restarts and for durable rows that are not terminal, are stated on
+     * {@link ChoreographyDecision.Start}.
+     *
      * @param plan    the compiled execution plan; must not be {@code null}
      * @param context the runtime flow context identifying the instance; must not be {@code null}
      * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException {@code EX-FLOW-7002} with

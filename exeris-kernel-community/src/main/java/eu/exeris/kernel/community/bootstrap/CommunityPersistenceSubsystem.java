@@ -6,7 +6,10 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.persistence.CommunityAdmissionConfig;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.core.persistence.PersistenceBootstrap;
+import eu.exeris.kernel.core.persistence.TransactionOrchestrator;
+import eu.exeris.kernel.core.persistence.TransactionRetryPolicy;
 import eu.exeris.kernel.core.telemetry.JfrCommitGate;
 import eu.exeris.kernel.core.telemetry.JfrEventCommitter;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
@@ -17,10 +20,10 @@ import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
 /**
@@ -28,13 +31,20 @@ import java.util.function.UnaryOperator;
  * the shared {@link PersistenceEngine} other subsystems read through
  * {@link CommunityBootstrapServices}.
  *
+ * <p>Next to the engine it binds a {@link TransactionalExecutor} over that engine, so a caller that
+ * needs a transaction boundary reads {@link KernelProviders#TRANSACTIONAL_EXECUTOR} rather than
+ * constructing its own; the executor's retry policy comes from
+ * {@link TransactionRetryPolicy#fromConfig(ConfigProvider)}.
+ *
  * <p>Depends on {@code memory} only, and runs in the SERVICES phase. During {@code initialize()} it
  * also resolves {@link CommunityAdmissionConfig#CURRENT} directly from config and separately
  * registers a watch callback that would perform the same resolution — but Community's
  * {@link ConfigProvider#watch} is a no-op that never invokes it, so only Enterprise's
  * live-file-watching override (ADR-035) ever calls back into it — and, when
  * {@code persistence.rlsEnabled} is set, installs {@link RlsConnectionInterceptor} on every
- * connection the engine hands out.
+ * connection the engine hands out. Installing that interceptor refuses a database role that
+ * bypasses row-level security ({@code EX-PERS-5009}) unless {@code persistence.rlsAllowBypassRole}
+ * is set.
  *
  * <p>{@code start()} installs an off-request-thread {@link JfrEventCommitter} so admission and
  * connection-acquire JFR events commit on a platform thread rather than the virtual thread serving
@@ -52,6 +62,7 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     private PersistenceProvider persistenceProvider;
     private PersistenceEngine persistenceEngine;
+    private TransactionalExecutor transactionalExecutor;
     // ADR-035 / VT-JFR safety: commits admission + connection-acquire JFR events off the request
     // virtual thread (JDK 26+35 carrier-bound-buffer crash). Owned here because this subsystem owns
     // the admission path that emits them; lifetime bounded to RUNNING.
@@ -86,6 +97,9 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
                 CommunityAdmissionConfig.CONFIG_FILE,
                 CommunityAdmissionConfig.KEY_PREFIX,
                 _ -> CommunityAdmissionConfig.CURRENT = CommunityAdmissionConfig.fromConfigProvider(configProvider));
+        // Resolved before the engine exists: a configuration refusal here must not leave an open
+        // pool behind, and stop() never runs for a subsystem whose initialize() threw.
+        TransactionRetryPolicy retryPolicy = TransactionRetryPolicy.fromConfig(configProvider);
         persistenceProvider = resolveProvider();
         PersistenceConfig config = CommunityPersistenceConfigResolver.buildPersistenceConfig(
                 configProvider,
@@ -95,6 +109,7 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
                 DEFAULT_MIN_IDLE_CONNECTIONS,
                 DEFAULT_MAX_TENANT_POOLS);
         persistenceEngine = PersistenceBootstrap.load(persistenceProvider, config, interceptors(config));
+        transactionalExecutor = new TransactionOrchestrator(persistenceEngine, retryPolicy);
         // Community-internal handoff: subsystems whose initialize() runs in a later phase
         // (e.g. flow during RUNTIME) cannot yet see PERSISTENCE_ENGINE via ScopedValue.
         // The bootstrap-services registry bridges that gap without exposing internals
@@ -132,21 +147,19 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-        if (persistenceProvider == null || persistenceEngine == null) {
+        if (persistenceProvider == null || persistenceEngine == null || transactionalExecutor == null) {
             return defaultProviderBindings();
         }
         return CommunityCarrierBindings.operator(
                 CommunityCarrierBindings.binding(KernelProviders.PERSISTENCE_PROVIDER, persistenceProvider),
-                CommunityCarrierBindings.binding(KernelProviders.PERSISTENCE_ENGINE, persistenceEngine)
+                CommunityCarrierBindings.binding(KernelProviders.PERSISTENCE_ENGINE, persistenceEngine),
+                CommunityCarrierBindings.binding(KernelProviders.TRANSACTIONAL_EXECUTOR, transactionalExecutor)
         );
     }
 
     private static PersistenceProvider resolveProvider() {
-        return ServiceLoader.load(PersistenceProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(PersistenceProvider::priority)
-                        .thenComparing(provider -> provider.getClass().getName()))
+        return BootstrapProviderSelector.loadHighestPriority(
+                        PersistenceProvider.class, Comparator.comparingInt(PersistenceProvider::priority))
                 .orElseThrow(() -> PersistenceProviderException
                         .noProviderAvailable("No PersistenceProvider found on classpath"));
     }

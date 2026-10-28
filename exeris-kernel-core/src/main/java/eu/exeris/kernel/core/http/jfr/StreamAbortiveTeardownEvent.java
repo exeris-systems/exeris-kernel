@@ -38,6 +38,15 @@ public final class StreamAbortiveTeardownEvent extends Event {
     public long streamId;
 
     /**
+     * The protocol's id for the stream on its connection: the HTTP/2 stream id, {@code 0} for HTTP/1.1,
+     * where the transport stream is the whole connection. Together with {@code streamId} it tells two
+     * streams of one connection apart.
+     */
+    @Label("Protocol Stream ID")
+    @Description("The protocol's stream id on its connection; 0 for HTTP/1.1.")
+    public int protocolStreamId;
+
+    /**
      * Structured kernel error code: {@code EX-HTTP-4011} (peer disconnect) or {@code EX-HTTP-4012}
      * (auth expiry) — the only two codes {@code abortiveTeardown} is reached with.
      */
@@ -69,6 +78,18 @@ public final class StreamAbortiveTeardownEvent extends Event {
      * @param eventsEmitted events emitted before teardown
      */
     public static void emit(long streamId, String errorCode, long eventsEmitted) {
+        emit(streamId, 0, errorCode, eventsEmitted);
+    }
+
+    /**
+     * Emits an abortive-teardown event for a stream of a multiplexed protocol.
+     *
+     * @param streamId         the transport stream identifier
+     * @param protocolStreamId the protocol's stream id on its connection, {@code 0} where there is none
+     * @param errorCode        the structured kernel error code that ended the stream
+     * @param eventsEmitted    events emitted before teardown
+     */
+    public static void emit(long streamId, int protocolStreamId, String errorCode, long eventsEmitted) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -77,6 +98,7 @@ public final class StreamAbortiveTeardownEvent extends Event {
             return;
         }
         event.streamId = streamId;
+        event.protocolStreamId = protocolStreamId;
         event.errorCode = errorCode;
         event.eventsEmitted = eventsEmitted;
         event.commit();

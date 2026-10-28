@@ -323,6 +323,62 @@ qualified by line. Run it after every merge-up, before pushing. Verified against
 history: it flags both CHANGELOG bullets and both subsystem-doc sites that three hand-made sweeps
 missed.
 
+### The v0.13 merge-up: the release commit, merged directly
+
+The v0.12 merge-up recorded `v0.12.0` as an ancestor, so git computes the base of a merge of the
+v0.13.0 release commit (`main`'s squash of `development/0.13.0`) as `v0.12.0` itself: no graft. The
+merge also records `v0.13.0` as an ancestor, and `development/1.0.0` descends from it, so the next
+merge-up computes its base the same way. **32 conflicted files**: 11 poms (version only), 11 Java
+files, 2 policies, 2 docs, 3 tool scripts, `maven.yml`, and the two `StructuredScope` files deleted
+here (kept deleted; the GA line's change to them prunes its own task list, which this line does not
+have).
+
+| conflict group | resolution |
+|---|---|
+| a record the GA line extended | the incoming components with this branch's `value` modifier |
+| `InMemoryEventBus.publishAndAwait` | this branch's fork-per-handler dispatch over the incoming isolation filter (`targets`, `match`), plus the `catch (Throwable)` that releases unreached wrappers, which the method's comment described and this branch lacked |
+| `CoreFailurePolicyTckTest` | the incoming `bootCapturing` binding: the TCK obligation changed shape, and this branch's difference was a comment |
+| `maven.yml` publish step | the incoming policy (a refusal fails on `main`, is tolerated elsewhere) with `preview` kept among the publishing refs |
+| `spi-api-diff.sh` header | this branch's reason for deriving the release from the running JDK |
+
+**What merged cleanly and was wrong here:**
+
+- **`Http2Connection` forked response tasks into a `StructuredScope`.** Ported to `Http2StreamScope`
+  over `StructuredTaskScope`: a joiner that records no subtask, so a long-lived connection holds only
+  running tasks, and a `close()` that interrupts the registered task threads, joins and closes, since
+  `StructuredTaskScope` cancels only through its joiner and refuses `close()` from an owner that never
+  joined. The call sites are unchanged. Tasks inherit the frame loop's bindings at open, so the
+  explicit carrier the GA line builds is not needed.
+- **`BlockingPeerPair` is restored here**, reversing the v0.12 merge-up's deletion. It runs two
+  platform threads under one deadline and depends on no scope type; its reason — two blocking FFM
+  handshakes on virtual threads can deadlock a single carrier — holds on this line as much as on the
+  GA one, and 0.13 made the TCK's own `TckTlsServerHandshake` depend on it.
+- **`SubsystemOrchestrator` parallel start wrapped a `VirtualMachineError`.** A subtask carries it out
+  of `doStart` unchanged; the join surfaced it as a bootstrap failure until `rethrowIfFatal` was
+  applied to the subtask's exception.
+- **`shutdown()` from `start()` deadlocked.** `BootSession` recognised the boot by thread identity, and
+  here `start()` runs in a subtask. The boot now binds a `ScopedValue` to its session, which forked
+  tasks inherit, so a stop requested from inside the boot returns at once on either line's mechanism.
+- **20 new records without the modifier** — 6 in SPI, 10 in Core, 4 in Community — caught by the
+  value-carrier registry tests and checked against the rubric below; none hits a disqualifier.
+- **Two new ArchUnit suites**, `StableSignatureArchitectureTest` (TCK) and
+  `KernelTierJfrArchitectureTest` (Community), import zero classes on JDK 28 and are excluded beside
+  the existing four.
+- **Child JVMs without `--enable-preview`**: `SyscallErrnoFreshJvmTest` and three new
+  `DiagnosticsCliShadedJarIT` cases could not load a preview-stamped class.
+- **The two `native-smoke` modules** arrived under `eu.exeris`; they carry `eu.exeris.preview` here.
+  They build only under the opt-in `native` profile, and no GraalVM targets JDK 28.
+- **Mechanism statements**: two paragraphs of `docs/subsystems/http.md` named the connection's
+  `StructuredScope`, and an `EventBusZeroAllocTck` comment described in-thread dispatch; they now
+  state what holds on both lines. ADR-101 keeps its decision text, which describes the distributed
+  line: there `publishAndAwait` runs handlers on the calling thread. **On this line it forks one
+  subtask per handler**, and since a subtask inherits the publisher's bindings, the ADR's conclusion
+  — handlers observe every binding the publisher had — holds here too; only the subscription-order
+  sequencing does not.
+
+`EventBusZeroAllocTck`'s same-instance check asserts with `isSameAs` on `EventDescriptor`, a value
+record here: it passes, but cannot tell an equal copy from the published instance on this line.
+
 ## Still to do on this line
 
 - **JEP 539 (Strict Field Initialization)** — now exercised, but only incidentally: every value class

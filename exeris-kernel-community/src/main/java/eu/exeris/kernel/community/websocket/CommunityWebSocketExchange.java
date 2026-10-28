@@ -30,20 +30,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p><b>{@code send()} serialises across threads</b> because RFC 6455 forbids interleaving the
  * frames of two messages on one connection. The consequence is worth stating rather than leaving to
  * be found under load: a slow peer blocks <em>every</em> sender on that connection, not just the one
- * that filled the window.
+ * that filled the window. The wait never delays the receive path: a pong or a close echo is a control
+ * frame, which {@link CommunityWebSocketEgress} sends without waiting for the peer.
  *
  * <p>The two directions end differently on purpose. {@code receive()} returns {@code null} at close,
  * because that is the ordinary end of a loop and a handler should fall out of it; {@code send()}
  * throws, because a handler that had something to say and could not has to see it.
  *
- * <p><b>Allocation:</b> {@code receive()} and {@code send()} allocate no off-heap buffers of their
- * own; both operate on the fixed per-connection buffers {@link CommunityWebSocketFrameStream} and
- * {@link CommunityWebSocketEgress} already hold.
+ * <p><b>Allocation:</b> {@code receive()} reads into the fixed per-connection buffer
+ * {@link CommunityWebSocketFrameStream} holds; {@code send()} takes one pooled network buffer per
+ * frame from {@link CommunityWebSocketEgress}.
  * <p><b>Thread confinement:</b> {@code receive()} runs only on the virtual thread the transport
  * handed this exchange; {@code send()} may be called from any thread and is serialised by
  * {@link CommunityWebSocketEgress}'s own lock.
- * <p><b>Ownership:</b> this exchange owns the frame and egress buffers and releases both exactly
- * once, guarded by an internal flag, whichever close path runs first.
+ * <p><b>Ownership:</b> this exchange owns the frame buffer and the egress, and releases both exactly
+ * once, guarded by an internal flag, whichever close path runs first; each frame's buffer belongs to
+ * the transport once handed over.
  */
 final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseable {
 
@@ -61,13 +63,14 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
     private int observedCloseCode;
 
     /* default */ CommunityWebSocketExchange(TransportStream stream, WebSocketSession session,
-                                             MemoryAllocator allocator, long maxMessageBytes) {
+                                             MemoryAllocator allocator, long maxMessageBytes,
+                                             int maxQueuedWriteBytes) {
         this.stream = Objects.requireNonNull(stream, "stream must not be null");
         this.session = Objects.requireNonNull(session, "session must not be null");
         Objects.requireNonNull(allocator, "allocator must not be null");
         this.assembler = new WebSocketMessageAssembler(maxMessageBytes);
         this.frames = new CommunityWebSocketFrameStream(this.stream, allocator, maxMessageBytes);
-        this.egress = new CommunityWebSocketEgress(this.stream, allocator);
+        this.egress = new CommunityWebSocketEgress(this.stream, allocator, maxQueuedWriteBytes);
     }
 
     @Override
@@ -163,7 +166,10 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
         if (closed.get()) {
             throw WebSocketClosedException.notWritable(ageMillis(), messagesSent, observedCloseCode);
         }
-        egress.writeText(message);
+        if (!egress.writeText(message)) {
+            // The connection ended while this send waited for the peer to take earlier bytes.
+            throw WebSocketClosedException.notWritable(ageMillis(), messagesSent, observedCloseCode);
+        }
         messagesSent++;
     }
 

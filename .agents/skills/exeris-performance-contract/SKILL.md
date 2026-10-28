@@ -32,7 +32,7 @@ This skill validates that changes respect:
 
 2. **Hard-ban API scan (automatic reject candidates)**
    Flag and escalate any use of:
-   - `ThreadLocal`
+   - `ThreadLocal` — here as on any path: ADR-007 bans it in every scope class, test code included
    - `ExecutorService`, `Executors`, `CompletableFuture`
    - `java.io.*`, `java.net.Socket`, `ByteBuffer`
    - `sun.misc.Unsafe`

@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.core.http.http1.Http1ResponseEncoder;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.http.HttpHeader;
 
 import java.lang.foreign.MemorySegment;
@@ -43,6 +44,24 @@ final class CommunityHttpResponseHeaders {
                                     int bodyBytes,
                                     long position,
                                     boolean keepAlive) {
+        return write(target, headers, bodyBytes, position, keepAlive, false);
+    }
+
+    /**
+     * Writes the header block as {@link #write(MemorySegment, List, int, long, boolean)} does and, when
+     * {@code licenceMarker} is set, stamps {@link WorkloadAdmission#LICENCE_HEADER} after the
+     * application's headers. An application header of that name, in any letter case, is dropped, so the
+     * marker is always present exactly once and always carries the kernel's value.
+     *
+     * @param licenceMarker whether the response carries the developer-licence marker
+     * @return the position just past the terminating blank line
+     */
+    /* default */ static long write(MemorySegment target,
+                                    List<HttpHeader> headers,
+                                    int bodyBytes,
+                                    long position,
+                                    boolean keepAlive,
+                                    boolean licenceMarker) {
         long pos = position;
         boolean hasContentLength = false;
         boolean hasConnection = false;
@@ -54,13 +73,17 @@ final class CommunityHttpResponseHeaders {
             // then closes the socket regardless — letting the application's value through announces
             // keep-alive on a connection about to be torn down, which is the one thing the drain's
             // Connection: close exists to prevent. Connection lifetime is the kernel's to state.
-            if (isConnection && !keepAlive) {
+            if (droppedByKernel(header, isConnection && !keepAlive, licenceMarker)) {
                 continue;
             }
             hasConnection |= isConnection;
             pos = Http1ResponseEncoder.writeHeader(target, pos, header.name(), header.value());
         }
 
+        if (licenceMarker) {
+            pos = Http1ResponseEncoder.writeHeader(
+                    target, pos, WorkloadAdmission.LICENCE_HEADER, WorkloadAdmission.DEVELOPMENT_MARKER);
+        }
         if (!hasContentLength) {
             pos = Http1ResponseEncoder.writeHeader(
                     target, pos, HEADER_CONTENT_LENGTH, Integer.toString(bodyBytes));
@@ -70,6 +93,17 @@ final class CommunityHttpResponseHeaders {
                     target, pos, HEADER_CONNECTION, keepAlive ? HEADER_KEEP_ALIVE : HEADER_CLOSE);
         }
         return Http1ResponseEncoder.writeHeaderEnd(target, pos);
+    }
+
+    /**
+     * Whether the kernel states this header itself, so the application's copy is not written: a
+     * {@code Connection} header on a connection that is closing, and the licence marker whenever it is
+     * stamped. The name is compared with surrounding whitespace removed, because an intermediary strips it
+     * and would otherwise forward the application's value as a second marker.
+     */
+    private static boolean droppedByKernel(HttpHeader header, boolean closingConnection, boolean licenceMarker) {
+        return closingConnection
+                || licenceMarker && WorkloadAdmission.LICENCE_HEADER.equalsIgnoreCase(header.name().strip());
     }
 
     /** Concatenates application headers with encoder-supplied ones, allocating only when both exist. */

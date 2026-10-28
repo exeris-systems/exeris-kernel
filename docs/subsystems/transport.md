@@ -66,8 +66,10 @@ modes".
 What a client observes: the socket opens and then dies, with no HTTP response — a transport-level
 failure, not a status code, and indistinguishable from a network fault. **The stream admission
 ceiling below behaves the same way**: a shed stream is closed (FIN/RST on TCP, `STOP_SENDING` on
-QUIC), not answered. No server path in the kernel refuses with a status; if that is ever wanted it is
-a third mechanism above the connection layer, not a replacement for either of these (ADR-081 §2).
+QUIC), not answered. No transport-level path in the kernel refuses with a status; if that is ever wanted it is
+a third mechanism above the connection layer, not a replacement for either of these (ADR-081 §2). The
+request gate of a developer licence is such a mechanism, and it lives in the HTTP drivers (see
+`http.md`, "Developer-licence workload envelope").
 
 Two properties make the ceiling easy to reach at a request rate that feels comfortable. It counts
 **concurrent connections, not rate**, so a client whose connection pool overlaps with a draining
@@ -82,13 +84,38 @@ Refusals are visible in two places, and were visible in neither before v0.11:
 - `eu.exeris.kernel.transport.CommunityConnectionRefused` is emitted per refusal, carrying the active
   count, the configured ceiling, and a cumulative total whose slope distinguishes a blip from a wall.
 
+## Developer-licence connection ceiling
+
+Under a developer-licence contract every inbound connection also counts against
+`WorkloadEnvelope.maxConnections`, through the `WorkloadAdmission` the kernel binds
+(`ContractKernelProviders.WORKLOAD_ADMISSION`, ADR-089). The gate is inert until a contract policy selects
+the developer gate: the contract gate binds `WorkloadAdmission.UNGATED` otherwise, and under `UNGATED` the
+acceptor makes no admission call. The obligations are written on `spi.contract.WorkloadAdmission`,
+cross-referenced from `TransportEngine`, and pinned by `AbstractTransportWorkloadAdmissionTck`.
+
+- **Read once, in `start()`.** `NativeTcpCarrier.start()` reads the slot inside the kernel scope and keeps
+  it. The acceptor and the reactors are platform threads that inherit no binding, so a read there finds the
+  slot unbound and admits everything without a signal.
+- **Refusal at accept.** The acceptor asks the gate before it touches an accepted socket. A refused
+  connection is closed with no byte written and no TLS handshake started, and counts into
+  `TransportStats.totalRejected` through a counter of its own; it emits no `CommunityConnectionRefused` and does
+  not move that event's `total`, which describe the `maxConnections` ceiling and would report the wrong one. The gate reports its own first refusal once, as a
+  `HARD` contract violation.
+- **Exactly one release.** An admitted connection holds one admission beside its connection slot. The
+  admission is recorded on the channel's runtime state when the stream is registered, and the single
+  lifecycle cleanup in `onStreamClosed` releases it, so reset, idle reclamation, drain and `stop()` all
+  release it once. A setup that fails before the stream owns the slot releases both from the acceptor. An
+  outbound connection, registered through `connect`, never takes an admission and releases none.
+- **Every listener counts.** The HTTP and WebSocket listeners each run their own carrier and share the one
+  gate, so their connections add up against a single ceiling.
+
 ## Stream admission ceiling
 
 `TransportConfig.maxActiveStreams()` (`transport.paqs.maxActiveStreams`, default
 `TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS` = 5000) is a hard cap on **concurrently admitted
 streams per engine**, enforced by `AdmissionController.admit` after the memory-pressure decision and
-before a virtual thread is spawned. Over the cap the decision becomes `SHED_CAPACITY` whatever the
-priority and whatever the watermark says.
+before a virtual thread is spawned. Once the cap is reached, an admitted stream becomes `SHED_CAPACITY`
+whatever its priority and whatever the watermark says.
 
 This is a different bound from the connection ceiling above, and one is not derivable from the
 other: an HTTP/1 connection carries one stream, an HTTP/2 connection carries many.
@@ -108,7 +135,8 @@ response.
 | `0`, other negatives | **refused at startup**, by `TransportConfig` and again by `AdmissionController` |
 
 `-1` removes the count cap, not admission control: the memory-pressure arbiter still decides every
-stream first, so an engine configured this way still sheds under watermark pressure. What it gives
+stream first, so an engine configured this way still sheds under watermark pressure — which a
+Community engine sees only when `memory.offHeapBudgetBytes` gives its allocator a budget. What it gives
 up is the ceiling that sheds *regardless* of memory pressure — the point for a JVM-controlled
 deployment measuring where saturation actually falls, and a foot-gun for a shared one. `0` is
 refused rather than read as "off" because an engine that admits nothing serves nothing.
@@ -121,6 +149,29 @@ and not to the server most deployments run.
 limit. It is reachable only from `close()`, decides nothing about which streams are served, and
 bounds only how the drain spends CPU while it waits — under a drain deadline that is itself
 deliberately fixed. It stays a constant.
+
+## Outbound write bound
+
+`TransportConfig.maxQueuedWriteBytes()` (`transport.maxQueuedWriteBytes`, default
+`TransportConfig.DEFAULT_MAX_QUEUED_WRITE_BYTES` = 262144) bounds the bytes one stream holds that its
+peer has not yet taken before `TransportStream#write` blocks its caller. The limit lives on the
+record because every transport tier meets it; the key is how Community's bootstraps fill it, and it has
+no `network.*` twin.
+
+| Value | Meaning |
+|:--|:--|
+| `> 0` | the bound, as given |
+| `-1` (`TransportConfig.UNBOUNDED_QUEUED_WRITE_BYTES`) | `write` never blocks for backpressure |
+| `0`, other negatives | **refused at startup**, by `TransportConfig` |
+
+`0` is refused rather than read as "off" because a zero bound would block every write: the failure
+would be total and silent, so the record fails the boot instead (the third class of ADR-071). The
+constructors written before the component existed apply the default, so a caller that never passes a
+bound is protected, not left unbounded.
+
+All three sites that build a `TransportConfig` read the key: the transport subsystem and the HTTP and
+WebSocket listeners, which build their own. The carrier hands `config.maxQueuedWriteBytes()` to every
+stream it builds, accepted or dialled.
 
 ## Idle connection reclamation
 
@@ -242,8 +293,7 @@ The fault event carries the exception **class** and never its message, matching
 
 ## Client TLS
 
-A listener serves TLS when it holds certificate material. What a `CLIENT` or `DUAL` carrier does with
-its **outbound** connections is decided once, when `NativeTcpTransportProvider` builds it:
+A listener serves TLS when it holds certificate material. The ALPN list it offers is set by its owner: the HTTP listener offers `h2` then `http/1.1` when `http.maxVersion` permits HTTP/2 and `http/1.1` alone otherwise (`NativeTcpTransportProvider#createEngine(TransportConfig, CommunityOutboundTls, List<String>)`); a carrier built without a list offers `h2` then `http/1.1`. A listener selects only a protocol its list names; the WebSocket listener's list is `http/1.1` alone, so a WSS listener never selects `h2`. What a `CLIENT` or `DUAL` carrier does with its **outbound** connections is decided once, when `NativeTcpTransportProvider` builds it:
 
 | Posture | When | Outbound connections |
 | :-- | :-- | :-- |
@@ -317,6 +367,14 @@ event loop.
 PAQS is the enforcement arm of the `ResourceArbiter`. When `WatermarkManager` signals memory pressure,
 PAQS raises the shedding threshold — streams below that priority are dropped at the transport edge before
 a single byte enters the application stack. This prevents GC pressure from cascading into business logic.
+
+The Community carrier owns the refresh of the level its arbiter reads. `initPaqs()` samples the
+allocator once, so the level is current before the first accept instead of after the first periodic
+sample;
+after the listener is up, a refresh-only `MemoryMaintenanceTask` re-samples every 1 s (not
+configurable) until `stop()`. Every `start()` builds a new manager, arbiter and task, and the
+arbiter answers `ALLOW` for 30 s from that start, timed by the `TimeSource` bound at the call. With
+no `memory.offHeapBudgetBytes` the allocator reports no budget and the level stays `NORMAL`.
 
 ### 3. Zero-Copy Ingress
 
@@ -397,6 +455,170 @@ is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through
 
 ---
 
+## Stream lifecycle and wakeups
+
+A `NativeTcpStream` can end through several routes, and a thread parked on it, whether a reader in
+`read`, a writer or a caller waiting for the reactor registration, has to learn of each one. The
+rules below are the contract between the terminal paths and the waiters. They describe the Community
+native TCP stream only; an Enterprise transport meets the same observable obligations through the
+`AbstractTransportStreamTck` terminal-wake cases, not through this mechanism. A TLS write that meets a
+full send buffer does not end the stream: it stalls, as described in [TLS write stall](#tls-write-stall).
+Only a fatal TLS wrap status ends the stream, and it goes through the rules below as an abort.
+
+The cost is a wake on every terminal transition, not only on the one that wins: each call reads three
+waiter slots and unparks the threads it finds, so a waiter may receive a surplus permit, which its park
+loop absorbs by re-checking its condition. Nothing is allocated, and the steady-state read and write
+paths gain one extra flag read.
+
+**Rules**
+
+1. **Wakers never clear a waiter's registration.** A thread records itself as the stream's reader,
+   writer or registration waiter, and removes its own record when it leaves. A terminal transition
+   reads the record and unparks the thread; it does not take the record away, so a second terminal
+   transition reaches the same thread again.
+2. **Flag first, then wake.** Every transition in the table writes its flag and then wakes all
+   waiters, whether or not this caller won the compare-and-set on that flag. The wake is not gated on
+   a "parked" hint: those hints serve the data path, and a surplus permit is harmless because every
+   park loop re-checks its own condition.
+3. **Park conditions name every terminal flag.** The reader stops waiting when the stream is
+   closed, a close was requested, the remote end was observed, or data arrived. A writer parked at the
+   outbound bound stops when the stream is closed, a close was requested, or the queue has drained to
+   the resume mark; it does not stop on the remote end alone, because a FIN is a half-close. A reader still
+   completing the TLS handshake stops on a requested close too. A `read` that finds a close requested
+   discards what is queued inbound, then reports end of stream if the remote end was observed and
+   otherwise throws `EX-NET-4009`, the same answer a write gets from the same state. One exception:
+   after a send-failure abort that follows the peer's end, bytes the peer sent first stay readable
+   and end of stream comes only after them, because the abort is this side's consequence of the
+   peer's end. A later `close()` or `reset(long)` by the application ends that and discards them; an
+   abort raised as the closed signal on the writer's thread does not end the survival: only the
+   application's `close()`/`reset(long)` does.
+4. **No early return without a wake and a finish attempt.** A repeated `close()` or `reset(long)`
+   wakes the waiters and tries to finish the teardown again; a repeated `reset(long)` that cannot
+   finish also asks the reactor to do it.
+5. **An abort finishes where it happens.** A send failure sets the abortive flags, abandons the
+   queue and wakes the waiters while the failing thread holds the outbound consumer slot. The
+   abort's terminal close runs after that thread releases the slot. The finishes that
+   `flushPendingWrites` itself runs at the end of a drain or on a stall run under the slot, which
+   rule 6 makes safe.
+6. **The consumer gate is re-entrant.** Entering the inbound or outbound slot reports whether the
+   call acquired it or its thread already held it, and only an acquiring call releases. A cleanup
+   nested under a holder therefore leaves the holder's slot alone.
+7. **The finish wakes once more.** The transition that sets `closed` wakes all waiters again, as the
+   last transition of the stream.
+
+**Transitions**
+
+| Event | Flags set | Wakes | Finish |
+|:--|:--|:--|:--|
+| `close()` (any call) | `closeRequested` | all | now, if the slot is free and the queue is drained; otherwise whoever releases the slot, or the reactor's drain |
+| `reset(long)` (any call) | `resetRequested`, `closeRequested` | all | now, if the slot is free; otherwise the reactor is woken to do it |
+| Send failure on a queue drain: a write `IOException`, or a fatal TLS wrap status (`CLOSED`, which never re-enters `close()` under the slot) | `resetRequested`, `closeRequested`; `peerEndedFirst` when the remote end was already observed, the send's errno says the peer reset (`EPIPE`/`ECONNRESET`, core-socket seam, or the errno of a fatal TLS wrap status) or, on the NIO fallback, the channel failed on a send for any reason but a local close, or a TLS wrap found the session ended by the peer, and no local close came first; the remote end is then recorded (`markRemoteClosed`), and the writer receives the closed signal with the `EX-NET-4002` failure as its cause | all | after the failing thread releases the slot |
+| Send failure on a direct write (plain, nothing queued) after the peer ended | `remoteClosed`, `peerEndedFirst` if no local close came first | all | none: the application's close ends the stream |
+| Peer FIN or TLS `close_notify` (`markRemoteClosed`) | `remoteClosed`; `peerEndedFirst` when no local close was requested | all | none |
+| Carrier teardown (`closeKeyStream`: dispatch fault, idle reap) | `markRemoteClosed`, then `reset(long)` | all | through `reset(long)` |
+| The finish succeeds | `closed` | all | none |
+| TLS wrap `NEED_WRAP` or `NEED_UNWRAP` (a stall) | none | none | none |
+| A drain step that takes the queue from above the resume mark to at or below it | none | the parked writer | none |
+
+A peer FIN is a half-close: it ends the reader's input but does not end writes, so a writer woken by
+it re-checks its condition and keeps waiting, and a write after it is still sent. A TLS `close_notify`
+is not: the Community engine refuses a wrap after the peer's `close_notify`, so the next drain ends the
+stream and reports `EX-NET-4008`; TLS 1.3 half-close is not supported. A reactor-side flush that meets
+the peer's end does not reach the reactor's dispatch-fault path; the stream finishes its own abort and
+the writer's next call reports the signal.
+
+A thread that wants to wait on the stream's terminal state registers itself the way `read` does and
+checks every flag in the table after registering and before parking. A write made on a reactor thread
+queues past the outbound bound instead of parking, because a reactor serves every stream it owns and
+must not wait on one stream's peer; see [Outbound backpressure](#outbound-backpressure).
+
+## Outbound backpressure
+
+`TransportStream#write` blocks its caller while the stream holds too many bytes its peer has not
+taken; `TransportStream#queueWrite` never does. Both feed one byte counter per stream, so the bound
+sees everything queued, and only `write` waits on it.
+
+**Arithmetic.** For a bound `B > 0`: the chunk cap is `C = max(1, B / 2)` and the resume mark is
+`L = B - C`. `write` enqueues one chunk at a time and only while the queued bytes sit at or below `L`,
+so what `write` queues never exceeds `B`; `queueWrite` ignores the bound and may push the count past
+it. That is memory accounting, not a wait.
+
+**Wake.** The counter is raised before an entry is offered and lowered where an entry leaves the queue,
+whether it was sent or abandoned. The step that takes the count from above `L` to at or below `L`
+wakes the parked writer; every path from above `L` to at or below it contains such a step, so no wake
+is lost to the increments in between. A fixed chunk cap keeps a TLS stream from cutting one-byte
+records when the queue sits just under the bound, and each chunk is a pending write of its own, so the
+retry rule of the [TLS write stall](#tls-write-stall) holds unchanged.
+
+**Who waits.** The caller of `write`, on its own thread, holding no monitor and not the outbound slot.
+Never a reactor thread: the reactors run their loop with a scoped marker, and a write made under it
+queues past the bound. One thread at a time may park as a stream's writer; a second that would park
+gets `IllegalStateException`, while a second that finds room is unaffected. A parked writer that is
+interrupted gets `IllegalStateException` with its interrupt status restored. A parked writer is
+released by any terminal transition of the stream with the closed-stream signal: `EX-NET-4009` for the
+application's own close or reset, `EX-NET-4008` when the peer or a carrier teardown ended it first.
+
+**Liveness.** There is no deadline in the wait. A peer that never reads is bounded by the idle sweep
+(`transport.idleTimeoutMillis`), whose reclaim resets the stream and so wakes the writer with
+`EX-NET-4008`. With `idleTimeoutMillis = 0` a writer to a peer that never reads waits until the stream
+is closed or reset.
+
+**Release is the credit.** A loan handed to `queueWrite` is released once its bytes have left the
+outbound queue, or when the stream ends, and not before. A caller that must not block bounds the loans
+it has outstanding by those releases.
+
+**Telemetry.** A write that parks emits one `TransportWriteParkEvent` before its first park.
+
+## TLS write stall
+
+A TLS stream's write goes through `SSL_write` on the socket-owner BIO. When the kernel send buffer is
+full, OpenSSL reports `SSL_ERROR_WANT_WRITE`, which the engine maps to `NEED_WRAP`. That is back
+pressure from the peer, not a failure, so the head entry of the outbound queue stays queued and the
+drain reports a stall. The stream stays open, no waiter is woken and nothing is abandoned.
+
+- **`NEED_WRAP` arms write interest.** The caller that sees the stall asks the reactor for
+  `OP_WRITE`: `queueWrite` does so when data is still queued after its flush, and the reactor keeps
+  `OP_WRITE` set while its own flush does not drain. When the socket becomes writable again the
+  reactor retries the head entry.
+- **The retry is the same call.** The engine's context sets neither `SSL_MODE_ENABLE_PARTIAL_WRITE`
+  nor `SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER`, so OpenSSL accepts a retry only with the same plaintext
+  address and the same length. A stalled head entry is therefore never re-cut, merged with a
+  neighbour, resized or reallocated, and its prepared flag stays unset until the record layer has
+  accepted every byte. A retry with other arguments is a fatal bad-write-retry, which the engine
+  reports as `CLOSED`.
+- **`NEED_UNWRAP` from a wrap is a stall that does not arm write interest.** The engine waits for the
+  peer, for example during a renegotiation the peer started, and a writable socket would only make the
+  reactor spin. The reactor's own flush drops `OP_WRITE` for such a write. The carrier's TLS ingress
+  loop flushes the queue after each readable event while a write waits for the peer, and re-arms write
+  interest only if the head entry then stalls on the socket. Two windows would lose that flush, and
+  both are closed. The wait is recorded under the TLS lock, in the same critical section as the wrap,
+  so an ingress read that takes the lock afterwards always sees it. An ingress flush that finds the
+  outbound slot held leaves a retry request, and the holder, after releasing the slot on a stall,
+  flushes once more. A graceful `close()` while a write waits for the peer finishes when the peer's
+  next record arrives, or when the idle reclamation resets the stream.
+- **A fatal status aborts.** `CLOSED` from a wrap (a broken connection, a reset, a protocol error)
+  abandons the queue under the outbound slot, wakes every waiter and ends the stream, so a queued
+  write is never lost silently and no waiter hangs. The failure (`EX-NET-4002`; `EX-NET-4008` with
+  `EX-NET-4002` as cause when the peer had ended the stream) is thrown to the writer when its own
+  thread runs the drain. A retry that the reactor runs instead ends the stream
+  through the reactor's teardown when the peer had not ended the stream; when it had, the reactor's flush
+  swallows the signal and the stream finishes its own close. Either way the writer's next call reports
+  the closed signal. The abort's
+  terminal close runs after the slot is released; it never re-enters `close()` from under the slot.
+- **A stall across the peer's `close_notify`.** The retry finds the session ended, abandons the queue,
+  releases its loans and ends the stream. The bytes are not delivered, and the writer's next call
+  reports `EX-NET-4008`. There is no abortive dispatch-fault teardown.
+- **Allocation.** A stall allocates nothing. `write()` makes one private copy of the caller's bytes,
+  at enqueue; `queueWrite` makes none.
+
+The tests wait on the stall as an event: a test-only hook runs on every stall, so no test polls for a
+full send buffer. `NativeTcpStreamTlsBackpressureTest` scripts `SSL_write` results and records the
+address and length of each call; `CommunityHttp1TlsSlowReaderTest` sends a 4 MiB HTTP/1.1 body over TLS
+to a client that reads nothing until the stall, with an 8 KiB send buffer, and checks the body byte for
+byte; `CommunityHttp2TlsStreamExchangeTckTest` binds the stream exchange TCK over TLS with ALPN `h2` and fails its backpressure probe unless at least one TLS write stalled.
+The last two are in the `stream-loopback` group.
+`NativeTcpTlsSendBufferStallIntegrationTest` is not: it writes 16 MiB through a Community server to a JDK client that reads nothing until the stall, checks the SHA-256 of what arrives and that the stream stayed open, and runs in the default build and in the TLS matrix, so the stall is exercised against the real OpenSSL binding in CI.
+
 ## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
@@ -410,10 +632,38 @@ is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through
 | `EX-NET-4005` | Engine Start Failure     | `[0] String transportName, [1] int port` — thrown by `TransportException.engineStartFailure`; port-in-use is one cause among several (e.g. carrier loop thread creation failure) — **Fatal:** check OS process list when the port is the cause |
 | `EX-NET-4006` | PAQS Load Shedding       | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`); the JFR `StreamShedEvent` recorded on both shed paths carries typed fields (`streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount`) instead, read by name, not by this `rawArgs` layout |
 | `EX-NET-4007` | Buffer Exhaustion        | Reserved — no kernel code path raises it, so it publishes no `rawArgs` layout |
+| `EX-NET-4008` | Transport Stream Closed By Peer | No `rawArgs` — thrown as `TransportStreamClosedException` (an `IllegalStateException` subclass); the remote end was observed, or the transport tore the stream down, before the stream was closed through this endpoint |
+| `EX-NET-4009` | Transport Stream Closed Locally | No `rawArgs` — same thrower; the stream was closed through this endpoint first |
 
 **Operational note for `EX-NET-4006`:** This is a deliberate, non-fatal policy decision — not a hardware
 failure. No connection state or heap object is allocated for the shed stream. It MUST emit a JFR event
 (`eu.exeris.kernel.core.transport.jfr.StreamShedEvent`) but must not increment error counters used for alerting.
+
+**Closed-stream signal (`EX-NET-4008` / `EX-NET-4009`).** A `read`, `write` or `queueWrite` on a closed
+`TransportStream` throws `TransportStreamClosedException`, an `IllegalStateException` subclass. `EX-NET-4008`
+means the transport had observed the remote endpoint end the stream, or had torn the stream down itself
+without a local `close()`/`reset()` request, before the stream was closed through this endpoint. `EX-NET-4009`
+means the stream was closed through this endpoint (`close()`, `reset(long)`, or the parent connection's
+`close()`) first. The first side to end the stream decides the code: a peer end followed by a local close
+reports `EX-NET-4008`, and a local close followed by a peer end reports `EX-NET-4009`. A `read` that can still
+report end of stream returns `-1` instead of throwing. `PaqsScheduler`
+records a handler ending with `EX-NET-4008` as `StreamLifecycle` outcome `PEER_CLOSED`, logs it at DEBUG with
+the stream id and engine, and emits no `PaqsHandlerFailure`. It classifies the thrown object only, never its
+cause chain or the stream's state: a wrapper means an intermediate layer made the closed signal its own
+failure, so walking causes would let a genuine failure that follows a disconnect be downgraded; and protocol
+layers own their closed signals, which Core, being protocol-blind, cannot classify. `EX-NET-4009` stays a
+handler failure. The Community carrier also reports `EX-NET-4008` for a stream it reclaims idle or tears
+down after a connection fault, because it marks those streams remote-closed.
+
+A send that fails because the peer ended the stream raises the signal as well, with the `EX-NET-4002`
+transport failure as its cause. The core-socket seam recognises the peer's end by the send's errno
+(`EPIPE`, `ECONNRESET`) or by an end the carrier already observed. A TLS stream does the same through the
+errno that its fatal wrap status left: in fd-owner mode OpenSSL writes to the socket itself, and the engine
+reads errno once, right after `SSL_get_error` reports `SSL_ERROR_SYSCALL`. Windows does not read it, so
+there only an end the carrier already observed is recognised. The NIO fallback has no errno and its
+exception messages are locale text, so there a send that fails on the channel for any reason but a local
+close (a `ClosedChannelException`) is read as the peer's end: the connection is gone, and the stream is
+aborted either way.
 
 ---
 
@@ -460,42 +710,46 @@ sequenceDiagram
     autonumber
     participant NIC   as NIC / Transport Carrier
     participant PAQS  as PAQS Scheduler (Core)
-    participant WM    as WatermarkManager (L0)
+    participant AC    as AdmissionController (Core)
     participant RA    as ResourceArbiter (L0)
     participant VT    as Virtual Thread (Loom)
 
-    NIC->>PAQS: onStreamArrival(stream, rawHeaders)
-    PAQS->>PAQS: extractStreamPriority(stream)<br/>HTTP header / JWT claim / config default
+    NIC->>PAQS: schedule(stream)
+    PAQS->>PAQS: priorityExtractor.apply(stream)
 
-    PAQS->>WM: currentLevel()
-    WM-->>PAQS: NORMAL | WARNING | CRITICAL | SHEDDING
+    PAQS->>AC: admit(priority)
+    AC->>RA: decide(Context.TRANSPORT_IO)
+    Note over RA: Watermark level to action:<br/>NORMAL → ALLOW, WARNING → THROTTLE,<br/>CRITICAL → REJECT, SHEDDING → SHED_LOAD
 
-    alt NORMAL watermark
-        PAQS->>RA: decide(Context.TRANSPORT_IO)
-        RA-->>PAQS: ResourceArbiter.Action (ALLOW — slot granted)
-        PAQS->>VT: Thread.ofVirtual().start(streamHandler)
-        Note over VT: Request processed imperatively.<br/>ScopedValues bound. StructuredTaskScope used downstream.
-    else WARNING watermark — priority gate active
-        PAQS->>PAQS: streamPriority.ordinal() <= threshold?
-        alt priority sufficient
-            PAQS->>RA: decide(Context.TRANSPORT_IO)
-            RA-->>PAQS: ResourceArbiter.Action (THROTTLE — slot granted)
-            PAQS->>VT: Thread.ofVirtual().start(streamHandler)
-        else priority insufficient
-            PAQS->>NIC: stream.close()<br/>[TCP FIN (graceful close) / QUIC CONNECTION_CLOSE]
+    alt ALLOW
+        RA-->>AC: ALLOW
+        AC-->>PAQS: ADMIT (a slot under the stream ceiling is reserved)
+        PAQS->>VT: StreamExecutionBackend.start(task)
+        Note over VT: Request processed imperatively.<br/>ScopedValues bound. Concurrency inside the handler is structured.
+    else THROTTLE or REJECT — priority gate
+        RA-->>AC: THROTTLE (admits CRITICAL, HIGH) or REJECT (admits CRITICAL)
+        alt priority admitted
+            AC-->>PAQS: ADMIT
+            PAQS->>VT: StreamExecutionBackend.start(task)
+        else priority not admitted
+            AC-->>PAQS: SHED_MEMORY
+            PAQS->>NIC: stream.close()<br/>[TCP FIN (graceful close) / QUIC STOP_SENDING]
             PAQS->>PAQS: emit StreamShedEvent (JFR, @StackTrace false)
             Note over PAQS: Stream shed via close() + StreamShedEvent.<br/>No exception thrown back to carrier VT.<br/>No VT spawned, no heap allocation, no log.
         end
-    else CRITICAL or SHEDDING watermark — shed all
+    else SHED_LOAD (SHEDDING watermark) — shed all
+        RA-->>AC: SHED_LOAD
+        AC-->>PAQS: SHED_MEMORY
         PAQS->>NIC: stream.close()
         PAQS->>PAQS: emit StreamShedEvent (JFR)
         Note over PAQS: All streams shed (close + StreamShedEvent),<br/>no exception propagated to the carrier VT.
     end
+    Note over AC: An ADMIT becomes SHED_CAPACITY once<br/>transport.paqs.maxActiveStreams streams are active.
 ```
 
-> The `extractStreamPriority` step above is illustrative of the target design (see the caveat under
+> The `priorityExtractor` step above is illustrative of the target design (see the caveat under
 > "`StreamPriority` — Origin and Assignment" below): the shipped Community carrier's extractor ignores
-> `rawHeaders` and always returns `NORMAL`, so the WARNING-watermark priority gate currently admits or
+> the stream and always returns `NORMAL`, so under `THROTTLE` and `REJECT` the priority gate currently
 > sheds every stream on an engine uniformly rather than differentiating by priority.
 
 ---
@@ -511,7 +765,9 @@ edge based on verifiable attributes — that is the target design. The priority 
 > the config key the third row depends on, is itself listed 🔲 planned (not wired) in
 > [config.md](config.md). Every stream a Community engine admits today carries `NORMAL`, so the
 > differential shedding this table and the Overview describe cannot happen against this build; the
-> table states the intended resolution chain, not current behavior.
+> table states the intended resolution chain, not current behavior. A consequence for memory
+> pressure: any level above `NORMAL` sheds every Community stream (`WARNING` already does), by
+> closing it with `FIN` and no response.
 
 | Source                             | Mechanism                                                                                         | Trust Level        |
 |:-----------------------------------|:--------------------------------------------------------------------------------------------------|:-------------------|
@@ -543,15 +799,16 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 
 | Scenario               | Community (TCP)                                     |
 |:-----------------------|:----------------------------------------------------|
-| **PAQS load shed**     | `FIN` (graceful close) — client receives `HTTP 503` |
+| **PAQS load shed**     | `FIN` (graceful close) — no response is written; the client sees the connection end, not a status |
 | **Graceful shutdown**  | `FIN` after drain timeout — no forced `RST`         |
 | **Hard shutdown timeout** | `FIN` — the coordinator seals unconditionally at 60 s and remaining streams close through the same `stream.close()` teardown as any other close, best-effort flush and all; no `reset()`/`RST` call sites exist on this path |
 | **`TransportStream.reset(long)`** | `RST` (abortive) — `SO_LINGER 0` then close; queued writes abandoned (no drain wait) |
 | **Unrecoverable outbound-write failure** | `RST` (abortive) — queued writes abandoned so teardown cannot hang |
 
 > **Why `FIN` not `RST` for load shedding?** `RST` causes immediate connection teardown on the client
-> side, which may interrupt in-flight retries and force the client to reconnect. `FIN` allows the client
-> to receive the `HTTP 503` response body, which is machine-readable and enables intelligent backoff.
+> side, which may interrupt in-flight retries and force the client to reconnect. `FIN` is the ordinary
+> end of a stream: it carries no status, because no transport-level path in the kernel answers with one
+> (ADR-081 §2), but it does not discard anything the peer was already sent.
 > `RST` is reserved for the two abortive primitives above — `reset(long)` and a failed outbound write —
 > never for the drain deadline itself: `NativeTcpCarrier.closeSelectorAndChannels()`, run whether the
 > drain finished cleanly or hit its 60 s deadline, calls every remaining stream's ordinary `close()`.
@@ -664,7 +921,7 @@ idle connections that used to hold shutdown open.
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
-| **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. The delivered wire framing is a close-delimited HTTP/1.1 response, not chunked transfer as sketched here before it landed; per-event chunked framing and an HTTP/2 `DATA` path are follow-ups. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
+| **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. Over HTTP/1.1 the wire framing is a close-delimited response, with per-event chunked framing a follow-up; over HTTP/2 the head is a `HEADERS` frame and each event is `DATA` frames, with `emit` parking on the flow-control window. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
 | **WebSocket** | ✅ Shipped v0.12 — ratified by [ADR-084](../adr/ADR-084-websocket-provider-spi.md) (ACCEPTED) | Full duplex over the RFC 6455 HTTP/1.1 Upgrade handshake, surfaced as the sibling `WebSocketExchange` SPI. `preview` surface; text frames only on the application side; one virtual thread per connection with no queue in either direction, so backpressure is the socket's. **Extended CONNECT (H2, RFC 8441) is not implemented** — the upgrade is HTTP/1.1 only. The engine is embeddable **and**, since v0.12, bootstrappable: a `websocket` subsystem starts one when `websocket.enabled` is set, which it is not by default (ADR-084 A2). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
@@ -686,7 +943,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 | Feature                            | Community                           |
 |:-----------------------------------|:-----------------------------------:|
 | Proxy Protocol v2 parsing          | 🚧 Planned TRL-4                    |
-| Real client IP in `StreamHeaders`  | 🚧 Planned via `remoteAddress()`    |
+| Proxy-supplied client IP in `remoteAddress()` | 🚧 Planned (`remoteAddress()` reports the immediate peer, which is the proxy) |
 | TLV extension support              | 🚧 Planned TRL-4                    |
 
 > **Target behavior:** when Proxy Protocol is enabled (`network.proxyProtocolEnabled=true`), the transport carrier
@@ -701,12 +958,21 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 
 | Event | JFR Name | Purpose |
 |---|---|---|
-| `StreamShedEvent` | `eu.exeris.kernel.transport.StreamShed` | Emitted by PAQS when stream is rejected under high load |
-| `StreamAcceptedEvent` | `eu.exeris.kernel.transport.StreamAccepted` | Emitted by PAQS when stream is admitted |
-| `StreamLifecycleEvent` | `eu.exeris.kernel.transport.StreamLifecycle` | State transitions within a stream lifetime |
-| `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.transport.IngressQueueDepth` | Current queue depth metric |
-| `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
+| `StreamShedEvent` | `eu.exeris.kernel.core.transport.StreamShed` | Emitted by PAQS when stream is rejected under high load |
+| `StreamAcceptedEvent` | `eu.exeris.kernel.core.transport.StreamAccepted` | Emitted by PAQS when stream is admitted |
+| `StreamLifecycleEvent` | `eu.exeris.kernel.core.transport.StreamLifecycle` | Stream virtual-thread completion; `outcome` is `COMPLETE`, `ERROR` or `PEER_CLOSED` |
+| `ConnectionEstablishedEvent` | `eu.exeris.kernel.core.transport.ConnectionEstablished` | Once per established connection (plaintext: key armed; TLS: handshake active) |
+| `PaqsHandlerFailureEvent` | `eu.exeris.kernel.core.transport.PaqsHandlerFailure` | A stream handler failed; PAQS isolated it. Not emitted for a handler that ends with `EX-NET-4008` |
+| `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.core.transport.IngressQueueDepth` | Current queue depth metric |
+| `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.core.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
+| `TransportWriteParkEvent` | `eu.exeris.kernel.core.transport.WriteBackpressurePark` | A `write` is about to park at the stream's outbound bound; carries `streamId`, `queuedBytes`, `boundBytes`. Once per parking call, before the first park |
 | `CommunityConnectionIdleTimeoutEvent` | `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` | Connection reclaimed after `transport.idleTimeoutMillis` without activity; carries the observed idle span and the configured limit |
+| `CommunityConnectionRefusedEvent` | `eu.exeris.kernel.transport.CommunityConnectionRefused` | Connection refused at accept because the connection ceiling was reached |
+| `CommunityAcceptFaultEvent` | `eu.exeris.kernel.transport.CommunityAcceptFault` | Setting up an accepted connection threw; carries the exception class, never its message |
+| `CommunityAcceptRetryEvent` | `eu.exeris.kernel.transport.CommunityAcceptRetry` | `accept()` itself threw and the acceptor pauses and retries; carries the streak and the backoff |
+| `CommunityReactorDispatchFaultEvent` | `eu.exeris.kernel.transport.CommunityReactorDispatchFault` | Unrecoverable per-stream fault caught in the reactor select loop, answered by abortive teardown; carries the exception class, never its message |
+| `CommunityTransportDrainEvent` | `eu.exeris.kernel.transport.CommunityTransportDrain` | Graceful-shutdown drain: `busyAtStart`, `busyRemaining`, `openAtStart` and duration |
+| `TransportTlsDeclinedEvent` | `eu.exeris.kernel.transport.TransportTlsDeclined` | A listener configured with certificate and key bound plaintext because `-Dexeris.transport.tls=false` declined TLS |
 | `TransportTlsClientPostureEvent` | `eu.exeris.kernel.transport.TransportTlsClientPosture` | Once per `CLIENT` or `DUAL` carrier: whether its outbound connections verify TLS, dial plaintext or are refused (`posture`), the trust's origin (`trustSource`), `configBound`, and OpenSSL's effective `defaultCertFile`/`defaultCertDir` and `defaultTrustPresent` |
 
 ### Event classes are initialised at start-up, not at the first emit
@@ -743,20 +1009,20 @@ carrier-pinning binding.
 
 Warming is per subsystem, not per kernel, and the reason is a measurement: initialising one JFR
 event class costs about 1 ms cold (103 classes in 79 ms with a recording running, 108 ms without —
-it is the class load, not the JFR registration). Warming all 128 event classes in the kernel would
+it is the class load, not the JFR registration). Warming every event class in the kernel (well over a hundred) would
 cost 100 ms or more, much of it for failure-path events a given process may never emit.
 
 Which transport classes are warmed is declared in `CoreJfrEventCatalogue` and
 `CommunityJfrEventCatalogue`, and the rule that governs both — plus the guard test that keeps them
-complete — is in [`telemetry.md`](telemetry.md). The transport subsystem warms all fourteen of its
-event classes: `SubsystemOrchestrator.doStart` warms the Core half, once the subsystem reports
+complete — is in [`telemetry.md`](telemetry.md). The transport subsystem warms all sixteen of its
+event classes (eight in each catalogue): `SubsystemOrchestrator.doStart` warms the Core half, once the subsystem reports
 `isRunning()`, and `CommunityTransportSubsystem.start()` the driver half. `NativeTcpCarrier.start()`
 asks for them directly as well, because CLIENT mode stands up no PAQS, an embedded engine has no
 orchestrator to start it, and the orchestrator's own call lands only after `start()` has returned —
 and it asks before `initPaqs()` builds a scheduler, which is why the scheduler's own constructor
 does not need to.
 
-**All fourteen, in both roles, and that is a cost rather than a property.** Roughly half of them —
+**All sixteen, in both roles, and that is a cost rather than a property.** Roughly half of them —
 the PAQS scheduler's stream events and the acceptor's connection events — cannot be emitted by a
 CLIENT-mode engine at all, so a client pays their class loads for nothing. Splitting the group by
 role would need a catalogue key that is not a `Subsystem` name, which is the same mechanism the
@@ -786,10 +1052,15 @@ the record of what it costs.
   allocations; **Community tier is bounded**, not zero (`AbstractSubsystemZeroAllocTck` default
   budget: 5 allocations/iteration).
 - **PAQS Integration:** `WatermarkManager` pressure increase correctly raises PAQS threshold and
-  triggers `EX-NET-4006` for low-priority streams. 🚧 Planned — not yet implemented. `AbstractPaqsIntegrationTck` covering WatermarkManager→PAQS→EX-NET-4006 chain does not yet exist.
+  triggers `EX-NET-4006` for low-priority streams. 🚧 Planned as a TCK — `AbstractPaqsIntegrationTck` covering WatermarkManager→PAQS→EX-NET-4006 chain does not yet exist. The Community chain from a budgeted allocator to an admission decision is covered by `NativeTcpCarrierWatermarkAdmissionTest` (a real carrier: start sample, periodic refresh, startup grace, shed with `FIN`) and `CommunityAdmissionUnderBudgetTest` (allocator, watermark manager, arbiter and admission controller at each level).
 - **Berkeley socket seam round-trip (since 0.11):** `SyscallLoopbackRoundTripIT` (Core) drives the handles resolved by `CoreSyscallLoader` through a real loopback connection — bind, listen, connect, accept, send, recv, byte-exact comparison — plus a refusal case that pairs a successful connect with a refused one so neither can pass alone. Runs in the default build via Failsafe; Linux and Windows only, since BSD `sockaddr_in` carries a leading `sin_len` byte that the shared 16-byte layout does not model. Integer-width entries in the C-type→`ValueLayout` table stay reviewed-not-tested: the x86-64 SysV ABI zero-extends, so a `size_t` mis-declared as `JAVA_INT` passes this gate.
 
-**Full TCK abstract class set (all have full Community bindings):** `AbstractTransportEngineTck`, `AbstractTransportProviderTck`, `AbstractTransportConnectionTck`, `AbstractTransportStreamTck`, `TransportZeroAllocTck`, `TransportCarrierPinningTck`.
+`AbstractTransportStreamTck` also pins the outbound contract: `QueueWriteDoesNotWait` is ungated and binds
+every transport (a `queueWrite` that waits for the peer fails it, and a loan released before its bytes
+leave the queue fails it); `WriteBackpressure` is gated by `supportsWriteBackpressure()`, which the
+Community bindings turn on with a 64 KiB bound.
+
+**Full TCK abstract class set (all have full Community bindings):** `AbstractTransportEngineTck`, `AbstractTransportProviderTck`, `AbstractTransportConnectionTck`, `AbstractTransportStreamTck`, `AbstractTransportWorkloadAdmissionTck`, `TransportZeroAllocTck`, `TransportCarrierPinningTck`.
 
 ### Load Tests
 
@@ -808,9 +1079,9 @@ a v0.6 PR-review carry-over (HEUR-061) asked whether they should be decomposed a
 FD-owner / PAQS-dispatch responsibility lines. **Assessment outcome at the time: keep the single-file
 shape; do not refactor in that sprint** (reasoning below, kept for the record).
 
-**Current state (v0.12): partial decomposition has since happened, in the direction the v0.7
-assessment argued against.** `NativeTcpCarrier` is now ~1.1k LOC and `NativeTcpStream` ~1.4k LOC — the
-two have roughly swapped size rank since v0.7, so the LOC figures above no longer describe which file
+**Current state (v0.13): partial decomposition has since happened, in the direction the v0.7
+assessment argued against.** `NativeTcpCarrier` is now ~1.4k LOC and `NativeTcpStream` ~1.5k LOC — the
+two have swapped size rank since v0.7, so the LOC figures above no longer describe which file
 is larger. Declared-member counts are not re-verified here (unlike LOC, they were not mechanically
 recounted for this pass) and should be treated as unconfirmed for both classes at both dates. The
 reactor loop that Sprint 2 argued should stay an inner class — `ReactorLoop` — is now the top-level
@@ -819,8 +1090,8 @@ into it for `closeKeyStream`, `readIngress`, `flushStream` and stream resolution
 "callback-heavy delegate" shape point 1 below predicted as the cost of extraction, taken on anyway.
 Alongside it, `NativeTcpSocketBackend` / `NativeTcpSocketProbe` now hold the FFM socket-backend
 selection and validation responsibility line, `ChannelRuntimeRegistry` holds channel/stream/owner
-bookkeeping, and on the stream side `NativeTcpStreamPendingWrite`, `NativeTcpStreamConsumerGate` and
-`NativeTcpStreamPlainSocketIo` have been split out of what was one file. `registerAndHandshakeConnection`
+bookkeeping, and on the stream side `NativeTcpStreamPendingWrite`, `NativeTcpStreamConsumerGate`, `NativeTcpStreamRegistrationGate` and
+`NativeTcpStreamPlainSocketIo`, `NativeTcpStreamTeardown`, `NativeTcpStreamTlsDrain`, `NativeTcpStreamTlsHandshake` and `NativeTcpStreamWriteBound` have been split out of what was one file. `registerAndHandshakeConnection`
 below is `registerConnection` in the current source. Whether this extraction was driven by the
 per-reactor idle-reaper state introduced in 0.12 (`NativeTcpIdleReaper`, which needed a natural
 per-reactor owner) or by the general pressure below has not been confirmed against a PR history for
@@ -845,7 +1116,7 @@ socket-backend lines):**
 - Outbound queue (`MpscUnboundedArrayQueue`) and write loop with TLS layering — pending-write bookkeeping and plain-socket I/O now split into `NativeTcpStreamPendingWrite` and `NativeTcpStreamPlainSocketIo`.
 - Inbound queue (`SpscArrayQueue` / `SpscUnboundedArrayQueue`) and read loop with TLS layering.
 - Backpressure / queue-depth bookkeeping for PAQS interaction — the outbound-consumer handoff now via `NativeTcpStreamConsumerGate`.
-- Two inner classes remain: `RegistrationGate` and `StreamRuntimeState`.
+- One inner class remains, `StreamRuntimeState`; the registration gate is the top-level `NativeTcpStreamRegistrationGate`.
 
 **Why not extract, as reasoned at v0.7 Sprint 2 (superseded for points 1 and 2 by the extraction that
 has since happened):**
@@ -857,7 +1128,7 @@ has since happened):**
 
 **When to revisit, as stated at v0.7 Sprint 2:**
 
-- If a future sprint introduces a second carrier (e.g., io_uring) that needs to share reactor/FD-owner code — at that point extraction yields a real reuse benefit. *(Not the trigger that occurred: no `io_uring` provider exists in this tree as of 0.12 — see "Testing Strategy" above.)*
+- If a future sprint introduces a second carrier (e.g., io_uring) that needs to share reactor/FD-owner code — at that point extraction yields a real reuse benefit. *(Not the trigger that occurred: no `io_uring` provider exists in this tree — see "Testing Strategy" above.)*
 - If profiling data shows that the current class layout regresses inlining or escape analysis on the hot path (no current evidence).
 - If the file size exceeds ~2k LOC after Sprint 5/6 changes — at that scale revisit with profiling data and a measured refactor PR. *(Neither file has crossed this; the extraction happened well below it.)*
 
@@ -876,9 +1147,11 @@ consumes heap, CPU, or a Virtual Thread.
 
 ## Owning ADRs
 
+- [ADR-007](../adr/ADR-007-next-gen-runtime-architecture.md) §3, Amendments 2026-10-23 — a vanished peer is EX-NET-4008; every ending of a stream wakes its reader and writer, `queueWrite` never waits for the peer, and `write` parks at the outbound bound
 - [ADR-071](../adr/ADR-071-operational-limit-configuration-path.md) — Give operational limits a configuration path, and rule what a zero means
 - [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) §4, Amendment A1 — a `CLIENT` or `DUAL` carrier verifies the server it dials, and records where it does not
 - [ADR-081](../adr/ADR-081-accept-time-connection-cap.md) — The connection cap and stream shedding are layers, and neither answers with a status
+- [ADR-089](../adr/ADR-089.link.md) — the developer-licence connection ceiling a transport enforces at accept
 
 ## Stability
 

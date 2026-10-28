@@ -60,7 +60,8 @@ public final class CoreJfrEventCatalogue {
                     "eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent",
                     "eu.exeris.kernel.core.transport.jfr.StreamShedEvent",
                     "eu.exeris.kernel.core.transport.jfr.TransportIngressQueueDepthEvent",
-                    "eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent")),
+                    "eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent",
+                    "eu.exeris.kernel.core.transport.jfr.TransportWriteParkEvent")),
             // http — per HTTP stream and per aggregate buffer, on the request virtual thread.
             Map.entry("http", List.of(
                     "eu.exeris.kernel.core.http.jfr.StreamOpenedEvent",
@@ -79,14 +80,16 @@ public final class CoreJfrEventCatalogue {
                     "eu.exeris.kernel.core.events.jfr.OutboxBatchFlushedEvent",
                     "eu.exeris.kernel.core.events.jfr.OutboxDlqEvent",
                     "eu.exeris.kernel.core.events.jfr.OutboxLoopFailureEvent")),
-            // flow — per step, per timeout and per snapshot write, on the virtual thread running the flow.
+            // flow — per step, per timeout and per snapshot write, on the virtual thread running the flow;
+            // per absorbed choreography Start, on the thread the event bus dispatches the delivery on.
             Map.entry("flow", List.of(
                     "eu.exeris.kernel.core.flow.FlowStepFailedEvent",
                     "eu.exeris.kernel.core.flow.FlowTimeoutEvent",
                     "eu.exeris.kernel.core.flow.FlowDeferredWakeFailedEvent",
                     "eu.exeris.kernel.core.flow.FlowSnapshotPersistFailedEvent",
                     "eu.exeris.kernel.core.flow.FlowSchemaMismatchEvent",
-                    "eu.exeris.kernel.core.flow.WakeOnLoadFallbackEvent")),
+                    "eu.exeris.kernel.core.flow.WakeOnLoadFallbackEvent",
+                    "eu.exeris.kernel.core.flow.ChoreographyStartIgnoredEvent")),
             // memory — taken on whichever virtual thread is allocating, and a pressure episode
             // produces them in a burst.
             Map.entry("memory", List.of(
@@ -131,6 +134,7 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$KernelBootReadyEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$KernelShutdownCompleteEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemHealthTransitionEvent",
+            "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemInitDeadlineExceededEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemInitializedEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemStartedEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemStoppedEvent",
@@ -138,6 +142,14 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.config.jfr.DynamicReloadEvent$DynamicFieldReloadedEvent",
             "eu.exeris.kernel.core.config.jfr.DynamicReloadEvent$DynamicReloadFailedEvent",
             "eu.exeris.kernel.core.config.jfr.ImmutableReloadEvent$ImmutableReloadRefusedEvent",
+            // The contract gate emits both of these on the booting thread, before any subsystem
+            // exists, so there is no start() to warm them from. ContractEnforcementEvent can also be
+            // emitted later, by a capability module that reports a SOFT or AUDIT violation from its own
+            // initialize() or start(). ExecutionContract documents assertCapability/assertEnvironment as
+            // start-time checks, and the first emit stays on a boot path only while callers keep to that:
+            // nothing enforces it, so a caller on a request path pays the class initialization there.
+            "eu.exeris.kernel.core.contract.jfr.ContractEnforcementEvent",
+            "eu.exeris.kernel.core.contract.jfr.ContractResolvedEvent",
             "eu.exeris.kernel.core.crypto.openssl.NativeCipherContextFreeFailureEvent",
             "eu.exeris.kernel.core.crypto.openssl.OpenSslLoadEvent",
             "eu.exeris.kernel.core.events.EventBootstrapSelectedEvent",
@@ -158,6 +170,7 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.persistence.PersistenceEngineBootstrapEvent",
             "eu.exeris.kernel.core.persistence.PersistenceTenantPoolCreatedEvent",
             "eu.exeris.kernel.core.persistence.PersistenceTenantPoolReclaimedEvent",
+            "eu.exeris.kernel.core.persistence.RlsBypassRoleEvent",
             "eu.exeris.kernel.core.persistence.SchemaMigrationRefusedEvent",
             "eu.exeris.kernel.core.scheduling.SchedulingBootstrapSelectedEvent",
             "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$RoleRegistryLoadedEvent",

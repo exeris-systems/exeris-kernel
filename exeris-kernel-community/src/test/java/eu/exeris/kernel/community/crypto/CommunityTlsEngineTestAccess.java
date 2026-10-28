@@ -28,7 +28,8 @@ public final class CommunityTlsEngineTestAccess {
      */
     public static CommunityTlsEngine scriptedClient(ScriptedOpenSsl openSsl, MemoryAllocator allocator,
                                                     TlsPeerIdentity peer) {
-        OffHeapTlsEngine delegate = new OffHeapTlsEngine(openSsl.handles(), 0x1L, false, allocator);
+        OffHeapTlsEngine delegate =
+                new OffHeapTlsEngine(openSsl.handles(), 0x1L, false, allocator, openSsl::errnoAfterFailure);
         delegate.expectPeer(peer);
         CommunityTlsEngine engine = new CommunityTlsEngine(delegate, openSsl.sslSetFd(),
                 openSsl.handles().ctx(), 0x1L, null, false, false);

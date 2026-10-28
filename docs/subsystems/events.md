@@ -15,7 +15,7 @@ last-verified: 2026-09-28
 - Core: `eu.exeris.kernel.core.events.*` (Outbox Orchestrator, Projections)
 - Drivers:
     - **`community`**: Standard Heap/NIO (PostgreSQL Event Store, JVM-heap Pub/Sub)
-    - **`community-kafka`**: Apache Kafka driver on `kafka-clients`, version managed in `exeris-kernel-bom` (`KafkaEventEngine`, plus a `KafkaEventBrokerPort` Outbox adapter that is built but not wired — see *Delivery Boundary*)
+    - **`community-kafka`**: Apache Kafka driver on `kafka-clients` 4.3.x, version managed in `exeris-kernel-bom` (`KafkaEventEngine`, plus a `KafkaEventBrokerPort` Outbox adapter that is built but not wired — see *Delivery Boundary*)
 
 **Layer:** L3 (Logic Engines)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -107,8 +107,8 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 
 ### 1. Valhalla-Ready Routing (`EventDescriptor`)
 
-Event routing metadata is encapsulated in `EventDescriptor` — a record of seven primitive fields (`long`,
-`int`). It avoids `synchronized`, `System.identityHashCode()`, and identity `==`, which makes it a candidate
+Event routing metadata is encapsulated in `EventDescriptor` — a record of eight primitive fields (`long`,
+`int`), the last being `isolationOrdinal`. It avoids `synchronized`, `System.identityHashCode()`, and identity `==`, which makes it a candidate
 for C2's scalar replacement. On the `preview` branch it is a `value record` (JEP 401, Value Classes
 and Objects); the distributed line compiles the same source as an identity record.
 A primitive descriptor does not by itself make a publication allocation-free: the in-memory bus allocates
@@ -156,9 +156,9 @@ to the in-memory bus and never sees either mode.
 The Kafka driver bypasses the local `EventQueue` (`NoOpQueue` slot) and does not map
 `busPublishFailFast` onto anything: it never raises `EX-EVENT-6002`. A failure `producer.send` throws
 synchronously surfaces as `EX-EVENT-6009` with reason `delivery-failed` and the Kafka exception as the
-cause. `publish` does not wait on the send's future and registers no callback, so a failure the producer
-reports asynchronously reaches neither the caller nor `KafkaPublishFailedEvent`; `publishAndAwait` waits
-on that future and surfaces it as the same `EX-EVENT-6009`.
+cause. `publish` does not wait on the send's future; it registers a callback, and a failure the producer
+completes exceptionally after `publish` has returned is recorded rather than thrown (see *Brokered publish* below).
+`publishAndAwait` waits on that future and surfaces the failure as the same `EX-EVENT-6009`.
 
 ---
 
@@ -168,7 +168,7 @@ on that future and surfaces it as the same `EX-EVENT-6009`.
 
 | Component         | Responsibility                                                                          |
 |:------------------|:----------------------------------------------------------------------------------------|
-| **`EventBus`**    | Pub/Sub. Manages subscriptions (returns `SubscriptionToken`); `publish` is fire-and-forget, `publishAndAwait` blocks (see *Delivery Boundary* for what it waits on) |
+| **`EventBus`**    | Pub/Sub. Manages subscriptions (returns `SubscriptionToken`); `publish` returns once the bus accepts the event (on a brokered bus: accepted, not acknowledged; see *Brokered `publish`* below), `publishAndAwait` blocks (see *Delivery Boundary* for what it waits on) |
 | **`EventQueue`**  | Bounded backpressure buffer. Community: an in-memory heap `LinkedBlockingDeque`, not durable |
 | **`EventLoop`**   | Drains the queue. Community: one virtual thread, dispatching each batch through a per-batch structured scope — `StructuredScope` on the distributed line, `StructuredTaskScope` on `preview` (ADR-066) |
 | **`EventRegistry`** | Type system. Maps event names → `int` ordinals for O(1) hot-path routing            |
@@ -231,12 +231,31 @@ process, sees none of the publisher's `ScopedValue` bindings, and cannot make th
 `EX-EVENT-6010`. Code that uses `publishAndAwait` to learn that a handler ran does not carry over to the
 Kafka driver unchanged.
 
+**Brokered `publish` means accepted, not acknowledged.** On a brokered bus a normal return from `publish`
+means the binding's client has accepted the record for sending; the broker's acknowledgement is not
+awaited. A failure that refuses the record is thrown as `EX-EVENT-6009` in two cases:
+
+- `producer.send` throws, as described above; or
+- the producer rejects the record before accepting it and reports that through the send's callback on
+  the calling thread, before `send` returns. A record too large and a metadata timeout after
+  `max.block.ms` are rejections of this kind. The send's own future is never read for them, so `publish`
+  throws the rejection rather than returning normally; a caller that treated a normal return as acceptance
+  sees the failure.
+
+A send the producer completes exceptionally after `publish` has returned is never thrown to the caller.
+The callback records it as `KafkaPublishFailedEvent` with `publishMode` `"publishAsync"` and increments
+`EventEngineStats.publishFailedTotal()`, a counter separate from `failedTotal`, which counts handler
+errors. A completion from the producer's I/O thread while `send` is still running is recorded the same
+way, because only a completion on the calling thread is a rejection. The callback does not block.
+A caller that needs the broker's acknowledgement uses `publishAndAwait`, which blocks on it.
+
 **The two are not composable today.** `KafkaEventEngine` runs no outbox orchestrator at all — its
 `EventQueue` slot is a `NoOpQueue`, and `KafkaEventBrokerPort` ships as a built adapter that is not
 wired into any runtime path. `CommunityEventEngine`, for its part, constructs the local broker port
 directly with no seam to substitute. So a deployment gets durable emission on one node *or* cross-node
 fan-out, not both from one engine. This is a current limit, not a contract: the outbox-orchestrator-driven
-Kafka delivery path is listed as deferred in that module's `package-info`.
+Kafka delivery path is listed as deferred in that module's `package-info`. [ADR-101](../adr/ADR-101-events-spi-contract-anchor.md)
+(accepted 2026-10-08) keeps it a documented limit at 1.0 and places a configured broker-port selection after 1.0.
 
 ### Multi-node substrate inventory
 
@@ -283,6 +302,44 @@ The "one log, four views" family — streaming, sourcing, KV, distributed — al
 
 ---
 
+## Isolation (ADR-101)
+
+An event carries the tenant it was published under, so a subscriber serving one tenant does not receive another tenant's events. **[ADR-101](../adr/ADR-101-events-spi-contract-anchor.md)** (Ruling 1) gives the descriptor an `isolationOrdinal`: `0` is unscoped, and a positive value is a registered isolation key.
+
+**Delivery rules.**
+
+1. **Stamped at publish from the bound storage context.** The engine's `bus()` resolves the effective ordinal from `KernelProviders.STORAGE_CONTEXT`. An unbound context, or one whose `isolationKey()` is empty, resolves to `0`. A registered key resolves to its ordinal. An unregistered key refuses the publish with `EX-EVENT-6009`, reason `"unregistered-isolation-key"`. A descriptor carrying `0` under a bound key is stamped with the bound ordinal. A descriptor carrying a non-zero ordinal that differs from the effective one is refused with `EX-EVENT-6009`, reason `"isolation-mismatch"`. A publisher can neither forget nor forge the key.
+2. **Internal redistribution is not re-stamped.** The Kafka consumer loop's republish onto its local delegate and the outbox relay carry the ordinal they decoded or persisted.
+3. **Scoped subscription.** `EventBus.subscribeScoped(eventType, handler)` captures the caller's bound key at call time and delivers only events whose ordinal equals it. With no bound context, an empty key, an unregistered key, or a binding that does not support scoping, it refuses with `EX-EVENT-6011` and rawArgs `[eventType]`.
+4. **Unscoped subscription is unchanged.** `subscribe(eventType, handler)` still receives every event of the type, scoped or not. A subscriber serving a tenant must use `subscribeScoped`.
+5. **No bound context, unscoped delivery.** An event published with no bound context reaches only unscoped subscribers.
+
+**Registration.** Register every tenant key before publishing under its context, through the engine's registry:
+
+```java
+EventEngine engine = KernelProviders.EVENT_ENGINE.get();
+engine.isolationRegistry().register(IsolationKeySpec.of("tenant-a", 101));
+
+ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared("tenant-a"))
+        .run(() -> engine.bus().publish(descriptor, payload));
+```
+
+The application supplies the ordinals, as it supplies event-type ordinals. `IsolationKeyRegistry.register` is idempotent for an identical spec and refuses a key held under a different ordinal, or an ordinal claimed by a different key, with `EX-EVENT-6012` and rawArgs `[isolationKey, ordinal]`. The mapping from key to ordinal must be the same on every node and across restarts, because a brokered bus carries the ordinal to other processes and the log keeps it. The kernel refuses an unregistered key; it cannot detect two nodes that disagree.
+
+**Kafka wire.** The ordinal travels as the record header `exeris-isolation-ordinal`, four bytes big-endian, written on the publish, appender and broker-port paths. An absent header, or one whose value is not four bytes, decodes as `0`. Both frame layouts are unchanged, so a record written before this rule decodes as unscoped.
+
+**Outbox and event log.** `exeris_outbox` and `exeris_event_log` gain `isolation_ordinal INT NOT NULL DEFAULT 0` through migration `V0.13.0`. The outbox ordinal is read from the context bound when the row is appended; an unresolvable key writes `0`, and the append does not refuse on account of the context. The relay rebuilds the descriptor with the stored ordinal, so an outbox-relayed event reaches the same subscribers as a direct publish. The event-log appender persists the descriptor's ordinal as it arrives.
+
+**Limits.**
+
+- The cross-node key-to-ordinal mapping is the application's responsibility.
+- The Kafka consumer loop trusts the isolation header as written. Write access to a topic is therefore the trust boundary: a producer that can write to the topic can name any ordinal.
+- Replay through `EventStreamReader` is not filtered by isolation, and the replay path does not read the header.
+- `subscribe` still sees every tenant's events. Only `subscribeScoped` is isolated.
+- A publication under a bound key that is not registered is refused. Register every tenant key before publishing under its context.
+
+**Current state:** 0.13 — the SPI (`EventDescriptor.isolationOrdinal`, `EventBus.subscribeScoped`, `IsolationKeySpec`, `IsolationKeyRegistry`, `EventEngine.isolationRegistry()`), the Core stamp and scoped routing, the Community and Kafka bindings, migration `V0.13.0`, and the `AbstractEventBusTck`, `AbstractEventRegistryTck`, `AbstractKafkaEventEngineTck` and `EventBusZeroAllocTck` cases that cover them.
+
 ## Binding-Agnostic `topic` (ADR-050)
 
 The SDK `@DomainEvent.topic` attribute captures an author's routing target; **[ADR-050](../adr/ADR-050-events-binding-agnostic-topic.md)** gives it a kernel sink so it becomes portable across bindings.
@@ -310,9 +367,10 @@ The SDK `@DomainEvent.topic` attribute captures an author's routing target; **[A
 | `EX-EVENT-6006` | Projection Handler Failure | `[0] String projectionName, [1] int eventTypeOrdinal` — defined, not raised in this repository: `Projection` rethrows the handler's own exception and emits `ProjectionHandlerFailureEvent` |
 | `EX-EVENT-6007` | Event-Loop VT Uncaught | `[0] String loopName, [1] String exceptionType` — defined, not raised in this repository: `CommunityEventLoop` emits `EventLoopFailureEvent` |
 | `EX-EVENT-6008` | Append Version Conflict | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion` (`EventStreamAppendConflictException.versionConflict`) |
-| `EX-EVENT-6009` | Publish Not Accepted  | `[0] int eventTypeOrdinal, [1] String reason` (`EventBusException.publishFailed`). The kernel's bindings emit `delivery-failed` (the queue or broker client threw; its exception is the cause), `unregistered-type` (the Kafka bus was handed an ordinal its registry does not know; no cause) and `interrupted` (interrupted while waiting for queue space; no cause, interrupt status left set). No handler was given the event |
+| `EX-EVENT-6009` | Publish Not Accepted  | `[0] int eventTypeOrdinal, [1] String reason` (`EventBusException.publishFailed`). The kernel's bindings emit `delivery-failed` (the queue or broker client threw; its exception is the cause), `unregistered-type` (the Kafka bus was handed an ordinal its registry does not know; no cause), `interrupted` (interrupted while waiting for queue space; no cause, interrupt status left set), `unregistered-isolation-key` (the bound storage context's isolation key is not registered; no cause) and `isolation-mismatch` (the descriptor's isolation ordinal is non-zero and does not match the bound context, or no context is bound; no cause). No handler was given the event |
 | `EX-EVENT-6010` | Handlers Failed After Delivery | `[0] int eventTypeOrdinal, [1] int failedHandlerCount` (`EventBusException.handlersFailed`). Raised by `publishAndAwait` on a bus that is not brokered only; no cause, each handler's exception attached as suppressed. The event was delivered, so a retry re-runs the handlers that succeeded |
-| `EX-EVENT-6011` | Subscription Rejected | `[0] String eventType` (`EventBusException.subscriptionRejected`). The in-memory bus raises it for a type the `EventRegistry` does not know — register the type before subscribing |
+| `EX-EVENT-6011` | Subscription Rejected | `[0] String eventType` (`EventBusException.subscriptionRejected`). The in-memory bus raises it for a type the `EventRegistry` does not know — register the type before subscribing. `subscribeScoped` raises it when no storage context is bound, the bound isolation key is empty or unregistered, or the bus does not support scoped subscriptions |
+| `EX-EVENT-6012` | Isolation Key Conflict | `[0] String isolationKey, [1] int ordinal` (`EventRegistryException.isolationKeyConflict`). `IsolationKeyRegistry.register` refused a key already held under a different ordinal, or an ordinal already claimed by a different key (ADR-101) |
 
 Each exception class's message constructors set its code and leave `rawArgs` empty; the layouts above
 are those of the static factories named in each row.
@@ -483,7 +541,7 @@ Per-event allocation is bounded to one heap `byte[]` payload per row/record (no 
 **Bindings (status):**
 
 - PostgreSQL event-log — **shipped (ADR-049, v0.10)**: `JdbcEventStreamAppender` / `JdbcEventStreamReader` over the dedicated `exeris_event_log` table (per-`StreamId` monotonic ordering + append-with-expected-version OCC → `EX-EVENT-6008`; `V0.10.0` migration). Bound into `KernelProviders.EVENT_STREAM_APPENDER` / `EVENT_STREAM_READER` by `CommunityEventsSubsystem` when a persistence engine is present. Distinct from the transactional `exeris_outbox` delivery drain.
-- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; the ADR-049 durable event-log binding shipped in v0.10 — `KafkaEventStreamAppender` / `KafkaEventStreamReader` over a `streamId`-keyed log topic (log-authoritative per-`StreamId` sequence + append-with-expected-version OCC → `EX-EVENT-6008`), single-writer-per-stream best-effort (Kafka has no cross-instance CAS). Publish-side failures the bus observes (since v0.8 Sprint 5, JFR-091 — see *Backpressure by Design* for which ones `publish` observes) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the bus wraps the cause as `EX-EVENT-6009` with reason `delivery-failed`. **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
+- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; the ADR-049 durable event-log binding shipped in v0.10 — `KafkaEventStreamAppender` / `KafkaEventStreamReader` over a `streamId`-keyed log topic (log-authoritative per-`StreamId` sequence + append-with-expected-version OCC → `EX-EVENT-6008`), single-writer-per-stream best-effort (Kafka has no cross-instance CAS). Publish-side failures the bus observes (since v0.8 Sprint 5, JFR-091 — see *Backpressure by Design* for which ones `publish` observes) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the bus wraps the cause as `EX-EVENT-6009` with reason `delivery-failed`. A send the producer completes exceptionally after `publish` has returned emits the same event with `publishMode` `"publishAsync"` and is counted in `publishFailedTotal` instead (see *Delivery Boundary*). **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
 - Enterprise off-heap log — out-of-repo, target-state.
 
 ---
@@ -543,7 +601,7 @@ on compaction, and no row below is exercised by a test in this repository:
 ### Integration Tests (TCK)
 
 - **Outbox Guarantee:** Take the broker down; verify committed events accumulate in the DB outbox and are all delivered once it recovers, survive an engine rebuild, and never reappear once marked published. *(`AbstractOutboxGuaranteeTck`, Community binding `CommunityOutboxGuaranteeTckTest`.)*
-- **Provider Switching:** The same abstract suites run against more than one binding. `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` bind to PostgreSQL and Kafka (see ADR-049 above). `AbstractEventBusTck` binds to the Community bus (`CommunityEventBusTckTest`) and to the Kafka bus (`KafkaEventBusTckTest`, mock producer and consumer, no broker); the Kafka bus reports itself brokered, so the five cases that assert in-process fan-out are reported as skipped there. *(Kafka roundtrip + bit-exact descriptor preservation: `AbstractKafkaEventEngineTck` / `CommunityKafkaEventEngineTckIT` — Testcontainers `confluentinc/cp-kafka:7.6.1`.)*
+- **Provider Switching:** The same abstract suites run against more than one binding. `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` bind to PostgreSQL and Kafka (see ADR-049 above). `AbstractEventBusTck` binds to the Community bus (`CommunityEventBusTckTest`) and to the Kafka bus (`KafkaEventBusTckTest`, mock producer and consumer, no broker); the Kafka bus reports itself brokered, so the ten cases that assert in-process fan-out, handler-completion semantics or in-process isolation delivery are reported as skipped there. *(Kafka roundtrip + bit-exact descriptor preservation: `AbstractKafkaEventEngineTck` / `CommunityKafkaEventEngineTckIT` — Testcontainers `confluentinc/cp-kafka:7.6.1`.)*
 - **Order Integrity:** Per-`StreamId` order is a durable-log property, asserted by the ordering and OCC cases of `AbstractEventStreamAppenderTck`.
   > The `EventBus` makes no ordering promise (ADR-049), so no bus suite asserts one. On the Kafka bus the record key is the stream id, so one stream's records share a partition, but each consumed record is republished through the in-memory bus (one virtual thread per handler) and `AbstractKafkaEventEngineTck` asserts set equality for a stream, not order.
 - **Zero Subscriber Fast-Free:** Publish to a bus with zero subscribers; verify the bus calls
@@ -577,8 +635,9 @@ carries.
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.events.*`) is classified **preview** in the
-[SPI Stability Matrix](../stability-matrix.md), which also records the 0.12 narrowing of
+This subsystem's SPI surface (`eu.exeris.kernel.spi.events.*`) is **stable** from 0.13.0 in the
+[SPI Stability Matrix](../stability-matrix.md) ([ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md),
+anchored by [ADR-101](../adr/ADR-101-events-spi-contract-anchor.md)), which also records the 0.12 narrowing of
 `EventBus.publishAndAwait` to buses that are not brokered. See the matrix for the semver policy and TCK
 coverage status.
 

@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.graph;
 
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphHop;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * L1 Unit: {@link CommunityGraphDialect} — SQL generation correctness.
@@ -74,10 +77,10 @@ class CommunityGraphDialectTest {
         }
 
         @Test
-        @DisplayName("selects target_id")
-        void selectsTargetId() {
+        @DisplayName("yields the frontier in column id")
+        void yieldsFrontierInColumnId() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
-            assertThat(dialect.buildMatchQuery(edge)).containsIgnoringCase("target_id");
+            assertThat(dialect.buildMatchQuery(edge).stripTrailing()).endsWith("SELECT id FROM f1");
         }
 
         @Test
@@ -93,6 +96,21 @@ class CommunityGraphDialectTest {
     @Nested
     @DisplayName("buildMultiHopQuery()")
     class MultiHopQuery {
+
+        @Test
+        @DisplayName("a hop bound above 64 throws IllegalArgumentException")
+        void hopBoundAboveLimitThrows() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
+            assertThatThrownBy(() -> dialect.buildMultiHopQuery(edge, 1, 65))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("a hop bound of 64 is accepted")
+        void hopBoundAtLimitAccepted() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
+            assertThatCode(() -> dialect.buildMultiHopQuery(edge, 1, 64)).doesNotThrowAnyException();
+        }
 
         @Test
         @DisplayName("contains WITH RECURSIVE traversal CTE")
@@ -119,15 +137,15 @@ class CommunityGraphDialectTest {
         }
 
         @Test
-        @DisplayName("table name appears for both anchor and recursive clauses")
-        void tableNameAppearsInBothBranches() {
+        @DisplayName("a ranged hop is one recursive CTE over its table bounded by maxRepeat")
+        void rangedHopIsOneRecursiveCteBoundedByMaxRepeat() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
-            String table = edge.tableName();
             String sql = dialect.buildMultiHopQuery(edge, 1, 3);
-            // Table name should appear at least twice (anchor + recursive branch)
-            assertThat(sql.split(table, -1).length - 1)
-                    .as("Table name must appear in both anchor and recursive branch of CTE")
-                    .isGreaterThanOrEqualTo(2);
+            assertThat(sql)
+                    .contains("UNION SELECT")
+                    .contains("WHERE h.depth < 3")
+                    .contains("depth >= 1")
+                    .doesNotContain("UNION ALL");
         }
 
         @Test
@@ -277,6 +295,257 @@ class CommunityGraphDialectTest {
         @DisplayName("contains the graph name")
         void containsGraphName() {
             assertThat(dialect.buildDropPropertyGraph()).contains(GRAPH_NAME);
+        }
+    }
+
+    @Nested
+    @DisplayName("buildPathQuery() — SQL mode")
+    class PathQuery {
+
+        /** Creates the nested test group. */
+        PathQuery() {
+            super();
+        }
+
+        @Test
+        @DisplayName("worked example generates exact SQL query modulo whitespace")
+        void workedExampleGeneratesExpectedSql() {
+            GraphEdgeDescriptor purchased = new GraphEdgeDescriptor(
+                    "User", "PURCHASED", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.OUTGOING, "tck_purchased_edges");
+            GraphEdgeDescriptor similarTo = new GraphEdgeDescriptor(
+                    "Product", "SIMILAR_TO", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.OUTGOING, "tck_similar_to_edges");
+            List<GraphHop> hops = List.of(
+                    GraphHop.of(purchased),
+                    new GraphHop(similarTo, 1, 2));
+
+            String expected = """
+                    WITH RECURSIVE
+                    f0 (id) AS (SELECT CAST($1 AS uuid)),
+                    f1 (id) AS (SELECT DISTINCT e.target_id AS id FROM f0 p INNER JOIN tck_purchased_edges e ON e.source_id = p.id),
+                    h2 (id, depth) AS (SELECT p.id, 0 FROM f1 p UNION SELECT e.target_id, h.depth + 1 FROM h2 h INNER JOIN tck_similar_to_edges e ON e.source_id = h.id WHERE h.depth < 2),
+                    f2 (id) AS (SELECT DISTINCT id FROM h2 WHERE depth >= 1)
+                    SELECT id FROM f2
+                    """;
+            String actual = dialect.buildPathQuery(hops);
+            assertThat(actual.replaceAll("\\s+", " ").trim())
+                    .isEqualTo(expected.replaceAll("\\s+", " ").trim());
+        }
+
+        @Test
+        @DisplayName("INCOMING hop SQL contains e.target_id = p.id and e.source_id AS id")
+        void incomingHopSql() {
+            GraphEdgeDescriptor incoming = new GraphEdgeDescriptor(
+                    "Product", "LINKED", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.INCOMING, "tck_linked_edges");
+            String sql = dialect.buildPathQuery(List.of(GraphHop.of(incoming)));
+            assertThat(sql)
+                    .contains("e.target_id = p.id")
+                    .contains("e.source_id AS id");
+        }
+
+        @Test
+        @DisplayName("BOTH hop SQL contains OR e.target_id")
+        void bothHopSql() {
+            GraphEdgeDescriptor both = new GraphEdgeDescriptor(
+                    "Product", "LINKED", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.BOTH, "tck_linked_edges");
+            String sql = dialect.buildPathQuery(List.of(GraphHop.of(both)));
+            assertThat(sql).contains("OR e.target_id");
+        }
+
+        @Test
+        @DisplayName("bidirectional OUTGOING descriptor generates the BOTH form")
+        void bidirectionalOutgoingGeneratesBothForm() {
+            GraphEdgeDescriptor bi = new GraphEdgeDescriptor(
+                    "Product", "LINKED", "Product", 1.0, true,
+                    GraphEdgeDescriptor.Direction.OUTGOING, "tck_linked_edges");
+            String sql = dialect.buildPathQuery(List.of(GraphHop.of(bi)));
+            assertThat(sql).contains("OR e.target_id");
+        }
+
+        @Test
+        @DisplayName("sum of maxRepeat exceeding 64 throws IllegalArgumentException")
+        void hopsSumExceedingLimitThrows() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 65));
+            assertThatThrownBy(() -> dialect.buildPathQuery(hops))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("sum of maxRepeat equal to 64 is accepted")
+        void hopsSumAtLimitAccepted() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 64));
+            assertThatCode(() -> dialect.buildPathQuery(hops))
+                    .doesNotThrowAnyException();
+        }
+
+
+        @Test
+        @DisplayName("two hops summing to 65 throw IllegalArgumentException")
+        void sqlTwoHopsSummingToSixtyFiveThrow() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 33));
+            assertThatThrownBy(() -> dialect.buildPathQuery(hops))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("two hops summing to 64 are accepted")
+        void sqlTwoHopsSummingToSixtyFourAccepted() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 32));
+            assertThatCode(() -> dialect.buildPathQuery(hops))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("empty hops list throws IllegalArgumentException")
+        void emptyHopsThrows() {
+            List<GraphHop> empty = List.of();
+            assertThatThrownBy(() -> dialect.buildPathQuery(empty))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("invalid SQL table name throws IllegalArgumentException")
+        void badTableNameThrows() {
+            GraphEdgeDescriptor badTable = new GraphEdgeDescriptor(
+                    "Product", "LINKED", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.OUTGOING, "bad-name");
+            List<GraphHop> hops = List.of(GraphHop.of(badTable));
+            assertThatThrownBy(() -> dialect.buildPathQuery(hops))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("buildPathQuery() — Cypher mode")
+    class CypherPathQuery {
+
+        private final CommunityGraphDialect cypherDialect = new CommunityGraphDialect("g", "neo4j");
+
+        /** Creates the nested test group. */
+        CypherPathQuery() {
+            super();
+        }
+
+        @Test
+        @DisplayName("worked example generates exact Cypher query modulo whitespace")
+        void workedExampleGeneratesExpectedCypher() {
+            GraphEdgeDescriptor purchased = new GraphEdgeDescriptor(
+                    "User", "PURCHASED", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.OUTGOING, "tck_purchased_edges");
+            GraphEdgeDescriptor similarTo = new GraphEdgeDescriptor(
+                    "Product", "SIMILAR_TO", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.OUTGOING, "tck_similar_to_edges");
+            List<GraphHop> hops = List.of(
+                    GraphHop.of(purchased),
+                    new GraphHop(similarTo, 1, 2));
+
+            String expected = """
+                    MATCH (source) WHERE source.id = $sourceId
+                    WITH DISTINCT source
+                    MATCH (source)-[:PURCHASED]->(n1)
+                    WITH DISTINCT n1
+                    MATCH (n1)-[:SIMILAR_TO]->(n2)
+                    WITH DISTINCT n2
+                    MATCH (n2)-[:SIMILAR_TO*0..1]->(target)
+                    WITH DISTINCT target
+                    RETURN DISTINCT target.id AS id
+                    """;
+            String actual = cypherDialect.buildPathQuery(hops);
+            assertThat(actual.replaceAll("\\s+", " ").trim())
+                    .isEqualTo(expected.replaceAll("\\s+", " ").trim());
+        }
+
+        @Test
+        @DisplayName("INCOMING hop Cypher contains <-[:LINKED]-")
+        void cypherIncomingArrow() {
+            GraphEdgeDescriptor incoming = new GraphEdgeDescriptor(
+                    "Product", "LINKED", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.INCOMING, "tck_linked_edges");
+            String cypher = cypherDialect.buildPathQuery(List.of(GraphHop.of(incoming)));
+            assertThat(cypher).contains("<-[:LINKED]-");
+        }
+
+        @Test
+        @DisplayName("BOTH hop Cypher contains -[:LINKED]-(")
+        void cypherBothArrow() {
+            GraphEdgeDescriptor both = new GraphEdgeDescriptor(
+                    "Product", "LINKED", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.BOTH, "tck_linked_edges");
+            String cypher = cypherDialect.buildPathQuery(List.of(GraphHop.of(both)));
+            assertThat(cypher).contains("-[:LINKED]-(");
+        }
+
+        @Test
+        @DisplayName("bidirectional OUTGOING descriptor generates the BOTH arrow in Cypher")
+        void bidirectionalOutgoingGeneratesBothArrow() {
+            GraphEdgeDescriptor bi = new GraphEdgeDescriptor(
+                    "Product", "LINKED", "Product", 1.0, true,
+                    GraphEdgeDescriptor.Direction.OUTGOING, "tck_linked_edges");
+            String cypher = cypherDialect.buildPathQuery(List.of(GraphHop.of(bi)));
+            assertThat(cypher).contains("-[:LINKED]-(");
+        }
+
+        @Test
+        @DisplayName("sum of maxRepeat exceeding 64 in Cypher mode throws IllegalArgumentException")
+        void cypherHopsSumExceedingLimitThrows() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 65));
+            assertThatThrownBy(() -> cypherDialect.buildPathQuery(hops))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("sum of maxRepeat equal to 64 in Cypher mode is accepted")
+        void cypherHopsSumAtLimitAccepted() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 64));
+            assertThatCode(() -> cypherDialect.buildPathQuery(hops))
+                    .doesNotThrowAnyException();
+        }
+
+
+        @Test
+        @DisplayName("two hops summing to 65 in Cypher mode throw IllegalArgumentException")
+        void cypherTwoHopsSummingToSixtyFiveThrow() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 33));
+            assertThatThrownBy(() -> cypherDialect.buildPathQuery(hops))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("two hops summing to 64 in Cypher mode are accepted")
+        void cypherTwoHopsSummingToSixtyFourAccepted() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 32));
+            assertThatCode(() -> cypherDialect.buildPathQuery(hops))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("empty hops list in Cypher mode throws IllegalArgumentException")
+        void cypherEmptyHopsThrows() {
+            List<GraphHop> empty = List.of();
+            assertThatThrownBy(() -> cypherDialect.buildPathQuery(empty))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("invalid Cypher edge type throws IllegalArgumentException")
+        void cypherBadEdgeTypeThrows() {
+            GraphEdgeDescriptor badEdge = new GraphEdgeDescriptor(
+                    "Product", "bad-name", "Product", 1.0, false,
+                    GraphEdgeDescriptor.Direction.OUTGOING, "tck_linked_edges");
+            List<GraphHop> hops = List.of(GraphHop.of(badEdge));
+            assertThatThrownBy(() -> cypherDialect.buildPathQuery(hops))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 }

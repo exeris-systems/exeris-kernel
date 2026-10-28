@@ -4,6 +4,9 @@
  */
 package eu.exeris.kernel.core.memory;
 
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
+
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
@@ -33,6 +36,12 @@ import java.lang.invoke.VarHandle;
  * arbiter always returns {@link Action#ALLOW}. This prevents spurious load-shedding
  * during kernel bootstrap when memory pools are still warming up.
  *
+ * <p>The grace is timed by the {@link TimeSource} bound when the arbiter is built
+ * ({@link TimeKernelProviders#timeSource()}), so a driven clock moves it. Once the grace
+ * has elapsed the arbiter latches that fact and stops reading the clock for it: a source
+ * that later reads earlier does not re-open the grace. After the latch the cost of the
+ * grace check is one boolean acquire read.
+ *
  * <h2>Context Awareness</h2>
  * <p>Two named contexts are supported:
  * <ul>
@@ -45,8 +54,10 @@ import java.lang.invoke.VarHandle;
  *
  * <h2>Performance Contract</h2>
  * <p>{@link #decide(Context)} is O(1) on a cache hit: one {@code System.nanoTime()} call
- * plus two VarHandle acquire reads (cached decision timestamp and action ordinal), no locks,
- * no allocations. On a cache miss it calls {@link #reEvaluate}, which reads the current
+ * plus one boolean acquire read (the grace latch) and two VarHandle acquire reads (cached
+ * decision timestamp and action ordinal), no locks, no allocations. The decision-cache TTL
+ * is timed by {@code System.nanoTime()} directly, not by the {@link TimeSource}, because it
+ * is the hottest read. On a cache miss it calls {@link #reEvaluate}, which reads the current
  * {@link WatermarkLevel} from {@link WatermarkManager}, updates the cache via VarHandle
  * {@code setRelease}, and emits a {@link ResourceArbiterDecisionEvent} — allocating a JFR
  * event object whenever {@code FlightRecorder} is initialised, independent of whether
@@ -96,6 +107,7 @@ public final class ResourceArbiter {
     private static final VarHandle TRANSPORT_ACTION_ORDINAL;
     private static final VarHandle LOGIC_DECISION_NS;
     private static final VarHandle LOGIC_ACTION_ORDINAL;
+    private static final VarHandle GRACE_ELAPSED;
 
     static {
         try {
@@ -108,6 +120,8 @@ public final class ResourceArbiter {
                     ResourceArbiter.class, "logicDecisionNs", long.class);
             LOGIC_ACTION_ORDINAL = lookup.findVarHandle(
                     ResourceArbiter.class, "logicActionOrdinal", int.class);
+            GRACE_ELAPSED = lookup.findVarHandle(
+                    ResourceArbiter.class, "graceElapsed", boolean.class);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -118,7 +132,13 @@ public final class ResourceArbiter {
     /* default */ volatile long logicDecisionNs;
     /* default */ volatile int logicActionOrdinal = CACHE_UNINITIALIZED;
 
+    /**
+     * Latched once the startup grace has elapsed; read and written through {@link #GRACE_ELAPSED}.
+     */
+    /* default */ volatile boolean graceElapsed;
+
     private final WatermarkManager watermarkManager;
+    private final TimeSource timeSource;
     private final long startNs;
 
     // =========================================================================
@@ -210,28 +230,47 @@ public final class ResourceArbiter {
     // =========================================================================
 
     /**
-     * Production constructor — grace period starts at current wall time.
+     * Production constructor — the grace period starts at construction and is timed by the
+     * {@link TimeSource} bound then ({@link TimeKernelProviders#timeSource()}).
      *
      * @param watermarkManager the pressure monitor; must not be {@code null}
      * @throws IllegalArgumentException if {@code watermarkManager} is {@code null}
      */
     public ResourceArbiter(WatermarkManager watermarkManager) {
-        this(watermarkManager, System.nanoTime());
+        this(watermarkManager, TimeKernelProviders.timeSource());
+    }
+
+    /**
+     * Package-private constructor taking the clock explicitly; the grace starts at
+     * {@code timeSource.nanoTime()}.
+     *
+     * @param watermarkManager the pressure monitor; must not be {@code null}
+     * @param timeSource       the clock that times the grace; must not be {@code null}
+     * @throws IllegalArgumentException if {@code watermarkManager} is {@code null}
+     */
+    /* default */ ResourceArbiter(WatermarkManager watermarkManager, TimeSource timeSource) {
+        this(watermarkManager, timeSource, timeSource.nanoTime());
     }
 
     /**
      * Package-private testing constructor — allows injecting an artificial {@code startNs}
-     * to simulate an already-expired (or future) grace period without sleeping.
+     * to simulate an already-expired (or future) grace period without sleeping. The grace is
+     * timed by the platform clock.
      *
      * @param watermarkManager the pressure monitor; must not be {@code null}
      * @param startNs          nanosecond timestamp to treat as construction time
      * @throws IllegalArgumentException if {@code watermarkManager} is {@code null}
      */
     /* default */ ResourceArbiter(WatermarkManager watermarkManager, long startNs) {
+        this(watermarkManager, TimeSource.SYSTEM, startNs);
+    }
+
+    private ResourceArbiter(WatermarkManager watermarkManager, TimeSource timeSource, long startNs) {
         if (watermarkManager == null) {
             throw new IllegalArgumentException("watermarkManager must not be null");
         }
         this.watermarkManager = watermarkManager;
+        this.timeSource = timeSource;
         this.startNs = startNs;
     }
 
@@ -258,11 +297,10 @@ public final class ResourceArbiter {
         if (context == null) {
             throw new IllegalArgumentException("context must not be null");
         }
-        long nowNs = System.nanoTime();
-
-        if (nowNs - startNs < GRACE_PERIOD_NS) {
+        if (inGrace()) {
             return Action.ALLOW;
         }
+        long nowNs = System.nanoTime();
 
         boolean isTransport = context == Context.TRANSPORT_IO;
         int lastOrdinal = isTransport
@@ -306,10 +344,10 @@ public final class ResourceArbiter {
         if (scalingContext == null) {
             throw new IllegalArgumentException("scalingContext must not be null");
         }
-        long nowNs = System.nanoTime();
-        if (nowNs - startNs < GRACE_PERIOD_NS) {
+        if (inGrace()) {
             return Action.ALLOW;
         }
+        long nowNs = System.nanoTime();
         int utilizationPct = watermarkManager.currentUtilizationPct();
         Action action = ResourceArbiterPolicy.actionForScalingContext(scalingContext, utilizationPct);
         ResourceArbiterDecisionTelemetry.emit(action, context, utilizationPct, nowNs);
@@ -319,15 +357,31 @@ public final class ResourceArbiter {
     /**
      * Returns {@code true} if the kernel is still within the startup grace period.
      *
-     * @return {@code true} during the first 30 seconds after construction
+     * @return {@code true} during the first 30 seconds after construction, as timed by the
+     *         {@link TimeSource} bound at construction
      */
     public boolean isInGracePeriod() {
-        return (System.nanoTime() - startNs) < GRACE_PERIOD_NS;
+        return inGrace();
     }
 
     // =========================================================================
     // Internal
     // =========================================================================
+
+    /**
+     * Whether the startup grace still applies. Once the {@link TimeSource} reports the grace
+     * elapsed the answer is latched, so a clock that later reads earlier cannot re-open it.
+     */
+    private boolean inGrace() {
+        if ((boolean) GRACE_ELAPSED.getAcquire(this)) {
+            return false;
+        }
+        if (timeSource.nanoTime() - startNs < GRACE_PERIOD_NS) {
+            return true;
+        }
+        GRACE_ELAPSED.setRelease(this, true);
+        return false;
+    }
 
     /**
      * Re-evaluates the action from the current {@link WatermarkLevel}, updates the

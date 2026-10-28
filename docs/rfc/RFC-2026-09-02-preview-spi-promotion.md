@@ -10,11 +10,11 @@ status: active
 
 |                    |                                                                          |
 |:-------------------|:-------------------------------------------------------------------------|
-| **Status**         | **OPEN** — investigation framed, options laid out, decision not taken     |
+| **Status**         | **ACCEPTED** — Option B, widened; decided in [ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md) |
 | **Author(s)**      | Arkadiusz Przychocki                                                     |
 | **Date Opened**    | 2026-09-02                                                               |
-| **Date Closed**    | —                                                                        |
-| **Target ADR(s)**  | Undecided — see Options. Two of the options need an ADR *per surface*, which is itself the finding |
+| **Date Closed**    | 2026-10-07                                                               |
+| **Target ADR(s)**  | [ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md); the two absent anchors are ADR-101 (events) and ADR-102 (graph) |
 | **Affected Repos** | `exeris-kernel` (authoritative); `exeris-docs` (HLA capability map is the consumer that makes this urgent) |
 | **Reviewers**      | —                                                                        |
 
@@ -212,27 +212,30 @@ ecosystem question, and the HLA's SKU thesis is the thing that would have to giv
 
 ## Recommendation
 
-**Not yet made — this RFC is opened to gather the one measurement it is still missing** (whether
-anything further is scheduled for the HTTP codec surface after v0.12) and to put the scoping
-question about `SecretProvider` in front of the person who owns it. The enterprise question this RFC
-opened with is answered above and closed: the enterprise tier does not gate a promotion.
+**Option B, widened, as decided in [ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md).** 1.0
+promotes the consumer-ordered surfaces (crypto, security with identity, HTTP codecs — and with them
+the rest of `…spi.http`), the two surfaces the v0.12 re-assessment found nothing blocking
+(scheduling, blob), and events, whose blocker was the absent ADR this RFC named. Graph stays
+`preview`: multi-hop traversal widens its contract in 0.13, so it is anchored in 0.13 and promoted in
+a 1.x minor. Each promotion carries the precondition it waits on, and one that has not landed keeps
+its surface `preview` without holding the others back.
 
-What the investigation does support saying now:
+The investigation's three findings stand as the basis of that decision: the events and graph blocker
+was an absent ADR; crypto is both the cheapest and the most urgent promotion; and the matrix records,
+per `preview` surface, the consumers waiting on it.
 
-1. The `…spi.events` and `…spi.graph` blocker is **an absent ADR**, not engineering. That is worth
-   knowing before any scheduling conversation, because it is the one blocker that cannot be resolved
-   by making the surface better.
-2. Crypto is plausibly the cheapest promotion and is certainly the most urgent by consumer order.
-   Those two facts pointing the same way is unusual and should be used.
-3. Whatever is decided, the matrix should state, per `preview` surface, **which HLA capabilities are
-   waiting on it**. Today that link exists only by cross-referencing two documents, which is how the
-   contradiction in Option C's "Cons" survived unnoticed — and the emission caps show the
-   cross-reference alone is not enough, because three of the ten affected capabilities declare no
-   kernel dependency to cross-reference.
+## Answers to the open questions
 
-## Open questions
-
-- Does the `…spi.http` codec surface have anything further scheduled, or did v0.12 close it?
-- Is `SecretProvider` inside or outside the security surface that 1.0 publishes?
-- Should the matrix carry a "consumers waiting on promotion" column, so the HLA link is enforced in
-  one place rather than reconstructed?
+- **Does the `…spi.http` codec surface have anything further scheduled, or did v0.12 close it?**
+  v0.12 closed the change that held it at `preview`: the server-side generator consuming the request
+  decoder has landed in exeris-tooling (`KernelHandlerGenerator` resolves
+  `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY`). One item is open on the surface — the
+  decode methods take a raw `Class<?>`, which cannot carry a parameterized target's element type
+  (ROADMAP §"HTTP Client: Generic-Element Decode"). Its resolution is an additional `default` decode
+  method, which is additive to a `stable` surface, so codecs are Kind 2 with nothing left to enforce
+  rather than Kind 3.
+- **Is `SecretProvider` inside or outside the security surface that 1.0 publishes?** Outside. At 1.0
+  secrets reach the kernel through configuration and external injection; adding the seam afterwards
+  is additive, and no existing credential-carrying contract is routed through it.
+- **Should the matrix carry a "consumers waiting on promotion" column?** Yes, for every surface that
+  stays `preview`, maintained with its row (ADR-100 §4).

@@ -35,7 +35,7 @@ import java.nio.ByteOrder;
  * <h2>Allocation Discipline</h2>
  * <p>Encoding allocates a fresh {@code byte[]} sized exactly {@code HEADER_SIZE + payload.length()}
  * — Kafka's {@code ProducerRecord} owns this buffer until the broker acknowledges. Decoding
- * is zero-copy on the hot path: {@link #decodeDescriptor(byte[])} reads primitives directly
+ * is zero-copy on the hot path: {@link #decodeDescriptor(byte[], int)} reads primitives directly
  * via {@link VarHandle}, and {@link #decodePayloadSegment(byte[])} returns a
  * {@link MemorySegment} slice over the consumer-supplied frame — no payload-bytes
  * allocation, no {@code System.arraycopy}. The legacy {@link #decodePayloadBytes(byte[])}
@@ -134,13 +134,17 @@ final class KafkaEventCodec {
     }
 
     /**
-     * Decodes the descriptor portion of a Kafka {@code ProducerRecord} value frame.
+     * Decodes the descriptor portion of a Kafka {@code ProducerRecord} value frame. The frame does
+     * not carry the isolation ordinal, so the caller supplies it, read from the record's header
+     * by {@link KafkaIsolationHeader}.
      * The payload tail is exposed via {@link #decodePayloadBytes(byte[])} as a fresh
      * heap-backed array sized to {@code frame.length - HEADER_SIZE}.
      *
+     * @param frame            the record value (non-null)
+     * @param isolationOrdinal the isolation ordinal carried by the record's header, or {@code 0}
      * @throws IllegalArgumentException if {@code frame.length < HEADER_SIZE}
      */
-    /* default */ static EventDescriptor decodeDescriptor(byte[] frame) {
+    /* default */ static EventDescriptor decodeDescriptor(byte[] frame, int isolationOrdinal) {
         if (frame.length < HEADER_SIZE) {
             throw new IllegalArgumentException(
                     "Kafka frame is shorter than the fixed header (" + HEADER_SIZE
@@ -154,7 +158,8 @@ final class KafkaEventCodec {
                 (long) VH_STREAM_ID_LOW.get(src,      0L),
                 (int)  VH_EVENT_TYPE_ORDINAL.get(src, 0L),
                 (int)  VH_FLAGS.get(src,              0L),
-                (long) VH_OCCURRED_AT.get(src,        0L));
+                (long) VH_OCCURRED_AT.get(src,        0L),
+                isolationOrdinal);
     }
 
     /**

@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris.preview</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.12.0</version>
+        <version>0.13.0-SNAPSHOT</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
 
@@ -175,7 +175,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
                 <configuration>
                     <!--
                         PREVIEW LINE ONLY — the ArchUnit Wall guard is excluded here because it
@@ -198,6 +197,7 @@
                     -->
                     <excludes>
                         <exclude>**/ExerisArchitectureTest.java</exclude>
+                        <exclude>**/StableSignatureArchitectureTest.java</exclude>
                     </excludes>
                     <argLine>
                         @{coverage.argLine}

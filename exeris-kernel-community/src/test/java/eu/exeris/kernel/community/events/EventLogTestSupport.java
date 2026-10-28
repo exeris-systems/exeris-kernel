@@ -8,7 +8,7 @@ import eu.exeris.kernel.community.persistence.CommunityPersistenceProvider;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.Map;
 
@@ -23,7 +23,7 @@ final class EventLogTestSupport {
         // utility — no instances
     }
 
-    static PersistenceEngine createEngine(PostgreSQLContainer<?> postgres) {
+    static PersistenceEngine createEngine(PostgreSQLContainer postgres) {
         PersistenceConfig cfg = new PersistenceConfig(
                 postgres.getJdbcUrl(),
                 postgres.getUsername(),

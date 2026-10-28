@@ -25,8 +25,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>The {@link SocketBackendMode} selection from JVM property / env vars.</li>
  *   <li>The {@link SocketBackendSelection} resolution result (mode + arena +
  *       syscall handles + armed flag + diagnostic detail string).</li>
- *   <li>The shared {@link Arena} that owns the syscall-handle lifetime
- *       (deterministically closed by {@link #close()}).</li>
  *   <li>The {@link AtomicBoolean} latches that turn first-server-start and
  *       first-client-connect into one-shot validation triggers.</li>
  * </ul>
@@ -35,15 +33,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * client probes) live in {@link NativeTcpSocketProbe}; this class only owns
  * state and routes validation calls through to the probe helpers.
  *
- * <p><b>Allocation:</b> attempts one shared {@link Arena} at construction, unless NIO is pinned
- * explicitly or the runtime is Windows; the arena is closed immediately if native syscall handles
- * cannot be resolved, or held for this instance's lifetime otherwise. No allocation thereafter.
+ * <p><b>Allocation:</b> none — native socket handles are loaded against {@link Arena#global()},
+ * and this class owns no native memory.
  * <p><b>Thread confinement:</b> none — the resolved {@link SocketBackendSelection} is immutable
  * after construction and the validation latches are {@link AtomicBoolean}-gated, so every method
  * here may be called from any thread.
- * <p><b>Ownership:</b> owns the {@link Arena} (and the native syscall handles it backs) and is the
- * only thing that closes it, deterministically, from {@link #close()}; the owning
- * {@link NativeTcpCarrier} is responsible for calling it exactly once.
+ * <p><b>Ownership:</b> owns no native memory; {@link #close()} releases only the Winsock lifecycle
+ * (a no-op off Windows).
  */
 final class NativeTcpSocketBackend {
 
@@ -135,17 +131,8 @@ final class NativeTcpSocketBackend {
         }
     }
 
-    @SuppressWarnings("PMD.CloseResource") // arena is intentionally closed here as the seam's lifetime owner.
     /* default */ void close() {
-        SyscallHandles handles = selection.socketHandles();
-        Arena arena = selection.socketBackendArena();
-        try {
-            if (arena != null) {
-                arena.close();
-            }
-        } finally {
-            NativeTcpSocketProbe.bestEffortWsaCleanup(handles);
-        }
+        NativeTcpSocketProbe.bestEffortWsaCleanup(selection.socketHandles());
     }
 
     private SyscallHandles resolvedSocketHandlesForValidation() {
@@ -154,18 +141,6 @@ final class NativeTcpSocketBackend {
         }
         SyscallHandles handles = selection.socketHandles();
         return handles != null && handles.supportsPlainSocketIo() ? handles : null;
-    }
-
-    @SuppressWarnings("PMD.AvoidCatchingGenericException") // best-effort close swallows any cleanup exception.
-    private static void closeQuietly(AutoCloseable closeable) {
-        if (closeable == null) {
-            return;
-        }
-        try {
-            closeable.close();
-        } catch (Exception _) {
-            // best effort
-        }
     }
 
     /* default */ enum SocketBackendMode {
@@ -262,13 +237,8 @@ final class NativeTcpSocketBackend {
                 return new SocketBackendSelection(configuredMode, null, null, false, detail);
             }
 
-            //CHECKSTYLE:OFF
-            // Direct shared-arena allocation: the Community carrier is the sole owner of
-            // the socket backend seam lifetime. Shared scope is required because resolved
-            // syscall handles are used across transport threads, and the backend's
-            // close() deterministically closes this arena.
-            Arena arena = Arena.ofShared();
-            //CHECKSTYLE:ON
+            // The handles live as long as the process, and the POSIX load allocates nothing in the arena.
+            Arena arena = Arena.global();
             SyscallHandles handles = null;
             try {
                 handles = CoreSyscallLoader.load(arena);
@@ -280,7 +250,6 @@ final class NativeTcpSocketBackend {
             }
 
             if (handles == null) {
-                closeQuietly(arena);
                 String detail;
                 if (configuredMode == SocketBackendMode.POSIX_HYBRID) {
                     detail = "Core socket seam was requested explicitly but is unavailable; "

@@ -54,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@link FlowOutcome} — CONTINUE / PARK / FAIL</li>
  * </ul>
  *
- * <h2>Three scenarios</h2>
+ * <h2>Scenarios</h2>
  * <ol>
  *   <li><b>Mid-Saga Kill</b> — engine is force-closed while a flow is PARKED; after rebuild
  *       the snapshot must exist and the flow must resume from the checkpoint step.</li>
@@ -62,6 +62,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       the business step.</li>
  *   <li><b>Compensation</b> — a step returning {@link FlowOutcome#FAIL} must drive the
  *       engine to execute compensation actions in reverse step order.</li>
+ *   <li><b>Finished instance across a restart</b> — a completed instance is neither run again
+ *       nor offered as parked by an engine rebuilt on the same store.</li>
  * </ol>
  *
  * <h2>Usage</h2>
@@ -107,6 +109,30 @@ public abstract class AbstractSagaRecoveryTck {
      * @return the store shared by {@link #createEngine()} and {@link #rebuildEngine()}
      */
     protected abstract FlowSnapshotStore snapshotStore();
+
+    /**
+     * Creates an unstarted {@link FlowEngine} whose terminal-state catalogue is bounded at
+     * {@code terminalCatalogMaxSize} entries, with snapshot persistence on and backed by the
+     * <em>same</em> {@link FlowSnapshotStore} as {@link #createEngine()}. The TCK calls
+     * {@code start()}.
+     *
+     * <p>Every binding MUST override this: a bounded catalogue is the one mode in which the durable
+     * row, not memory, answers a resubmit of a finished instance, and a binding that cannot be
+     * configured with a bound has no way to show that it honours that. The default throws instead of
+     * skipping, because a skipped case reports green.
+     *
+     * @param terminalCatalogMaxSize the catalogue bound; always positive
+     * @return a new, unstarted engine sharing the snapshot store
+     * @throws UnsupportedOperationException from the default; a binding overrides this method
+     * @since 0.13
+     */
+    protected FlowEngine createBoundedEngine(int terminalCatalogMaxSize) {
+        throw new UnsupportedOperationException(
+                "AbstractSagaRecoveryTck.createBoundedEngine(" + terminalCatalogMaxSize + ") must be "
+                + "overridden: a binding is obliged to supply an engine with a bounded terminal "
+                + "catalogue over the shared snapshot store, so that the bounded-mode idempotency "
+                + "fence is verified rather than skipped.");
+    }
 
     /**
      * Number of concurrent flow instances driven through the restart-under-load
@@ -162,14 +188,28 @@ public abstract class AbstractSagaRecoveryTck {
         return snapshotStore().load(ctx.instanceIdMost(), ctx.instanceIdLeast());
     }
 
-    /** Whether every instance's durable checkpoint has been reclaimed. */
-    private boolean allCheckpointsReclaimed(List<FlowContext> contexts) {
-        for (FlowContext ctx : contexts) {
-            if (loadSnapshot(ctx).isPresent()) {
-                return false;
-            }
+    private static final long JOIN_SECONDS = 5L;
+
+    /**
+     * Records the thread that ran a step. That thread ends only after the run's bookkeeping,
+     * including the durable write a transition makes, so joining it orders the assertions after
+     * the write without polling.
+     */
+    private static final class WorkerProbe {
+
+        private final AtomicReference<Thread> worker = new AtomicReference<>();
+        private final CountDownLatch entered = new CountDownLatch(1);
+
+        /* default */ void record() {
+            worker.set(Thread.currentThread());
+            entered.countDown();
         }
-        return true;
+
+        /* default */ void awaitWorkerExit() throws InterruptedException {
+            assertThat(entered.await(JOIN_SECONDS, TimeUnit.SECONDS)).as("the step ran").isTrue();
+            assertThat(worker.get().join(java.time.Duration.ofSeconds(JOIN_SECONDS)))
+                    .as("the worker that ran the step has ended").isTrue();
+        }
     }
 
     private boolean awaitCondition(BooleanSupplier condition, int timeoutSeconds) {
@@ -611,33 +651,20 @@ public abstract class AbstractSagaRecoveryTck {
                 engine.scheduler().wake(ctx);
             }
 
-            // (b) every parked instance resumes and reaches COMPLETED. In unbounded-catalog
-            // mode (the TCK default) the durable snapshot is DELETED on complete(), so the
-            // observable terminal proof is twofold: the rebuilt-generation completedFlows
-            // counter reaches the parked fleet size AND the checkpoint disappears from the store.
+            // (b) every parked instance resumes and reaches COMPLETED, and the terminal row it
+            // leaves is the proof that outlives the next restart.
             int expectedCompleted = parked.size();
             assertThat(awaitCondition(
                     () -> engine.stats().completedFlows() >= expectedCompleted, 15))
                     .as("Rebuilt engine MUST drive all %d resumed instances to COMPLETED", expectedCompleted)
                     .isTrue();
 
-            // The counter above is not a proxy for the reclaim. complete() increments
-            // completedFlows, publishes progress, and only then deletes the checkpoint, so the
-            // fleet-size gate is satisfied while the last instance's row is still in the store —
-            // and reading it in the same breath makes this a race, not an assertion. Await the
-            // reclaim itself; the per-instance check below still names the offender if it never
-            // lands, rather than reporting an anonymous timeout.
-            // 5s, not the 15s the line above uses: that one waits for sixteen flows to execute,
-            // this one for a finalization step that is sub-millisecond in practice (50ms with the
-            // window widened far enough to reproduce the race). Deliberately not asserted — a
-            // timeout here falls through to the per-instance loop, which names the offender.
-            awaitCondition(() -> allCheckpointsReclaimed(parked), 5);
-
+            // No await: the COMPLETED write precedes the completedFlows increment.
             for (FlowContext ctx : parked) {
                 assertThat(loadSnapshot(ctx))
-                        .as("COMPLETED checkpoint for %s MUST be reclaimed from the store on complete()",
+                        .as("a COMPLETED row for %s is the proof that outlives the restart",
                                 ctx.instanceIdMost())
-                        .isEmpty();
+                        .hasValueSatisfying(row -> assertThat(row.state()).isEqualTo(FlowState.COMPLETED));
             }
 
             // (c) idempotency fence — step0 (pre-park) executed exactly once per parked
@@ -777,6 +804,345 @@ public abstract class AbstractSagaRecoveryTck {
             // settle — park carrier instead of busy-spin
             LockSupport.parkNanos(
                     TimeUnit.SECONDS.toNanos(1));
+        }
+    }
+
+    // =========================================================================
+    // Bounded terminal catalogue — the durable row is the fence
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Bounded terminal catalogue — a finished instance stays finished once evicted from memory")
+    class BoundedTerminalCatalogFence {
+
+        private static final long NEGATIVE_WAIT_MILLIS = 300L;
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the bounded-catalogue idempotency fence.
+         */
+        BoundedTerminalCatalogFence() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("A flow that never parked is not run again after its catalogue entry is evicted")
+        void neverParkedCompletionIsAbsorbedAfterEviction() throws InterruptedException {
+            AtomicInteger executions = new AtomicInteger();
+            CountDownLatch rerun = new CountDownLatch(1);
+            WorkerProbe probe = new WorkerProbe();
+
+            try (FlowEngine bounded = startedBoundedEngine()) {
+                FlowDefinition def = bounded.plans().newDefinition("bounded-never-parked")
+                        .step("charge", _ -> {
+                            countExecution(executions, rerun);
+                            probe.record();
+                            return FlowOutcome.CONTINUE;
+                        }, null)
+                        .build();
+                FlowExecutionPlan plan = bounded.plans().compile(def);
+                FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), def.name());
+
+                bounded.scheduler().schedule(plan, ctx);
+                probe.awaitWorkerExit();
+                assertThat(executions.get()).isEqualTo(1);
+                assertThat(loadSnapshot(ctx))
+                        .as("a bounded catalogue leaves a COMPLETED row as the proof that outlives eviction")
+                        .hasValueSatisfying(row -> assertThat(row.state()).isEqualTo(FlowState.COMPLETED));
+                evict(bounded);
+
+                bounded.scheduler().schedule(plan, ctx);
+
+                assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
+                        .as("IDEMPOTENCY VIOLATION: an evicted COMPLETED flow ran again")
+                        .isFalse();
+                assertThat(executions.get()).isEqualTo(1);
+            }
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("A flow that parked and completed is not resurrected as parked after eviction")
+        void parkedThenCompletedIsNotResurrectedAfterEviction() throws InterruptedException {
+            AtomicInteger executions = new AtomicInteger();
+            AtomicInteger parks = new AtomicInteger();
+            CountDownLatch rerun = new CountDownLatch(1);
+            WorkerProbe waitProbe = new WorkerProbe();
+            WorkerProbe finishProbe = new WorkerProbe();
+
+            try (FlowEngine bounded = startedBoundedEngine()) {
+                FlowDefinition def = bounded.plans().newDefinition("bounded-parked-completed")
+                        .step("await-callback", _ -> {
+                            if (parks.incrementAndGet() > 1) {
+                                rerun.countDown();
+                            }
+                            waitProbe.record();
+                            return FlowOutcome.PARK;
+                        }, null)
+                        .step("ship", _ -> {
+                            countExecution(executions, rerun);
+                            finishProbe.record();
+                            return FlowOutcome.CONTINUE;
+                        }, null)
+                        .transition(0, 1)
+                        .build();
+                FlowExecutionPlan plan = bounded.plans().compile(def);
+                FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), def.name());
+
+                bounded.scheduler().schedule(plan, ctx);
+                waitProbe.awaitWorkerExit();
+                bounded.scheduler().wake(ctx.instanceIdMost(), ctx.instanceIdLeast());
+                finishProbe.awaitWorkerExit();
+                assertThat(executions.get()).isEqualTo(1);
+                assertThat(loadSnapshot(ctx))
+                        .as("completion replaces the PARKED row instead of leaving it behind")
+                        .hasValueSatisfying(row -> assertThat(row.state()).isEqualTo(FlowState.COMPLETED));
+                evict(bounded);
+
+                bounded.scheduler().schedule(plan, ctx);
+
+                assertThat(bounded.scheduler().lookupParked(ctx.instanceIdMost(), ctx.instanceIdLeast()))
+                        .as("a finished instance MUST NOT be offered as parked")
+                        .isEmpty();
+                assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
+                        .as("IDEMPOTENCY VIOLATION: the flow ran again after eviction")
+                        .isFalse();
+                assertThat(parks.get()).as("the park step ran once, before the eviction").isEqualTo(1);
+                assertThat(executions.get()).isEqualTo(1);
+            }
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("A wake after eviction is refused as not parked and runs no step again")
+        void wakeAfterEvictionIsRefusedAsNotParked() throws InterruptedException {
+            AtomicInteger executions = new AtomicInteger();
+            CountDownLatch rerun = new CountDownLatch(1);
+            WorkerProbe waitProbe = new WorkerProbe();
+            WorkerProbe finishProbe = new WorkerProbe();
+
+            try (FlowEngine bounded = startedBoundedEngine()) {
+                FlowDefinition def = bounded.plans().newDefinition("bounded-wake-after-eviction")
+                        .step("await-callback", _ -> {
+                            waitProbe.record();
+                            return FlowOutcome.PARK;
+                        }, null)
+                        .step("ship", _ -> {
+                            countExecution(executions, rerun);
+                            finishProbe.record();
+                            return FlowOutcome.CONTINUE;
+                        }, null)
+                        .transition(0, 1)
+                        .build();
+                FlowExecutionPlan plan = bounded.plans().compile(def);
+                FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), def.name());
+
+                bounded.scheduler().schedule(plan, ctx);
+                waitProbe.awaitWorkerExit();
+                bounded.scheduler().wake(ctx.instanceIdMost(), ctx.instanceIdLeast());
+                finishProbe.awaitWorkerExit();
+                evict(bounded);
+
+                assertThatThrownBy(() -> bounded.scheduler().wake(ctx.instanceIdMost(), ctx.instanceIdLeast()))
+                        .matches(FlowEngineException::isNotParked);
+                assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
+                        .as("IDEMPOTENCY VIOLATION: a wake after eviction ran the steps after the park")
+                        .isFalse();
+                assertThat(executions.get()).isEqualTo(1);
+            }
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("A flow that never parked is not run again by a restarted engine on the same store")
+        void neverParkedCompletionIsAbsorbedAfterRestart() throws InterruptedException {
+            AtomicInteger executions = new AtomicInteger();
+            CountDownLatch rerun = new CountDownLatch(1);
+            WorkerProbe probe = new WorkerProbe();
+            FlowDefinition def;
+            FlowContext ctx;
+
+            try (FlowEngine first = startedBoundedEngine()) {
+                def = first.plans().newDefinition("bounded-restart")
+                        .step("charge", _ -> {
+                            countExecution(executions, rerun);
+                            probe.record();
+                            return FlowOutcome.CONTINUE;
+                        }, null)
+                        .build();
+                ctx = TestFlowContexts.create(UUID.randomUUID().toString(), def.name());
+                first.scheduler().schedule(first.plans().compile(def), ctx);
+                probe.awaitWorkerExit();
+                assertThat(executions.get()).isEqualTo(1);
+            }
+
+            try (FlowEngine second = startedBoundedEngine()) {
+                second.scheduler().schedule(second.plans().compile(def), ctx);
+
+                assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
+                        .as("IDEMPOTENCY VIOLATION: a COMPLETED flow ran again after a restart")
+                        .isFalse();
+                assertThat(executions.get()).isEqualTo(1);
+            }
+        }
+
+        private FlowEngine startedBoundedEngine() {
+            FlowEngine bounded = createBoundedEngine(1);
+            bounded.start();
+            return bounded;
+        }
+
+        private void countExecution(AtomicInteger executions, CountDownLatch rerun) {
+            if (executions.incrementAndGet() > 1) {
+                rerun.countDown();
+            }
+        }
+
+        /** Completes a filler flow under a fresh id, which pushes the oldest catalogue entry out. */
+        private void evict(FlowEngine bounded) throws InterruptedException {
+            WorkerProbe probe = new WorkerProbe();
+            String name = "bounded-filler-" + UUID.randomUUID();
+            FlowDefinition def = bounded.plans().newDefinition(name)
+                    .step("only", _ -> {
+                        probe.record();
+                        return FlowOutcome.CONTINUE;
+                    }, null)
+                    .build();
+            bounded.scheduler().schedule(bounded.plans().compile(def),
+                    TestFlowContexts.create(UUID.randomUUID().toString(), name));
+            probe.awaitWorkerExit();
+        }
+    }
+
+    // =========================================================================
+    // A finished instance across an engine restart on the same store
+    // =========================================================================
+
+    @Nested
+    @DisplayName("A finished instance stays finished across an engine restart on the same store")
+    class CompletedInstanceAcrossRestart {
+
+        private static final long NEGATIVE_WAIT_MILLIS = 300L;
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise a finished instance across an engine restart.
+         */
+        CompletedInstanceAcrossRestart() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("A flow that never parked is not run again by a rebuilt engine, and a fresh instance still runs")
+        void neverParkedCompletionIsAbsorbedAfterRestart() throws InterruptedException {
+            AtomicInteger executions = new AtomicInteger();
+            CountDownLatch rerun = new CountDownLatch(1);
+            AtomicReference<WorkerProbe> probe = new AtomicReference<>(new WorkerProbe());
+
+            FlowDefinition def = engine.plans().newDefinition("restart-never-parked")
+                    .step("charge", _ -> {
+                        if (executions.incrementAndGet() > 1) {
+                            rerun.countDown();
+                        }
+                        probe.get().record();
+                        return FlowOutcome.CONTINUE;
+                    }, null)
+                    .build();
+            FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), def.name());
+            engine.scheduler().schedule(engine.plans().compile(def), ctx);
+            probe.get().awaitWorkerExit();
+            assertThat(executions.get()).isEqualTo(1);
+            assertCompletedRow(ctx);
+
+            engine.close();
+            engine = rebuildEngine();
+            engine.start();
+            FlowExecutionPlan plan = engine.plans().compile(def);
+
+            engine.scheduler().schedule(plan, ctx);
+
+            assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
+                    .as("IDEMPOTENCY VIOLATION: a COMPLETED flow ran again after a restart")
+                    .isFalse();
+            assertThat(executions.get()).isEqualTo(1);
+            assertThat(engine.stats().completedFlows())
+                    .as("the rebuilt engine ran nothing for the finished instance")
+                    .isZero();
+            assertCompletedRow(ctx);
+
+            // Control: a new instance of the same plan still runs on the rebuilt engine.
+            FlowContext fresh = TestFlowContexts.create(UUID.randomUUID().toString(), def.name());
+            probe.set(new WorkerProbe());
+            engine.scheduler().schedule(plan, fresh);
+            probe.get().awaitWorkerExit();
+            assertThat(engine.stats().completedFlows())
+                    .as("a fresh instance still runs after the restart")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("A flow that parked and completed is not offered as parked, nor run again, by a rebuilt engine")
+        void parkedThenCompletedIsNotResurrectedAfterRestart() throws InterruptedException {
+            AtomicInteger executions = new AtomicInteger();
+            AtomicInteger parks = new AtomicInteger();
+            CountDownLatch rerun = new CountDownLatch(1);
+            WorkerProbe waitProbe = new WorkerProbe();
+            WorkerProbe finishProbe = new WorkerProbe();
+
+            FlowDefinition def = engine.plans().newDefinition("restart-parked-completed")
+                    .step("await-callback", _ -> {
+                        if (parks.incrementAndGet() > 1) {
+                            rerun.countDown();
+                        }
+                        waitProbe.record();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("ship", _ -> {
+                        if (executions.incrementAndGet() > 1) {
+                            rerun.countDown();
+                        }
+                        finishProbe.record();
+                        return FlowOutcome.CONTINUE;
+                    }, null)
+                    .transition(0, 1)
+                    .build();
+            FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), def.name());
+            engine.scheduler().schedule(engine.plans().compile(def), ctx);
+            waitProbe.awaitWorkerExit();
+            engine.scheduler().wake(ctx.instanceIdMost(), ctx.instanceIdLeast());
+            finishProbe.awaitWorkerExit();
+            assertThat(executions.get()).isEqualTo(1);
+            assertCompletedRow(ctx);
+
+            engine.close();
+            engine = rebuildEngine();
+            engine.start();
+            FlowExecutionPlan plan = engine.plans().compile(def);
+
+            assertThat(engine.scheduler().lookupParked(ctx.instanceIdMost(), ctx.instanceIdLeast()))
+                    .as("a finished instance MUST NOT be offered as parked after a restart")
+                    .isEmpty();
+            assertThatThrownBy(() -> engine.scheduler().wake(ctx.instanceIdMost(), ctx.instanceIdLeast()))
+                    .matches(FlowEngineException::isNotParked);
+            engine.scheduler().schedule(plan, ctx);
+
+            assertThat(rerun.await(NEGATIVE_WAIT_MILLIS, TimeUnit.MILLISECONDS))
+                    .as("IDEMPOTENCY VIOLATION: the flow ran again after a restart")
+                    .isFalse();
+            assertThat(parks.get()).as("the park step ran once, before the restart").isEqualTo(1);
+            assertThat(executions.get()).isEqualTo(1);
+            assertCompletedRow(ctx);
+        }
+
+        private void assertCompletedRow(FlowContext ctx) {
+            assertThat(loadSnapshot(ctx))
+                    .as("a COMPLETED row is the proof that outlives the restart")
+                    .hasValueSatisfying(row -> assertThat(row.state()).isEqualTo(FlowState.COMPLETED));
         }
     }
 

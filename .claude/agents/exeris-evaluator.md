@@ -41,8 +41,9 @@ never gathered is the failure this repository spends most of its guardrails prev
    [the JDK track](../../policies/jdk-and-preview-track.md) is authoritative and this sentence is
    only a pointer to it.
 2. **The scope class of the change.** Hot path, non-hot, test-tooling, docs-only. A ban applies to
-   a scope, not to a string: the same `ThreadLocal` is a defect on a reactor path and ordinary in a
-   test fixture. Deciding this first is what keeps a review proportional.
+   a scope, not to a string: the same `new byte[]` copy is a defect on a reactor path and ordinary
+   in a test fixture. Deciding this first is what keeps a review proportional. A ban an ADR states
+   without a scope — `ThreadLocal`, ADR-007 — applies in every class, test-tooling included.
 
 ## Evidence
 

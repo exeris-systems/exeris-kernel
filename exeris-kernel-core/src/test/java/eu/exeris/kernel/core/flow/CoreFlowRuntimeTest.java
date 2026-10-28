@@ -1007,8 +1007,8 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 20, unit = TimeUnit.SECONDS)
-    @DisplayName("late completed exit after close preserves counters but releases claims and deletes the stale snapshot")
-    void lateCompletedExitAfterCloseStillReleasesClaimsAndDeletesSnapshot() throws Exception {
+    @DisplayName("late completed exit after close preserves counters but releases claims and replaces the stale snapshot with a completed one")
+    void lateCompletedExitAfterCloseStillReleasesClaimsAndWritesTheCompletedRow() throws Exception {
         InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
         TrackingIdempotencyGuard guard = new TrackingIdempotencyGuard();
         CountDownLatch parked = new CountDownLatch(1);
@@ -1063,9 +1063,9 @@ class CoreFlowRuntimeTest {
             assertThat(guard.tryClaimStep(context.instanceIdMost(), context.instanceIdLeast(), 1))
                     .as("late completed exit must still release idempotency claims after close()")
                     .isTrue();
-            assertThat(snapshotStore.exists(context.instanceIdMost(), context.instanceIdLeast()))
-                    .as("late completed exit must still delete the stale parked snapshot after close()")
-                    .isFalse();
+            assertThat(snapshotStore.load(context.instanceIdMost(), context.instanceIdLeast()))
+                    .as("late completed exit must still replace the parked snapshot with a COMPLETED one after close()")
+                    .hasValueSatisfying(row -> assertThat(row.state()).isEqualTo(FlowState.COMPLETED));
         } finally {
             allowExit.set(true);
             engine.close();

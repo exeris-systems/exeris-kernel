@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-10-28
 ---
 
 # Scheduling Subsystem
@@ -21,6 +21,9 @@ Community driver: `eu.exeris.kernel.community.scheduling`, in-process dispatch o
 election, and cross-node coordination are excluded by contract, not merely unimplemented — they need
 the coordination seam, which is a separate decision, and naming them here would invite a driver to
 invent a parallel mechanism.
+
+The in-process driver is single-node: an application running N replicas fires every job N times per
+trigger, once on each replica. A job body that must act once is idempotent.
 
 ## Triggers
 
@@ -99,6 +102,28 @@ the dispatching thread. Two consequences are normative:
 - **The capture is a snapshot.** A job firing an hour after submission carries the identity that
   scheduled it, which may since have lost the rights it holds. Re-validating a token at dispatch time
   is an identity decision, not a scheduling one, and is out of scope here.
+
+### Declared jobs
+
+A job generated from a declaration with no submitting request, such as SDK `@Schedule`, takes no
+identity from the kernel (ADR-057, Amendment A1).
+
+- **Either context dispatches; neither refuses.** The fail-closed rule above is unchanged: a
+  submission with at least one of the two contexts bound runs, and the driver rebinds only what it
+  captured. It never adds a principal or a storage context of its own.
+- **A declared job is submitted with only `systemStorageContext()` bound.** It runs with no
+  `PrincipalContext`, so a role or scope check that runs inside it fails closed. The system context
+  has no isolation key and the persistence layer injects no tenant predicate, so a declaration is
+  admissible only on a `GLOBAL` entity. A declared job is not an authenticated user, so an action that
+  names roles, and one with an empty role set (which requires an authenticated caller), are both
+  refused: at 1.0 no `@Schedule` declaration passes, and it stays reserved until a service principal
+  exists.
+- **A principal-only submission reaches persistence as the system context.** With no storage context
+  captured, `KernelProviders.storageContextOrSystem()` yields the system context, so the job has no
+  tenant predicate and nothing records that it fell back. A submitter that needs tenant isolation binds
+  the storage context explicitly.
+- **No service principal exists at 1.0.** One added later arrives in the security surface as a new type
+  or a `default` method, never as a `JobDescriptor` component or a `submit` overload.
 
 ## Lifecycle boundary
 
@@ -179,9 +204,9 @@ non-empty analysis set before asserting anything else.
 That is not an oversight. The in-process driver allocates no off-heap memory, opens no connection and
 reads no store — its construction is a config lookup and a virtual thread. The tempting declaration
 is `security`, on the reasoning that a job carries the identity that submitted it; that is wrong
-twice over. There is no `security` subsystem in the registry — identity arrives through `ScopedValue`
-slots, not a boot-ordered component — and identity crosses this seam at *submit* time from the
-caller's own scope, which no boot order can influence.
+twice over. The `security` subsystem binds the `SecurityProvider` slot and nothing a job captures —
+identity arrives through `ScopedValue` slots, not a boot-ordered component — and identity crosses this
+seam at *submit* time from the caller's own scope, which no boot order can influence.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -221,12 +246,9 @@ priorities, and dispatch-time re-validation of a captured identity.
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.scheduling.*`) is classified **preview** since
-0.11.0 in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
-[ADR-057](../adr/ADR-057-job-scheduler-spi.md) and the contract tests are
+This subsystem's SPI surface (`eu.exeris.kernel.spi.scheduling.*`) is **stable** from 0.13.0 (shipped in
+0.11.0) in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
+[ADR-057](../adr/ADR-057-job-scheduler-spi.md) (amendment A1 is additive), the promotion is
+[ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md), and the contract tests are
 `AbstractJobSchedulerTck`. See the matrix for the semver policy this label commits to.
-
-Every other subsystem doc under `docs/subsystems/` already carried this section, and this one did
-not, so a reader checking how far they could lean on `JobScheduler` had to find the matrix
-themselves — which is the gap, not the label.
 

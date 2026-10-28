@@ -4,22 +4,28 @@
  */
 package eu.exeris.kernel.core.events;
 
-import eu.exeris.kernel.spi.exceptions.events.EventBusException;
+import eu.exeris.kernel.core.events.isolation.CoreIsolationKeyRegistry;
 import eu.exeris.kernel.core.events.projection.Projection;
 import eu.exeris.kernel.core.events.projection.ProjectionEngine;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.events.EventHandler;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.events.IsolationKeySpec;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -326,6 +332,208 @@ class InMemoryEventBusTest {
 
         assertThat(counter.state()).isEqualTo(1);
         engine.close();
+    }
+
+    // ── Isolation scoping (ADR-101) ──────────────────────────────────────────
+
+    @Nested
+    @DisplayName("Isolation scoping — routing by isolation ordinal, ref-count, subscribeScoped refusals")
+    class IsolationScoping {
+
+        private static final String TENANT_A = "tenant-a";
+        private static final String TENANT_B = "tenant-b";
+        private static final int    ORD_A    = 101;
+        private static final int    ORD_B    = 102;
+
+        private final InMemoryEventBus bus;
+
+        IsolationScoping() {
+            EventRegistry types = new MinimalTestRegistry();
+            types.register(EventTypeSpec.of(TYPE_ORDER, ORD_ORDER));
+            CoreIsolationKeyRegistry keys = new CoreIsolationKeyRegistry();
+            keys.register(IsolationKeySpec.of(TENANT_A, ORD_A));
+            keys.register(IsolationKeySpec.of(TENANT_B, ORD_B));
+            this.bus = new InMemoryEventBus(types, keys);
+        }
+
+        private ScopedValue.Carrier asTenant(String tenant) {
+            return ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared(tenant));
+        }
+
+        @Test
+        @DisplayName("an unscoped subscriber receives every publication, whatever its isolation ordinal")
+        void unscopedSubscriberReceivesEverything() throws InterruptedException {
+            AtomicInteger received = new AtomicInteger(0);
+            bus.subscribe(TYPE_ORDER, (d, p) -> {
+                try (p) {
+                    received.incrementAndGet();
+                }
+            });
+
+            bus.publishAndAwait(descriptor(ORD_ORDER, 0), EventPayload.empty());
+            bus.publishAndAwait(descriptor(ORD_ORDER, ORD_A), EventPayload.empty());
+            bus.publishAndAwait(descriptor(ORD_ORDER, ORD_B), EventPayload.empty());
+
+            assertThat(received.get()).isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("a scoped subscriber receives only its own ordinal, and never an unscoped publication")
+        void scopedSubscriberReceivesOnlyItsOwn() throws Exception {
+            List<Integer> seenByA = new ArrayList<>();
+            List<Integer> seenByB = new ArrayList<>();
+            asTenant(TENANT_A).call(() -> bus.subscribeScoped(TYPE_ORDER, (d, p) -> {
+                try (p) {
+                    seenByA.add(d.isolationOrdinal());
+                }
+            }));
+            asTenant(TENANT_B).call(() -> bus.subscribeScoped(TYPE_ORDER, (d, p) -> {
+                try (p) {
+                    seenByB.add(d.isolationOrdinal());
+                }
+            }));
+
+            bus.publishAndAwait(descriptor(ORD_ORDER, ORD_A), EventPayload.empty());
+            bus.publishAndAwait(descriptor(ORD_ORDER, ORD_B), EventPayload.empty());
+            bus.publishAndAwait(descriptor(ORD_ORDER, 0), EventPayload.empty());
+
+            assertThat(seenByA).as("tenant A sees only its own ordinal").containsExactly(ORD_A);
+            assertThat(seenByB).as("tenant B sees only its own ordinal").containsExactly(ORD_B);
+        }
+
+        @Test
+        @DisplayName("publishAndAwait on a partial match: refs are retained for the matched slots only, and balanced")
+        void publishAndAwaitRefCountBalancedOnPartialMatch() throws InterruptedException {
+            bus.subscribe(TYPE_ORDER, (d, p) -> {
+                try (p) {
+                    // unscoped: matches everything
+                }
+            });
+            scopedSubscriber(TENANT_A, ORD_A);
+
+            AtomicInteger retains = new AtomicInteger(0);
+            AtomicInteger closes  = new AtomicInteger(0);
+            bus.publishAndAwait(descriptor(ORD_ORDER, ORD_B), countingPayload(retains, closes, null));
+            assertThat(retains.get()).as("only the unscoped slot matches tenant B's ordinal").isZero();
+            assertThat(closes.get()).as("the one matched slot closes the single reference").isEqualTo(1);
+
+            retains.set(0);
+            closes.set(0);
+            bus.publishAndAwait(descriptor(ORD_ORDER, ORD_A), countingPayload(retains, closes, null));
+            assertThat(retains.get()).as("two slots match tenant A's ordinal: one extra retain").isEqualTo(1);
+            assertThat(closes.get()).as("each matched slot closes its own reference").isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("publish on a partial match: refs are retained for the matched slots only, and balanced")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void publishRefCountBalancedOnPartialMatch() throws InterruptedException {
+            bus.subscribe(TYPE_ORDER, (d, p) -> {
+                try (p) {
+                    // unscoped: matches everything
+                }
+            });
+            scopedSubscriber(TENANT_A, ORD_A);
+
+            AtomicInteger retains = new AtomicInteger(0);
+            AtomicInteger closes  = new AtomicInteger(0);
+            CountDownLatch done   = new CountDownLatch(2);
+            bus.publish(descriptor(ORD_ORDER, ORD_A), countingPayload(retains, closes, done));
+
+            assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(retains.get()).isEqualTo(1);
+            assertThat(closes.get()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("publish with no matching slot closes the payload once and reaches no handler")
+        void publishWithNoMatchClosesOnce() {
+            scopedSubscriber(TENANT_A, ORD_A);
+
+            AtomicInteger retains = new AtomicInteger(0);
+            AtomicInteger closes  = new AtomicInteger(0);
+            bus.publish(descriptor(ORD_ORDER, ORD_B), countingPayload(retains, closes, null));
+
+            assertThat(retains.get()).isZero();
+            assertThat(closes.get()).as("the payload is closed exactly once when nothing matches").isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("subscribeScoped with no bound storage context throws EX-EVENT-6011 carrying [eventType]")
+        void subscribeScopedWithoutContextRefused() {
+            assertRefusedWith6011(() -> bus.subscribeScoped(TYPE_ORDER, (d, p) -> p.close()));
+        }
+
+        @Test
+        @DisplayName("subscribeScoped under system scope (empty key) throws EX-EVENT-6011")
+        void subscribeScopedUnderSystemScopeRefused() {
+            assertRefusedWith6011(() -> ScopedValue.where(KernelProviders.STORAGE_CONTEXT,
+                    ImmutableStorageContext.system()).call(() ->
+                    bus.subscribeScoped(TYPE_ORDER, (d, p) -> p.close())));
+        }
+
+        @Test
+        @DisplayName("subscribeScoped under an unregistered key throws EX-EVENT-6011")
+        void subscribeScopedUnderUnregisteredKeyRefused() {
+            assertRefusedWith6011(() -> asTenant("tenant-z").call(() ->
+                    bus.subscribeScoped(TYPE_ORDER, (d, p) -> p.close())));
+        }
+
+        @Test
+        @DisplayName("a bus built without an isolation registry refuses every scoped subscription")
+        void busWithoutIsolationRegistryRefusesScoped() {
+            EventRegistry types = new MinimalTestRegistry();
+            types.register(EventTypeSpec.of(TYPE_ORDER, ORD_ORDER));
+            InMemoryEventBus unscopedOnly = new InMemoryEventBus(types);
+
+            assertThatThrownBy(() -> asTenant(TENANT_A).call(() ->
+                    unscopedOnly.subscribeScoped(TYPE_ORDER, (d, p) -> p.close())))
+                    .isInstanceOfSatisfying(EventBusException.class, ex -> {
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6011);
+                        assertThat(ex.rawArgs()).containsExactly(TYPE_ORDER);
+                    });
+        }
+
+        private void scopedSubscriber(String tenant, int ordinal) {
+            try {
+                asTenant(tenant).call(() -> bus.subscribeScoped(TYPE_ORDER, (d, p) -> {
+                    try (p) {
+                        // scoped to this tenant's ordinal
+                    }
+                }));
+            } catch (Exception e) {
+                throw new IllegalStateException("scoped subscriber for ordinal " + ordinal + " not registered", e);
+            }
+        }
+
+        private void assertRefusedWith6011(org.junit.jupiter.api.function.ThrowingSupplier<?> action) {
+            assertThatThrownBy(action::get)
+                    .isInstanceOfSatisfying(EventBusException.class, ex -> {
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6011);
+                        assertThat(ex.rawArgs()).containsExactly(TYPE_ORDER);
+                    });
+        }
+
+        private EventPayload countingPayload(AtomicInteger retains, AtomicInteger closes, CountDownLatch done) {
+            return new EventPayload() {
+                @Override public java.lang.foreign.MemorySegment segment() { return java.lang.foreign.MemorySegment.NULL; }
+                @Override public int length() { return 0; }
+                @Override public int refCount() { return 1; }
+                @Override public boolean isAlive() { return true; }
+                @Override public void retain() { retains.incrementAndGet(); }
+                @Override public void close() {
+                    closes.incrementAndGet();
+                    if (done != null) {
+                        done.countDown();
+                    }
+                }
+            };
+        }
+
+        private EventDescriptor descriptor(int ordinal, int isolationOrdinal) {
+            return EventDescriptor.of(1L, 2L, 3L, 4L, ordinal, EventDescriptor.FLAG_ASYNC,
+                    System.currentTimeMillis(), isolationOrdinal);
+        }
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

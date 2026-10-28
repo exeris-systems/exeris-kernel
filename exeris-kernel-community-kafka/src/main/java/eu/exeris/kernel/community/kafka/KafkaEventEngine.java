@@ -5,6 +5,8 @@
 package eu.exeris.kernel.community.kafka;
 
 import eu.exeris.kernel.core.events.InMemoryEventBus;
+import eu.exeris.kernel.core.events.isolation.CoreIsolationKeyRegistry;
+import eu.exeris.kernel.core.events.isolation.IsolationStamp;
 import eu.exeris.kernel.spi.events.EventBatchProcessor;
 import eu.exeris.kernel.spi.events.EventBus;
 import eu.exeris.kernel.spi.events.EventDescriptor;
@@ -17,6 +19,7 @@ import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventQueue;
 import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.events.IsolationKeyRegistry;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
@@ -25,9 +28,12 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
@@ -95,14 +101,17 @@ import java.util.function.Function;
  */
 @SuppressWarnings({
         // KafkaEventEngine bundles publish + consume + producer + consumer wiring intentionally;
-        // splitting it would dilute the single Kafka-binding entry point.
+        // splitting it would dilute the single Kafka-binding entry point. Package-private client
+        // property builders are co-located here for centralized native-image metadata derivation.
         "PMD.ExcessiveImports",
-        "PMD.CouplingBetweenObjects"
+        "PMD.CouplingBetweenObjects",
+        "PMD.TooManyMethods"
 })
 public final class KafkaEventEngine implements EventEngine {
 
     private final EventEngineConfig spiConfig;
     private final KafkaEventRegistry registry;
+    private final CoreIsolationKeyRegistry isolationRegistry;
     private final InMemoryEventBus  localDelegate;
     private final EventBus          publishBus;
     private final NoOpQueue         queue;
@@ -111,6 +120,7 @@ public final class KafkaEventEngine implements EventEngine {
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicLong publishedTotal = new AtomicLong(0L);
+    private final AtomicLong publishFailedTotal = new AtomicLong(0L);
 
     /**
      * Constructs the engine from SPI and Kafka-specific configuration: creates the underlying
@@ -140,13 +150,14 @@ public final class KafkaEventEngine implements EventEngine {
                                    Function<Properties, Consumer<byte[], byte[]>> consumerFactory) {
         this.spiConfig = Objects.requireNonNull(spiConfig, "spiConfig");
         Objects.requireNonNull(kafkaConfig, "kafkaConfig");
-        this.registry      = new KafkaEventRegistry();
-        this.localDelegate = new InMemoryEventBus(registry);
-        this.queue         = new NoOpQueue(spiConfig.queueCapacity());
-        this.producer      = Objects.requireNonNull(producer, "producer");
-        this.publishBus    = new KafkaPublishBus(spiConfig.engineName(),
-                                                 producer, registry, kafkaConfig,
-                                                 localDelegate, publishedTotal);
+        this.registry          = new KafkaEventRegistry();
+        this.isolationRegistry = new CoreIsolationKeyRegistry();
+        this.localDelegate     = new InMemoryEventBus(registry, isolationRegistry);
+        this.queue             = new NoOpQueue(spiConfig.queueCapacity());
+        this.producer          = Objects.requireNonNull(producer, "producer");
+        this.publishBus        = new KafkaPublishBus(spiConfig.engineName(),
+                                                     producer, registry, isolationRegistry, kafkaConfig,
+                                                     localDelegate, publishedTotal, publishFailedTotal);
         this.loop          = new ConsumerLoop(spiConfig.engineName(), kafkaConfig,
                                               registry, localDelegate,
                                               Objects.requireNonNull(consumerFactory, "consumerFactory"));
@@ -170,6 +181,17 @@ public final class KafkaEventEngine implements EventEngine {
     @Override
     public EventRegistry registry() {
         return registry;
+    }
+
+    /**
+     * Returns this engine's tenant isolation key registry (ADR-101). Keys are resolved here before
+     * a publication is stamped, and the consumer side reads the ordinal back from the record header.
+     *
+     * @return the non-null isolation key registry
+     */
+    @Override
+    public IsolationKeyRegistry isolationRegistry() {
+        return isolationRegistry;
     }
 
     @Override
@@ -202,6 +224,7 @@ public final class KafkaEventEngine implements EventEngine {
     public EventEngineStats stats() {
         return new EventEngineStats(
                 publishedTotal.get(),
+                publishFailedTotal.get(),
                 loop.processedTotal(),
                 0L,                       // failed deliveries — no DLQ in MVP
                 0,                        // local queue depth — Kafka-driven
@@ -210,14 +233,41 @@ public final class KafkaEventEngine implements EventEngine {
                 loop.isRunning());
     }
 
-    private static Producer<byte[], byte[]> createProducer(KafkaEventConfig cfg) {
+    /**
+     * Builds standard Kafka producer configuration properties for the given binding configuration.
+     *
+     * @param cfg Kafka binding configuration
+     * @return populated producer properties
+     */
+    /* default */ static Properties producerProperties(KafkaEventConfig cfg) {
         Properties props = new Properties();
         props.put("bootstrap.servers",  cfg.bootstrapServers());
         props.put("key.serializer",     ByteArraySerializer.class.getName());
         props.put("value.serializer",   ByteArraySerializer.class.getName());
         props.put("acks",               cfg.requireAllAcks() ? "all" : "1");
         props.put("linger.ms",          Long.toString(cfg.producerLingerMs()));
-        return new KafkaProducer<>(props);
+        return props;
+    }
+
+    /**
+     * Builds standard Kafka consumer configuration properties for the given binding configuration.
+     *
+     * @param config Kafka binding configuration
+     * @return populated consumer properties
+     */
+    /* default */ static Properties consumerProperties(KafkaEventConfig config) {
+        Properties props = new Properties();
+        props.put("bootstrap.servers",  config.bootstrapServers());
+        props.put("group.id",           config.consumerGroupId());
+        props.put("key.deserializer",   ByteArrayDeserializer.class.getName());
+        props.put("value.deserializer", ByteArrayDeserializer.class.getName());
+        props.put("enable.auto.commit", "true");
+        props.put("auto.offset.reset",  "earliest");
+        return props;
+    }
+
+    private static Producer<byte[], byte[]> createProducer(KafkaEventConfig cfg) {
+        return new KafkaProducer<>(producerProperties(cfg));
     }
 
     /**
@@ -247,22 +297,28 @@ public final class KafkaEventEngine implements EventEngine {
         private final String                   engineName;
         private final Producer<byte[], byte[]> producer;
         private final KafkaEventRegistry       registry;
+        private final IsolationKeyRegistry     isolationRegistry;
         private final KafkaEventConfig         config;
         private final EventBus                 localDelegate;
         private final AtomicLong               publishedTotal;
+        private final AtomicLong               publishFailedTotal;
 
         private KafkaPublishBus(String engineName,
                                 Producer<byte[], byte[]> producer,
                                 KafkaEventRegistry registry,
+                                IsolationKeyRegistry isolationRegistry,
                                 KafkaEventConfig config,
                                 EventBus localDelegate,
-                                AtomicLong publishedTotal) {
-            this.engineName     = engineName;
-            this.producer       = producer;
-            this.registry       = registry;
-            this.config         = config;
-            this.localDelegate  = localDelegate;
-            this.publishedTotal = publishedTotal;
+                                AtomicLong publishedTotal,
+                                AtomicLong publishFailedTotal) {
+            this.engineName         = engineName;
+            this.producer           = producer;
+            this.registry           = registry;
+            this.isolationRegistry  = isolationRegistry;
+            this.config             = config;
+            this.localDelegate      = localDelegate;
+            this.publishedTotal     = publishedTotal;
+            this.publishFailedTotal = publishFailedTotal;
         }
 
         @Override
@@ -273,14 +329,22 @@ public final class KafkaEventEngine implements EventEngine {
             // contract is to wrap them in EventBusException. payload.close() is auto-run
             // via try-with-resources to satisfy the RAII ownership transfer. publishedTotal
             // is incremented only after producer.send returns so failed publishes do not
-            // inflate the counter.
+            // inflate the counter. A rejection the producer reports before send returns is refused
+            // here like a synchronous throw; one reported after the return is recorded by the
+            // callback instead, because publish promises acceptance, not acknowledgement.
             try (payload) {
-                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(descriptor, payload);
-                producer.send(producerRecord);
+                EventDescriptor stamped = IsolationStamp.stamp(descriptor, isolationRegistry);
+                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(stamped, payload);
+                AsyncFailureRecorder recorder = new AsyncFailureRecorder(engineName,
+                        producerRecord.topic(), stamped.eventTypeOrdinal(), publishFailedTotal);
+                producer.send(producerRecord, recorder);
+                recorder.sendReturned();
+                recorder.throwIfRejectedBeforeReturn();
                 publishedTotal.incrementAndGet();
             } catch (EventBusException ex) {
-                // buildRecord can throw EventBusException for unregistered ordinals — propagate
-                // it unchanged; the generic Kafka-failure wrap below would mask the real cause.
+                // The stamp and buildRecord throw EventBusException for refused isolation and
+                // unregistered ordinals — propagate it unchanged; the generic Kafka-failure wrap
+                // below would mask the real cause.
                 throw ex;
             } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException
                 // JFR-091: post-mortem trail for publish-side failures (timeout, broker
@@ -302,12 +366,13 @@ public final class KafkaEventEngine implements EventEngine {
             Objects.requireNonNull(descriptor, "descriptor");
             Objects.requireNonNull(payload,    "payload");
             try (payload) {
-                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(descriptor, payload);
+                EventDescriptor stamped = IsolationStamp.stamp(descriptor, isolationRegistry);
+                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(stamped, payload);
                 producer.send(producerRecord).get();
                 publishedTotal.incrementAndGet();
             } catch (EventBusException ex) {
-                // Surface unregistered-ordinal failures unchanged — generic Kafka-failure wrap
-                // below would mask the real cause.
+                // Surface stamp and unregistered-ordinal refusals unchanged — the generic
+                // Kafka-failure wrap below would mask the real cause.
                 throw ex;
             } catch (ExecutionException | RuntimeException ex) { //NOPMD KafkaException is RuntimeException
                 // JFR-091: same publish-side failure post-mortem as publish() above; "publishAndAwait"
@@ -317,6 +382,72 @@ public final class KafkaEventEngine implements EventEngine {
                         ex.getClass().getName(), String.valueOf(ex.getMessage()));
                 throw EventBusException.publishFailed(
                         descriptor.eventTypeOrdinal(), REASON_DELIVERY_FAILED, ex);
+            }
+        }
+
+        /**
+         * The callback of one publish. A completion the producer delivers on the publishing thread
+         * before {@code send} returns is a rejection of the record: it is kept for {@code publish} to
+         * refuse, and nothing is recorded. Any other completion is an asynchronous failure: it is
+         * counted and emitted from the producer's I/O thread, which does not block.
+         *
+         * <p>The two mutable fields are read and written only on the publishing thread, so they need
+         * no synchronisation: an I/O-thread completion never reads them, because it is not the
+         * publishing thread.
+         */
+        private static final class AsyncFailureRecorder implements Callback {
+
+            private final Thread publisher = Thread.currentThread();
+            private final String engineName;
+            private final String topic;
+            private final int eventTypeOrdinal;
+            private final AtomicLong publishFailedTotal;
+            private boolean sending = true;
+            private Exception rejection;
+
+            private AsyncFailureRecorder(String engineName,
+                                         String topic,
+                                         int eventTypeOrdinal,
+                                         AtomicLong publishFailedTotal) {
+                this.engineName = engineName;
+                this.topic = topic;
+                this.eventTypeOrdinal = eventTypeOrdinal;
+                this.publishFailedTotal = publishFailedTotal;
+            }
+
+            @Override
+            public void onCompletion(RecordMetadata metadata, Exception exception) {
+                if (exception == null) {
+                    return;
+                }
+                if (publisher.equals(Thread.currentThread()) && sending) {
+                    rejection = exception;
+                    return;
+                }
+                publishFailedTotal.incrementAndGet();
+                // "publishAsync" names a send the producer completed exceptionally after publish
+                // returned; "publish" and "publishAndAwait" name the paths that refuse the call.
+                KafkaPublishFailedEvent.emit(engineName, topic, eventTypeOrdinal, "publishAsync",
+                        exception.getClass().getName(), String.valueOf(exception.getMessage()));
+            }
+
+            /** Marks the end of {@code send} on the publishing thread; later completions are asynchronous. */
+            private void sendReturned() {
+                sending = false;
+            }
+
+            /**
+             * Rethrows a rejection the producer reported on the publishing thread, so that the caller's
+             * synchronous-failure handling refuses the publish exactly as it does for a thrown send.
+             */
+            private void throwIfRejectedBeforeReturn() {
+                if (rejection == null) {
+                    return;
+                }
+                if (rejection instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
+                throw new KafkaException(rejection);
             }
         }
 
@@ -347,6 +478,11 @@ public final class KafkaEventEngine implements EventEngine {
         }
 
         @Override
+        public SubscriptionToken subscribeScoped(String eventType, EventHandler handler) {
+            return localDelegate.subscribeScoped(eventType, handler);
+        }
+
+        @Override
         public void unsubscribe(SubscriptionToken token) {
             localDelegate.unsubscribe(token);
         }
@@ -360,7 +496,9 @@ public final class KafkaEventEngine implements EventEngine {
             String topic = effectiveTopic(spec, config);   // ADR-050: honour the topic override
             byte[] key   = KafkaEventCodec.streamKey(descriptor);
             byte[] value = KafkaEventCodec.encode(descriptor, payload);
-            return new ProducerRecord<>(topic, key, value);
+            ProducerRecord<byte[], byte[]> producerRecord = new ProducerRecord<>(topic, key, value);
+            KafkaIsolationHeader.write(producerRecord.headers(), descriptor.isolationOrdinal());
+            return producerRecord;
         }
     }
 
@@ -437,13 +575,7 @@ public final class KafkaEventEngine implements EventEngine {
         }
 
         private void run() {
-            Properties props = new Properties();
-            props.put("bootstrap.servers",  config.bootstrapServers());
-            props.put("group.id",           config.consumerGroupId());
-            props.put("key.deserializer",   ByteArrayDeserializer.class.getName());
-            props.put("value.deserializer", ByteArrayDeserializer.class.getName());
-            props.put("enable.auto.commit", "true");
-            props.put("auto.offset.reset",  "earliest");
+            Properties props = consumerProperties(config);
 
             try (Consumer<byte[], byte[]> consumer = consumerFactory.apply(props)) {
                 long pollNanos = config.consumerPollTimeout().toNanos();
@@ -515,7 +647,8 @@ public final class KafkaEventEngine implements EventEngine {
             if (frame == null || frame.length == 0) {
                 return;
             }
-            EventDescriptor descriptor = KafkaEventCodec.decodeDescriptor(frame);
+            EventDescriptor descriptor = KafkaEventCodec.decodeDescriptor(frame,
+                    KafkaIsolationHeader.read(consumerRecord.headers()));
             // PERF-071: zero-copy payload tail — slice over the consumer record's value array,
             // no fresh byte[] + arraycopy. Slice keeps the frame array reachable for GC for
             // the lifetime of the payload's reference count.

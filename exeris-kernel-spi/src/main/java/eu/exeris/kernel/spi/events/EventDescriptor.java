@@ -18,7 +18,7 @@ package eu.exeris.kernel.spi.events;
  * until the last handler calls {@link EventPayload#close()}.
  *
  * <h2>Valhalla Readiness (JEP 401)</h2>
- * <p>All 7 fields are primitives — no object references whatsoever:
+ * <p>All 8 fields are primitives — no object references whatsoever:
  * <ul>
  *   <li>No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode}).</li>
  *   <li>JIT C2 scalarizes this on the standard heap path via escape analysis.</li>
@@ -47,6 +47,10 @@ package eu.exeris.kernel.spi.events;
  * @param eventTypeOrdinal integer ordinal from {@link EventRegistry} — O(1) routing, no String compare
  * @param flags            lifecycle bitmask (PERSISTENT | ASYNC | ORDERED | BROADCAST)
  * @param occurredAtEpochMs wall-clock timestamp in epoch milliseconds (replaces {@code Instant} object)
+ * @param isolationOrdinal  tenant-isolation ordinal from {@link IsolationKeyRegistry}; {@code 0} means
+ *                          unscoped, a positive value names a registered isolation key. Stamped by the
+ *                          engine's {@link EventEngine#bus()} from the caller's bound storage context,
+ *                          never trusted from the caller alone (ADR-101)
  *
  * @apiNote Routing decisions read {@link #eventTypeOrdinal()} and {@link #flags()} only; the
  *          {@code UUID} accessors allocate and belong on diagnostic paths.
@@ -64,7 +68,8 @@ public value record EventDescriptor(
         long streamIdLow,
         int  eventTypeOrdinal,
         int  flags,
-        long occurredAtEpochMs
+        long occurredAtEpochMs,
+        int  isolationOrdinal
 ) {
 
     // =========================================================================
@@ -79,6 +84,28 @@ public value record EventDescriptor(
     public static final int FLAG_ORDERED    = 0x04;
     /** Fan-out to ALL matching subscribers (default behaviour for EventBus). */
     public static final int FLAG_BROADCAST  = 0x08;
+
+    /**
+     * Bridge constructor for descriptors that carry no isolation scope: the
+     * {@code isolationOrdinal} is {@code 0}, the unscoped value.
+     *
+     * @param eventIdHigh       high bits of event UUID
+     * @param eventIdLow        low bits of event UUID
+     * @param streamIdHigh      high bits of stream UUID
+     * @param streamIdLow       low bits of stream UUID
+     * @param eventTypeOrdinal  ordinal from {@link EventRegistry}
+     * @param flags             lifecycle flags bitmask
+     * @param occurredAtEpochMs epoch-ms timestamp
+     */
+    public EventDescriptor(
+            long eventIdHigh, long eventIdLow,
+            long streamIdHigh, long streamIdLow,
+            int  eventTypeOrdinal,
+            int  flags,
+            long occurredAtEpochMs) {
+        this(eventIdHigh, eventIdLow, streamIdHigh, streamIdLow,
+                eventTypeOrdinal, flags, occurredAtEpochMs, 0);
+    }
 
     // =========================================================================
     // Derived properties — hot-path, zero allocation
@@ -172,8 +199,8 @@ public value record EventDescriptor(
      * @param eventTypeOrdinal ordinal from {@link EventRegistry}
      * @param flags            lifecycle flags bitmask
      * @param occurredAtEpochMs epoch-ms timestamp
-     * @return an immutable descriptor carrying exactly the given primitives; no payload is
-     *         attached and none is implied
+     * @return an immutable descriptor carrying exactly the given primitives, unscoped
+     *         ({@code isolationOrdinal == 0}); no payload is attached and none is implied
      */
     @SuppressWarnings("PMD.ShortMethodName") // 'of' is a standard Java factory idiom (cf. List.of, Map.of)
     public static EventDescriptor of(
@@ -186,6 +213,35 @@ public value record EventDescriptor(
                 eventIdHigh, eventIdLow,
                 streamIdHigh, streamIdLow,
                 eventTypeOrdinal, flags,
-                occurredAtEpochMs);
+                occurredAtEpochMs, 0);
+    }
+
+    /**
+     * Creates an {@code EventDescriptor} from primitive fields, including the isolation ordinal.
+     *
+     * @param eventIdHigh       high bits of event UUID
+     * @param eventIdLow        low bits of event UUID
+     * @param streamIdHigh      high bits of stream UUID
+     * @param streamIdLow       low bits of stream UUID
+     * @param eventTypeOrdinal  ordinal from {@link EventRegistry}
+     * @param flags             lifecycle flags bitmask
+     * @param occurredAtEpochMs epoch-ms timestamp
+     * @param isolationOrdinal  isolation ordinal from {@link IsolationKeyRegistry}; {@code 0} = unscoped
+     * @return an immutable descriptor carrying exactly the given primitives; no payload is
+     *         attached and none is implied
+     */
+    @SuppressWarnings("PMD.ShortMethodName") // 'of' is a standard Java factory idiom (cf. List.of, Map.of)
+    public static EventDescriptor of(
+            long eventIdHigh, long eventIdLow,
+            long streamIdHigh, long streamIdLow,
+            int  eventTypeOrdinal,
+            int  flags,
+            long occurredAtEpochMs,
+            int  isolationOrdinal) {
+        return new EventDescriptor(
+                eventIdHigh, eventIdLow,
+                streamIdHigh, streamIdLow,
+                eventTypeOrdinal, flags,
+                occurredAtEpochMs, isolationOrdinal);
     }
 }

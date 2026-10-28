@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponseEncodingContext;
 import eu.exeris.kernel.spi.http.HttpTypedResponse;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.util.List;
 import java.util.Objects;
@@ -32,15 +33,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 /* default */ final class InMemoryHttp2Exchange implements HttpExchange {
     private final HttpRequest request;
+    private final TransportStream stream;
     private final MemoryAllocator allocator;
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
     private final AtomicBoolean responded = new AtomicBoolean(false);
     private HttpResponse capturedResponse;
 
     /* default */ InMemoryHttp2Exchange(HttpRequest request,
+                                        TransportStream stream,
                                         MemoryAllocator allocator,
                                         HttpResponseBodyEncoderRegistry encoderRegistry) {
         this.request = request;
+        this.stream = stream;
         this.allocator = allocator;
         this.encoderRegistry = encoderRegistry;
     }
@@ -92,5 +96,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
     /* default */ HttpResponse capturedResponse() {
         return capturedResponse;
+    }
+
+    // Every HTTP/2 stream on a connection reports the same peer, because the connection is what
+    // carries the address; the stream is held only to reach it, and is read on each call.
+    @Override
+    public String remoteAddress() {
+        return stream.connection().remoteAddress();
+    }
+
+    @Override
+    public int remotePort() {
+        return stream.connection().remotePort();
     }
 }

@@ -5,6 +5,7 @@
 package eu.exeris.kernel.core.bootstrap.jfr;
 
 import eu.exeris.kernel.spi.config.KernelProfile;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
@@ -384,6 +385,45 @@ public final class BootstrapJfrEvents {
     }
 
     // =========================================================================
+    // Event: SubsystemInitDeadlineExceeded
+    // =========================================================================
+
+    /**
+     * Emitted by the initialization-deadline watchdog when a subsystem's {@code initialize()} runs past
+     * its deadline. It is emitted while {@code initialize()} may still be blocked, so a hang that ignores
+     * the interrupt still leaves a trail. Single-phase commit, from the watchdog thread.
+     */
+    @Name("eu.exeris.kernel.bootstrap.SubsystemInitDeadlineExceeded")
+    @Label("Subsystem Init Deadline Exceeded")
+    @Category({"Exeris Kernel", "Bootstrap"})
+    @Description("A subsystem's initialize() did not return within the initialization deadline")
+    @StackTrace(false)
+    public static final class SubsystemInitDeadlineExceededEvent extends Event {
+
+        /** Identifier of the subsystem whose {@code initialize()} ran past the deadline. */
+        @Label("Subsystem Name")
+        public String subsystemName;
+
+        /** The configured initialization deadline, in milliseconds. */
+        @Label("Deadline (ms)")
+        public long deadlineMs;
+
+        /** The {@code EX-BOOT-*} code identifying this failure; always {@code EX-BOOT-0003}. */
+        @Label("Error Code")
+        public String errorCode = KernelErrorCodes.EX_BOOT_0003;
+
+        /**
+         * Creates an unrecorded event.
+         *
+         * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is
+         * never committed contributes nothing to a recording.
+         */
+        public SubsystemInitDeadlineExceededEvent() {
+            super();
+        }
+    }
+
+    // =========================================================================
     // Static helpers
     // =========================================================================
 
@@ -563,6 +603,23 @@ public final class BootstrapJfrEvents {
             return;
         }
         event.cycleMembers = String.join(", ", cycleMembers);
+        event.commit();
+    }
+
+    /**
+     * Records that a subsystem's {@code initialize()} ran past its deadline. Called from the watchdog
+     * thread while {@code initialize()} may still be blocked.
+     *
+     * @param name       subsystem name
+     * @param deadlineMs the configured deadline, in milliseconds
+     */
+    public static void emitInitDeadlineExceeded(String name, long deadlineMs) {
+        var event = BootstrapJfrEventSupport.enabledOrNull(new SubsystemInitDeadlineExceededEvent());
+        if (event == null) {
+            return;
+        }
+        event.subsystemName = name;
+        event.deadlineMs    = deadlineMs;
         event.commit();
     }
 

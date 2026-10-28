@@ -13,7 +13,8 @@ import java.util.Optional;
  * Everything {@link FlowSnapshotStore} needs to reconstruct one flow instance — its identity, where
  * it stopped, and what a rollback would still owe.
  *
- * <p>A snapshot is written on the PARK transition and on eviction, and read back to resume an
+ * <p>A snapshot is written on the PARK transition, at the start of compensation, at a terminal
+ * transition and at a version migration, and read back to resume an
  * instance after a restart or on another engine sharing the store. Its components map 1:1 to the
  * off-heap context slab layout in the Enterprise tier (see {@code FLOW_CONTEXT_STRIDE}).
  *
@@ -22,7 +23,7 @@ import java.util.Optional;
  *
  * <p><b>Allocation:</b> allocates — the constructor copies {@code compensationStack},
  * {@code compensationStepNames} and {@code opaqueState} in, and each of those accessors copies out
- * again on every call. All of it is on the cold persistence path (PARK, eviction, resume); nothing
+ * again on every call. All of it is on the cold persistence path (PARK, terminal transition, resume); nothing
  * here is reached from step dispatch.
  * <p><b>Thread confinement:</b> any thread — a constructed snapshot is deeply immutable and safe to
  * publish to any thread without further synchronisation.
@@ -141,7 +142,7 @@ public value record FlowSnapshot(
      *          {@code new byte[0]}) and {@link Optional#empty()}, never with {@code null}. A blank
      *          step name is rejected rather than treated as absent, because it would compare unequal
      *          to every real step and read as corruption. This is the cold construction path — PARK
-     *          and eviction — so the copies are affordable.
+     *          and terminal transition — so the copies are affordable.
      */
     public FlowSnapshot {
         Objects.requireNonNull(definitionName,    "definitionName must not be null");

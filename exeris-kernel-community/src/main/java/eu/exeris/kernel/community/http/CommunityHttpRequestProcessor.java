@@ -10,6 +10,8 @@ import eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader;
 import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
@@ -50,10 +52,17 @@ import java.util.Objects;
  * connection for its own lifetime, or the connection is handed off to
  * {@link CommunityHttp2SessionProcessor} via an h2c/prior-knowledge upgrade.
  */
+// GodClass: the constructor overloads are the seams the engine and the tests build the loop through, and
+// the loop is one state machine over a connection; the workload gate adds two branches to it.
+// CouplingBetweenObjects: the processor is the one place that wires the request loop to its
+// dispatchers, the HTTP/2 session, the upgrade detector and the workload gate; each is a distinct
+// collaborator the loop calls directly.
 @SuppressWarnings({
     "PMD.AvoidCatchingGenericException",
     "PMD.CloseResource",
-    "PMD.CyclomaticComplexity"
+    "PMD.CouplingBetweenObjects",
+    "PMD.CyclomaticComplexity",
+    "PMD.GodClass"
 })
 public final class CommunityHttpRequestProcessor {
 
@@ -79,6 +88,8 @@ public final class CommunityHttpRequestProcessor {
     private final CommunityHttpStreamDispatcher streamDispatcher;
     private final CommunityHttp2SessionProcessor http2SessionProcessor;
     private final CommunityHttpH2cUpgradeDetector upgradeDetector;
+    private final WorkloadAdmission workloadAdmission;
+    private final boolean workloadEnforced;
 
     /* default */ CommunityHttpRequestProcessor(MemoryAllocator allocator,
                                                 HttpResponseBodyEncoderRegistry encoderRegistry) {
@@ -88,6 +99,47 @@ public final class CommunityHttpRequestProcessor {
     /* default */ CommunityHttpRequestProcessor(MemoryAllocator allocator,
                                                 HttpResponseBodyEncoderRegistry encoderRegistry,
                                                 HttpConfig config) {
+        this(allocator, encoderRegistry, config, null, null, WorkloadAdmission.UNGATED);
+    }
+
+    /**
+     * Creates a processor from the dispatchers it would otherwise build itself. The seam tests use to
+     * run the request loop over a dispatcher pair with their own admission, deadline and allocator.
+     *
+     * @param allocator         the allocator for request and response buffers
+     * @param encoderRegistry   the response body encoders
+     * @param config            the HTTP configuration
+     * @param requestDispatcher the request dispatcher, or {@code null} to build the default
+     * @param streamDispatcher  the stream dispatcher, or {@code null} to build the default
+     */
+    /* default */ CommunityHttpRequestProcessor(MemoryAllocator allocator,
+                                                HttpResponseBodyEncoderRegistry encoderRegistry,
+                                                HttpConfig config,
+                                                CommunityHttpRequestDispatcher requestDispatcher,
+                                                CommunityHttpStreamDispatcher streamDispatcher) {
+        this(allocator, encoderRegistry, config, requestDispatcher, streamDispatcher, WorkloadAdmission.UNGATED);
+    }
+
+    /**
+     * Creates a processor from injected dispatchers and the workload gate its engine read from the kernel
+     * scope in {@code start()}. The gate is a final field because this constructor runs on that thread; the
+     * connection threads that call {@link #process} inherit no kernel binding and could not read it.
+     *
+     * @param allocator         the allocator for request and response buffers
+     * @param encoderRegistry   the response body encoders
+     * @param config            the HTTP configuration
+     * @param requestDispatcher the request dispatcher, or {@code null} to build the default
+     * @param streamDispatcher  the stream dispatcher, or {@code null} to build the default
+     * @param workloadAdmission the developer-licence gate
+     */
+    /* default */ CommunityHttpRequestProcessor(MemoryAllocator allocator,
+                                                HttpResponseBodyEncoderRegistry encoderRegistry,
+                                                HttpConfig config,
+                                                CommunityHttpRequestDispatcher requestDispatcher,
+                                                CommunityHttpStreamDispatcher streamDispatcher,
+                                                WorkloadAdmission workloadAdmission) {
+        this.workloadAdmission = Objects.requireNonNull(workloadAdmission, "workloadAdmission must not be null");
+        this.workloadEnforced = workloadAdmission.enforced();
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.encoderRegistry = Objects.requireNonNull(encoderRegistry, "encoderRegistry must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
@@ -114,20 +166,25 @@ public final class CommunityHttpRequestProcessor {
         // is read on the admission path, which runs on reactor threads outside this carrier scope.
         HttpRoutePolicy routePolicy = HttpKernelProviders.httpRoutePolicy().orElse(null);
 
-        this.requestDispatcher = new CommunityHttpRequestDispatcher(
-                this.allocator,
-                securityInterceptor,
-                persistenceEngine,
-                requestBodyDecoderRegistry,
-                routePolicy);
-        this.streamDispatcher = new CommunityHttpStreamDispatcher(this.allocator);
+        this.requestDispatcher = requestDispatcher != null
+                ? requestDispatcher
+                : new CommunityHttpRequestDispatcher(
+                        this.allocator,
+                        securityInterceptor,
+                        persistenceEngine,
+                        requestBodyDecoderRegistry,
+                        routePolicy);
+        this.streamDispatcher = streamDispatcher != null
+                ? streamDispatcher
+                : new CommunityHttpStreamDispatcher(this.allocator, null, this.workloadEnforced);
         this.http2SessionProcessor = new CommunityHttp2SessionProcessor(
                 this.allocator,
                 this.encoderRegistry,
                 this.config,
-                this.requestDispatcher,
+                new CommunityHttpDispatchers(this.requestDispatcher, this.streamDispatcher),
                 READ_CHUNK_BYTES,
-                MAX_AGGREGATE_BYTES);
+                MAX_AGGREGATE_BYTES,
+                this.workloadAdmission);
         this.upgradeDetector = new CommunityHttpH2cUpgradeDetector(this.config, this.http2SessionProcessor);
     }
 
@@ -280,7 +337,11 @@ public final class CommunityHttpRequestProcessor {
     private static boolean isExpectedStreamClose(RuntimeException streamError) {
         Throwable current = streamError;
         for (int depth = 0; depth < 4 && current != null; depth++) {
-            if (current instanceof IllegalStateException
+            // Both forms are expected closes: a transport that signals closure with the typed
+            // exception, and one that still throws a bare IllegalStateException with the stream
+            // contract's message.
+            if (current instanceof TransportStreamClosedException
+                    || current instanceof IllegalStateException
                     && "Stream is closed".equals(current.getMessage())) {
                 return true;
             }
@@ -299,6 +360,15 @@ public final class CommunityHttpRequestProcessor {
                 readResult.version(),
                 readResult.headers(),
                 bodyBuffer);
+
+        // The gate runs before the route is looked up, so a refused request reaches no handler and no
+        // route table. The answer is a respond-once 429 on the connection, which stays open for the
+        // next request.
+        if (workloadEnforced && !workloadAdmission.tryAdmitRequest()) {
+            new CommunityHttpExchange(request, stream, allocator, readResult.keepAlive(), encoderRegistry, true)
+                    .respond(CommunityHttpThrottle.response(request.version()));
+            return false;
+        }
 
         StreamMatch streamRoute = streamDispatcher.resolveStreamHandler(request, handler);
         if (streamRoute != null) {
@@ -321,7 +391,8 @@ public final class CommunityHttpRequestProcessor {
             requestDispatcher.dispatchStream(
                     request,
                     () -> new CommunityHttpExchange(
-                            request, stream, allocator, readResult.keepAlive(), encoderRegistry),
+                            request, stream, allocator, readResult.keepAlive(), encoderRegistry,
+                            workloadEnforced),
                     () -> streamDispatcher.dispatchStream(request, stream, streamRoute));
             return true;
         }
@@ -329,7 +400,7 @@ public final class CommunityHttpRequestProcessor {
         // The exchange decides Connection: keep-alive when it writes, not here — see
         // CommunityHttpExchange#resolveKeepAlive.
         CommunityHttpExchange exchange = new CommunityHttpExchange(
-                request, stream, allocator, readResult.keepAlive(), encoderRegistry);
+                request, stream, allocator, readResult.keepAlive(), encoderRegistry, workloadEnforced);
 
         requestDispatcher.dispatch(request, exchange, handler);
         return false;

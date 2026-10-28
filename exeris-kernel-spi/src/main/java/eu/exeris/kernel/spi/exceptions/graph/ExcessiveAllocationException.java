@@ -8,16 +8,14 @@ import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
- * Thrown when a graph driver exceeds its pre-defined off-heap churn threshold.
- *
- * <p>This exception enforces the <em>No Waste Compute</em> mandate: a driver
- * that allocates more memory than it transfers is a performance hazard and must
- * be evicted from the hot-path immediately.
+ * Reserved: no kernel code path throws this exception. It is the code a graph driver uses to report,
+ * at runtime, that it allocated more than its churn budget for the bytes it returned; the churn
+ * contract itself is enforced at build time by {@code GraphChurnRatioTck}, by assertion.
  *
  * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
  * <pre>
  * index 0 → String  driverName       (the offending graph driver identifier)
- * index 1 → long    bytesAllocated   (total off-heap bytes allocated by the driver)
+ * index 1 → long    bytesAllocated   (total bytes allocated by the driver)
  * index 2 → long    bytesTransferred (actual bytes transferred / used)
  * </pre>
  *
@@ -28,9 +26,6 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * long components); no constructor formats a string, and the message text is a shared
  * constant.
  *
- * @implNote The subsystem TCK ({@code GraphChurnRatioTck}) enforces the churn-to-data ratio
- *           this exception describes by failing the build with an assertion, not by
- *           throwing it — no kernel code path raises this exception today.
  * @since 0.5
  */
 public final class ExcessiveAllocationException extends ExerisKernelException {
@@ -41,7 +36,7 @@ public final class ExcessiveAllocationException extends ExerisKernelException {
      * Creates the exception for a driver that exceeded its allocation threshold.
      *
      * @param driverName       identifier of the offending graph driver
-     * @param bytesAllocated   total off-heap bytes allocated
+     * @param bytesAllocated   total bytes allocated
      * @param bytesTransferred actual bytes transferred (useful work)
      */
     public ExcessiveAllocationException(String driverName, long bytesAllocated, long bytesTransferred) {

@@ -152,6 +152,18 @@ class KernelErrorCodesTest {
         void exNet4005() {
             assertThat(KernelErrorCodes.EX_NET_4005).isEqualTo("EX-NET-4005");
         }
+
+        @Test
+        @DisplayName("EX_NET_4008 == 'EX-NET-4008' (transport stream closed by peer)")
+        void exNet4008() {
+            assertThat(KernelErrorCodes.EX_NET_4008).isEqualTo("EX-NET-4008");
+        }
+
+        @Test
+        @DisplayName("EX_NET_4009 == 'EX-NET-4009' (transport stream closed locally)")
+        void exNet4009() {
+            assertThat(KernelErrorCodes.EX_NET_4009).isEqualTo("EX-NET-4009");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -265,6 +277,12 @@ class KernelErrorCodesTest {
         @DisplayName("EX_PERS_5007 == 'EX-PERS-5007' (no provider available)")
         void exPers5007() {
             assertThat(KernelErrorCodes.EX_PERS_5007).isEqualTo("EX-PERS-5007");
+        }
+
+        @Test
+        @DisplayName("EX_PERS_5009 == 'EX-PERS-5009' (role bypasses row-level security)")
+        void exPers5009() {
+            assertThat(KernelErrorCodes.EX_PERS_5009).isEqualTo("EX-PERS-5009");
         }
     }
 
@@ -389,6 +407,12 @@ class KernelErrorCodesTest {
         void exEvent6011() {
             assertThat(KernelErrorCodes.EX_EVENT_6011).isEqualTo("EX-EVENT-6011");
         }
+
+        @Test
+        @DisplayName("EX_EVENT_6012 == 'EX-EVENT-6012' (isolation key registry conflict)")
+        void exEvent6012() {
+            assertThat(KernelErrorCodes.EX_EVENT_6012).isEqualTo("EX-EVENT-6012");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -467,6 +491,91 @@ class KernelErrorCodesTest {
     }
 
     // -----------------------------------------------------------------------
+    // EX-LIC domain — license / execution contract
+    // -----------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("EX-LIC domain (License / Execution Contract)")
+    class LicDomain {
+
+        @Test
+        @DisplayName("EX_LIC_0001 == 'EX-LIC-0001' (signature verification failed)")
+        void exLic0001() {
+            assertThat(KernelErrorCodes.EX_LIC_0001).isEqualTo("EX-LIC-0001");
+        }
+
+        @Test
+        @DisplayName("EX_LIC_0002 == 'EX-LIC-0002' (unknown issuer keyId)")
+        void exLic0002() {
+            assertThat(KernelErrorCodes.EX_LIC_0002).isEqualTo("EX-LIC-0002");
+        }
+
+        @Test
+        @DisplayName("EX_LIC_0003 == 'EX-LIC-0003' (manifest expired)")
+        void exLic0003() {
+            assertThat(KernelErrorCodes.EX_LIC_0003).isEqualTo("EX-LIC-0003");
+        }
+
+        @Test
+        @DisplayName("EX_LIC_0004 == 'EX-LIC-0004' (unentitled capability breach)")
+        void exLic0004() {
+            assertThat(KernelErrorCodes.EX_LIC_0004).isEqualTo("EX-LIC-0004");
+        }
+
+        @Test
+        @DisplayName("EX_LIC_0005 == 'EX-LIC-0005' (no manifest where an entitlement is required)")
+        void exLic0005() {
+            assertThat(KernelErrorCodes.EX_LIC_0005).isEqualTo("EX-LIC-0005");
+        }
+
+        @Test
+        @DisplayName("EX_LIC_0006 == 'EX-LIC-0006' (manifest not yet valid)")
+        void exLic0006() {
+            assertThat(KernelErrorCodes.EX_LIC_0006).isEqualTo("EX-LIC-0006");
+        }
+
+        @Test
+        @DisplayName("EX_LIC_0007 == 'EX-LIC-0007' (environment not authorized by the contract)")
+        void exLic0007() {
+            assertThat(KernelErrorCodes.EX_LIC_0007).isEqualTo("EX-LIC-0007");
+        }
+
+        @Test
+        @DisplayName("EX_LIC_0008 == 'EX-LIC-0008' (invalid entitlement requirement)")
+        void exLic0008() {
+            assertThat(KernelErrorCodes.EX_LIC_0008).isEqualTo("EX-LIC-0008");
+        }
+
+        @Test
+        @DisplayName("EX_LIC_0009 .. EX_LIC_0013 are the issuer-key scope codes")
+        void scopeCodes() {
+            assertThat(KernelErrorCodes.EX_LIC_0009).isEqualTo("EX-LIC-0009");
+            assertThat(KernelErrorCodes.EX_LIC_0010).isEqualTo("EX-LIC-0010");
+            assertThat(KernelErrorCodes.EX_LIC_0011).isEqualTo("EX-LIC-0011");
+            assertThat(KernelErrorCodes.EX_LIC_0012).isEqualTo("EX-LIC-0012");
+            assertThat(KernelErrorCodes.EX_LIC_0013).isEqualTo("EX-LIC-0013");
+        }
+
+        @Test
+        @DisplayName("All EX-LIC codes match the pattern EX-LIC-\\d{4}")
+        void allLicCodesMatchPattern() {
+            assertThat(KernelErrorCodes.EX_LIC_0001).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0002).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0003).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0004).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0005).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0006).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0007).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0008).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0009).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0010).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0011).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0012).matches("EX-LIC-\\d{4}");
+            assertThat(KernelErrorCodes.EX_LIC_0013).matches("EX-LIC-\\d{4}");
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Cross-cutting: all codes are non-blank and match the universal pattern
     // -----------------------------------------------------------------------
 
@@ -484,6 +593,7 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_NET_2001, KernelErrorCodes.EX_NET_2002,
                     KernelErrorCodes.EX_NET_4001, KernelErrorCodes.EX_NET_4002,
                     KernelErrorCodes.EX_NET_4003, KernelErrorCodes.EX_NET_4004, KernelErrorCodes.EX_NET_4005,
+                    KernelErrorCodes.EX_NET_4008, KernelErrorCodes.EX_NET_4009,
                     KernelErrorCodes.EX_HTTP_4001, KernelErrorCodes.EX_HTTP_4002,
                     KernelErrorCodes.EX_HTTP_4003, KernelErrorCodes.EX_HTTP_4004,
                     KernelErrorCodes.EX_HTTP_4005, KernelErrorCodes.EX_HTTP_4006,
@@ -492,6 +602,7 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_PERS_5001, KernelErrorCodes.EX_PERS_5002,
                     KernelErrorCodes.EX_PERS_5003, KernelErrorCodes.EX_PERS_5004,
                     KernelErrorCodes.EX_PERS_5005, KernelErrorCodes.EX_PERS_5006, KernelErrorCodes.EX_PERS_5007,
+                    KernelErrorCodes.EX_PERS_5009,
                     KernelErrorCodes.EX_SEC_2001, KernelErrorCodes.EX_SEC_2002,
                     KernelErrorCodes.EX_SEC_2003, KernelErrorCodes.EX_SEC_2004,
                     KernelErrorCodes.EX_GRPH_5001, KernelErrorCodes.EX_GRPH_5002,
@@ -499,11 +610,18 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_EVENT_6001, KernelErrorCodes.EX_EVENT_6002,
                     KernelErrorCodes.EX_EVENT_6003, KernelErrorCodes.EX_EVENT_6004,
                     KernelErrorCodes.EX_EVENT_6009, KernelErrorCodes.EX_EVENT_6010,
-                    KernelErrorCodes.EX_EVENT_6011,
+                    KernelErrorCodes.EX_EVENT_6011, KernelErrorCodes.EX_EVENT_6012,
                     KernelErrorCodes.EX_FLOW_7001, KernelErrorCodes.EX_FLOW_7002,
                     KernelErrorCodes.EX_FLOW_7003, KernelErrorCodes.EX_FLOW_7004,
                     KernelErrorCodes.EX_CFG_1001, KernelErrorCodes.EX_CFG_1002, KernelErrorCodes.EX_CFG_1003,
-                    KernelErrorCodes.EX_RUN_3002
+                    KernelErrorCodes.EX_RUN_3002,
+                    KernelErrorCodes.EX_LIC_0001, KernelErrorCodes.EX_LIC_0002,
+                    KernelErrorCodes.EX_LIC_0003, KernelErrorCodes.EX_LIC_0004,
+                    KernelErrorCodes.EX_LIC_0005, KernelErrorCodes.EX_LIC_0006,
+                    KernelErrorCodes.EX_LIC_0007, KernelErrorCodes.EX_LIC_0008,
+                    KernelErrorCodes.EX_LIC_0009, KernelErrorCodes.EX_LIC_0010,
+                    KernelErrorCodes.EX_LIC_0011, KernelErrorCodes.EX_LIC_0012,
+                    KernelErrorCodes.EX_LIC_0013
             );
             assertThat(allCodes).isNotEmpty().doesNotContain("").allSatisfy(code ->
                     assertThat(code).isNotBlank()

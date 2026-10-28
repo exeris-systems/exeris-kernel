@@ -92,6 +92,17 @@ public final class CoreFlowEngine implements FlowEngine {
     }
 
     /**
+     * Returns the runtime that executes this engine's flows. A test seam: production code reaches the
+     * runtime through the field, and tests use this to build a {@link FlowChoreographyBridge} against
+     * a running engine.
+     *
+     * @return the runtime this engine was constructed with; never {@code null}
+     */
+    /* default */ CoreFlowRuntime runtime() {
+        return runtime;
+    }
+
+    /**
      * {@inheritDoc}
      *
      * @implNote Returns the same {@link CoreFlowRegistry} instance for the life of this engine, with
@@ -194,7 +205,7 @@ public final class CoreFlowEngine implements FlowEngine {
         if (eventTypeNames.isEmpty()) {
             throw new IllegalArgumentException("eventTypeNames must not be empty");
         }
-        FlowChoreographyBridge bridge = new FlowChoreographyBridge(mapper, runtime.scheduler());
+        FlowChoreographyBridge bridge = new FlowChoreographyBridge(mapper, runtime.scheduler(), runtime);
         for (String eventType : eventTypeNames) {
             choreographySubscriptions.add(Map.entry(bus, bus.subscribe(eventType, bridge)));
         }

@@ -8,6 +8,7 @@ import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.core.crypto.openssl.NativeCipherContext;
+import eu.exeris.kernel.core.transport.syscall.SyscallErrno;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
@@ -26,6 +27,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.function.IntSupplier;
 
 /**
  * Core: Zero-allocation, protocol-agnostic TLS engine (TLS 1.3 record layer).
@@ -125,7 +127,10 @@ import java.util.Objects;
  */
 // PMD.CyclomaticComplexity: TlsEngine has 10 SPI methods plus mandatory lifecycle helpers.
 // PMD.TooManyMethods: Same rationale — minimum viable surface for a production-grade TLS engine.
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
+// PMD.GodClass: the same SPI surface sits on one OpenSSL session, so the methods share the session
+// and its phase; the errno accessor is a read of a recorder the wrap fills, which lowers the cohesion
+// measure without adding a responsibility.
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods", "PMD.GodClass"})
 public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCodes {
 
     // =========================================================================
@@ -214,6 +219,7 @@ public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCod
     private final TlsStateMachine stateMachine;
     private final boolean serverMode;
     private final MemoryAllocator allocator;
+    private final WriteErrno writeErrno;
 
     /**
      * Negotiated ALPN protocol string — populated lazily at handshake completion,
@@ -268,6 +274,26 @@ public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCod
      */
     public OffHeapTlsEngine(CoreSslHandles handles, long ctxPointer, boolean serverMode,
                             MemoryAllocator allocator) {
+        this(handles, ctxPointer, serverMode, allocator, SyscallErrno::currentPosixErrno);
+    }
+
+    /**
+     * Creates an engine that reads the thread's errno through {@code errnoReader}. A scripted OpenSSL
+     * cannot set the real errno, so a test supplies the value the failing call would have left.
+     *
+     * @param handles     pre-resolved FFM handles
+     * @param ctxPointer  raw {@code SSL_CTX*} address (caller retains ownership)
+     * @param serverMode  {@code true} for server role, {@code false} for client
+     * @param allocator   {@link MemoryAllocator} used for {@link AllocationHint#SESSION} tracking
+     * @param errnoReader reads the current errno, or {@code -1} when it is unavailable; called only
+     *                    after a write failed with {@code SSL_ERROR_SYSCALL}
+     */
+    public OffHeapTlsEngine(CoreSslHandles handles, long ctxPointer, boolean serverMode,
+                            MemoryAllocator allocator, IntSupplier errnoReader) {
+        // Initialising the reader here, not on its first use, keeps that first use from running between
+        // a failed write and the read of its errno: it resolves symbols and overwrites errno.
+        SyscallErrno.currentPosixErrno();
+        this.writeErrno   = new WriteErrno(Objects.requireNonNull(errnoReader, "errnoReader must not be null"));
         this.handles      = handles;
         this.cipherCtx    = new NativeCipherContext(handles, ctxPointer, allocator);
         this.stateMachine = new TlsStateMachine();
@@ -711,6 +737,8 @@ public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCod
 
             int sslErr = handles.ioHandles().invokeGetError(sslPtr, bytesWritten);
             if (!isRetry(sslErr)) {
+                // Read before the error queue is cleared and before anything else can run a syscall.
+                writeErrno.record(sslErr);
                 clearErrorQueue();
             }
             return mapSslError(sslErr);
@@ -718,6 +746,21 @@ public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCod
         } finally {
             cipherCtx.release();
         }
+    }
+
+    /**
+     * The errno the last {@link #wrap} left when it failed fatally with {@code SSL_ERROR_SYSCALL}: in
+     * fd-owner mode OpenSSL writes to the socket itself, so this is the {@code send} failure, such as a
+     * broken pipe or a reset. It is {@code 0} when the last fatal wrap had another cause, and
+     * {@code -1} where errno cannot be read (Windows). It is read in a second downcall after
+     * {@code SSL_get_error}, so activity of the JVM between the two can overwrite it.
+     *
+     * <p>Meaningful only to the thread that ran that {@code wrap}, immediately after it.
+     *
+     * @return the recorded errno, {@code 0} or {@code -1}
+     */
+    public int lastWriteErrno() {
+        return writeErrno.last();
     }
 
     // =========================================================================

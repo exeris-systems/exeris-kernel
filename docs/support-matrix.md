@@ -21,33 +21,27 @@ last-verified: 2026-09-08
 
 | Component        | Supported                                  | Notes |
 |:-----------------|:-------------------------------------------|:------|
-| **JDK**          | Java 25 LTS or newer                       | The distributed `0.12.0` artifact is preview-clean — **`--enable-preview` is not required** (ADR-066). Uses Loom VTs, Panama FFM, `ScopedValue`. Pass `--enable-native-access=ALL-UNNAMED` for the FFM transport/crypto paths. The separate `eu.exeris.preview:*` artifact targets the newest JDK and does require the flag — see [guides/01](./guides/01-platform-and-dependencies.md). |
-| **Database**     | PostgreSQL 16                              | Persistence + Flow snapshot store + outbox; validated via Testcontainers `postgres:16`. |
+| **JDK**          | Java 25 LTS or newer                       | The distributed `0.13.0` artifact is preview-clean — **`--enable-preview` is not required** (ADR-066). Uses Loom VTs, Panama FFM, `ScopedValue`. Pass `--enable-native-access=ALL-UNNAMED` for the FFM transport/crypto paths. The separate `eu.exeris.preview:*` artifact targets the newest JDK and does require the flag — see [guides/01](./guides/01-platform-and-dependencies.md). |
+| **Database**     | PostgreSQL 16                              | Persistence + Flow snapshot store + outbox; validated via Testcontainers `postgres:16`; the `RowCursor` type-set suite runs on `postgres:17`, because part of its measured set needs a PostgreSQL 17 server. |
 | **Event broker** | Kafka 3.6 wire (validated on CP 7.6.x)     | Optional — only when the Events subsystem uses the Kafka driver (`exeris-kernel-community-kafka`). |
-| **TLS**          | OpenSSL 3.0 – 4.x (multi-version)          | Community fd-owner TLS engine; 3.x floor retained for FIPS provider compatibility (ADR-008, OpenSSL-4 migration). Since 0.12 the client verifies its server (ADR-074 Amendment A1) through 17 further symbols — `ERR_clear_error`, 8 peer-verification and 8 trust-store symbols listed in [crypto.md](subsystems/crypto.md#client-peer-verification) — every one present outside any deprecation guard from 3.0.0 through 4.0; trust loading uses the default library context. |
-| **HTTP**         | HTTP/1.1, HTTP/2 (h2 + h2c)                | TLS 1.2 / 1.3 via OpenSSL; request/response plus SSE server-push since 0.10 (ADR-043), and full-duplex WebSocket since 0.12 (ADR-084). The WebSocket engine is reachable two ways since 0.12. It is `ServiceLoader`-discoverable and **embeddable** — an application constructs it, hands it a handshake handler, and needs no kernel boot — and there is now also a `websocket` **subsystem** that `KernelBootstrap` starts. The subsystem is **opt-in**: `websocket.enabled` defaults to `false`, so upgrading opens no listener (ADR-084 A2). |
-| **Runtime image** | HotSpot/C2 — GraalVM native-image is **post-1.0** | The zero-allocation and per-core throughput SLOs are pinned to the HotSpot C2 JIT and are **not asserted** under native-image; the contract there is *different, not broken*. Enablement is a post-1.0 gated track. Stated here rather than only in [`performance-contract.md`](./performance-contract.md) §2.2.1, because silence in this document reads as "unknown". |
+| **TLS**          | OpenSSL 3.0 – 4.x (multi-version)          | Community fd-owner TLS engine; 3.x floor retained for FIPS provider compatibility (ADR-008, OpenSSL-4 migration). CI runs the crypto/TLS guards against OpenSSL 3.5 and 4.0 (the `tls-openssl-matrix` job). Since 0.12 the client verifies its server (ADR-074 Amendment A1) through 17 further symbols — `ERR_clear_error`, 8 peer-verification and 8 trust-store symbols listed in [crypto.md](subsystems/crypto.md#client-peer-verification) — every one present outside any deprecation guard from 3.0.0 through 4.0; trust loading uses the default library context. |
+| **HTTP**         | HTTP/1.1, HTTP/2 (h2 + h2c)                | TLS 1.3 via OpenSSL — the Community listener and client refuse a peer that negotiates TLS 1.2 or lower unless `crypto.tls.minVersion` is `TLSv1.2`; request/response plus SSE server-push since 0.10 (ADR-043), and full-duplex WebSocket since 0.12 (ADR-084). The WebSocket engine is reachable two ways since 0.12. It is `ServiceLoader`-discoverable and **embeddable** — an application constructs it, hands it a handshake handler, and needs no kernel boot — and there is now also a `websocket` **subsystem** that `KernelBootstrap` starts. The subsystem is **opt-in**: `websocket.enabled` defaults to `false`, so upgrading opens no listener (ADR-084 A2). |
+| **Runtime image** | HotSpot/C2 is the default — GraalVM native-image is **supported as an opt-in build** from 0.13 | The zero-allocation and per-core throughput SLOs are pinned to the HotSpot C2 JIT and are **not asserted** under native-image; the contract there is *different, not broken*, and that pin does not change. From 0.13 the kernel's jars carry their reachability metadata and image build arguments under `META-INF/native-image/eu.exeris/<artifactId>/` ([ADR-103](adr/ADR-103-native-image-opt-in-build.md)), so an application builds an image with no configuration of its own for the kernel: GraalVM 25 or newer, OpenSSL 3 on the host as on the JVM. Verified on Linux x86-64 by the `native-smoke` job; aarch64, Windows, encrypted Bolt, Kafka compression codecs and `--exact-reachability-metadata` are not verified. The 0.12 and earlier artifacts ship no metadata, and an image built from them is not supported. Startup time and footprint are edge-tier measurements, not SLOs. Stated here rather than only in [`performance-contract.md`](./performance-contract.md) §2.2.1, because silence in this document reads as "unknown". |
 | **Topology**     | Single-node Community                      | The validated baseline is one node — see [reference deployment](./operations/reference-deployment.md). Scaling out is not Enterprise-gated but it is not turnkey either: what the kernel does and does not carry for N instances is inventoried in [`subsystems/events.md`](./subsystems/events.md) → *Multi-node substrate inventory*. |
 
 ## SPI surface status
 
 Summarizes [`stability-matrix.md`](./stability-matrix.md) — that document is the authority (with the
-`Abstract*Tck` evidence per surface) and its own per-surface `http` breakdown is exhaustive; this
+`Abstract*Tck` evidence per surface) and its own per-surface `http` breakdown carries the TCK detail; this
 table is a consumer-facing digest, not a 1:1 mirror of every row there.
 
 | Subsystem (`eu.exeris.kernel.spi.*`) | Status | Since |
 |:-------------------------------------|:-------|:------|
 | `memory`, `transport`, `bootstrap`, `context`, `persistence`, `flow`, `exceptions`, `telemetry`, `config`¹ | **stable** | 0.5.0 |
 | `diagnostics` | **stable** | 0.9.0 (ADR-033) |
-| `http` — `HttpServerEngine`/`HttpClientEngine`/`HttpExchange`/`HttpHandler`/`HttpProvider`, `HttpClientRequestEnricher` | **stable** | 0.5.0 / 0.8.0 |
-| `http` — `HttpRequestBodyEncoder`/`Decoder`, `HttpResponseBodyEncoder`/`Decoder` (ADR-034, ADR-036) | **preview** | 0.8.0 |
-| `http` — Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` (ADR-045) | **preview** | 0.10.0 |
-| `http` — Route authorization: `HttpRoutePolicy`, `RouteRequirement` (ADR-061, ADR-077) | **preview** | 0.11.0 |
-| `http` — `HttpStreamExchange`/`HttpStreamHandler`/`StreamEvent`, SSE server-push (ADR-043) | **preview** | 0.10.0 |
-| `security.identity` — `IdentityProvider`/`TokenValidator`/`VerifiedClaims` (ADR-040) | **preview** | 0.10.0 |
-| `events`, `graph`, `security`, `crypto` | **preview** | 0.5.0 |
-| `scheduling` — `JobScheduler` (ADR-057) | **preview** | 0.11.0 |
-| `storage.blob` — `BlobStorageProvider` (ADR-056) | **preview** | 0.11.0 |
+| `http`, `security` (with `security.identity`), `events`, `crypto`, `scheduling`, `storage.blob` | **stable** | stable from 0.13.0 (ADR-100); first shipped 0.5.0 – 0.11.0 |
+| `contract` — `ExecutionContract`/`WorkloadAdmission` (ADR-088, ADR-089) | **preview** | 0.13.0 |
+| `graph` | **preview** | 0.5.0 |
 | `time` — `TimeSource`/`Clock` seam (ADR-082) | **preview** | 0.12.0 |
 | `websocket` — `WebSocketProvider`/`WebSocketExchange`/`WebSocketHandshakeHandler` (ADR-084) | **preview** | 0.12.0 |
 | `util` | _internal_ | — |
@@ -60,7 +54,7 @@ The open-core Community runtime is **single-node and NIO-based** by design (ADR-
 transport in Enterprise):
 
 - **Single-node only** — no built-in clustering/discovery; horizontal scale is the host application's concern.
-- **NIO transport carrier** — `java.nio` selector reactors, not `io_uring`; OpenSSL fd-owner TLS.
+- **Selector-driven transport carrier** — `java.nio` selector readiness and NIO accept, plaintext read/write over FFM `recv`/`send` on POSIX (`transport.socket.backend`, NIO fallback), not `io_uring`; OpenSSL fd-owner TLS.
 - **No in-process cache ships at all** — no cache dependency is declared anywhere in the reactor, and there is no `CacheProvider` SPI. An application that needs one supplies its own.
 - **Full duplex ships, one-directional push still does too** — `HttpStreamExchange` (SSE) since 0.10 (ADR-043) and `WebSocketExchange` since 0.12 (ADR-084). The WebSocket surface is text-frame-only on the application side. Dead-peer detection is server-side and timeout-based — `idleTimeoutMillis` drives the same idle-connection reaper the TCP carrier already runs, closing a connection that has moved no bytes for that long — but the SPI's `keepAliveIntervalMillis` knob, which would have the engine itself send periodic pings, is **not honoured by the Community binding**: no server-initiated ping is sent, so a NAT or proxy path that drops silently-idle connections is not held open by the kernel. A peer that sends its own ping is always answered with a pong (RFC 6455 §5.5.2); a deployment that needs to keep an intermediary's path open drives that from the client.
 - **No per-tenant rate limit or quota** — `isolationKey` isolates tenant *data*, not tenant *throughput*. Admission is global; one tenant's burst is shed against the same counters as every other tenant's. Post-1.0.

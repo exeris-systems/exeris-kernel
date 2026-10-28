@@ -40,9 +40,9 @@
 # Two refinements follow from the same test. A PERMISSION granted to a tier ("a Community-tier
 # implementation MAY decode it into an intermediate representation") is a contract and not a report,
 # so "MAY" is not a tense marker. A driver technology inside a parenthetical example ("(e.g.,
-# io_uring on Linux only, IOCP on Windows only)") illustrates an obligation rather than being one, so
-# parentheticals are stripped before the technology test. An exception is widened only when the
-# check fires on a sentence that is right.
+# io_uring on Linux only, IOCP on Windows only)") illustrates an obligation rather than being one,
+# so parentheticals are stripped before the technology test. An exception is widened only when
+# the check fires on a sentence that is right.
 #
 # Scope is exeris-kernel-spi ONLY, and that is the whole point rather than an omission: in
 # exeris-kernel-core and exeris-kernel-community the same sentence is correct, because those modules

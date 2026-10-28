@@ -27,6 +27,11 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
  *       = {@code false}.</li>
  * </ul>
  *
+ * <h2>Fixed budget</h2>
+ * <p>A positive {@link MemoryProviderConfig#totalOffHeapBytes()} is accepted as a memory-pressure
+ * budget: the denominator of the utilisation the allocator reports. It is not an allocation cap, and
+ * only a non-default network threshold is refused. {@code -1} means no budget.
+ *
  * <h2>Discovery</h2>
  * <p>Registered via {@code META-INF/services/eu.exeris.kernel.spi.memory.MemoryProvider}.
  * Returns {@link #priority()} = 0, the Community slot in the SPI's documented convention
@@ -54,9 +59,10 @@ public final class CommunityMemoryProvider implements MemoryProvider {
      * @param config provider-specific configuration; must not be {@code null}
      * @return a fully initialised {@link CommunityMemoryAllocator}
      * @throws MemoryBootstrapException ({@code EX-BOOT-0004}) if {@code config} is
-     *                                   {@code null}, or if it requests a fixed off-heap
-     *                                   budget or a non-default network threshold that
-     *                                   this tier does not support
+     *                                   {@code null}, or if it requests a non-default
+     *                                   network threshold, which this tier does not support;
+     *                                   a fixed off-heap budget is accepted as a pressure
+     *                                   budget
      */
     @Override
     public MemoryAllocator createAllocator(MemoryProviderConfig config) {

@@ -38,13 +38,13 @@ import java.util.concurrent.TimeUnit;
  * @param partitionBytes         total bytes to claim for the flow memory partition (Enterprise)
  * @param persistenceEnabled     whether flow snapshot persistence via SPI is enabled
  * @param compensationEnabled    whether backward compensation (saga rollback) is enabled
- * @param terminalCatalogMaxSize maximum number of entries retained in the in-memory terminal-state
- *                               catalog used as the idempotency fence for COMPLETED /
- *                               FAILED_ROLLEDBACK resubmits; {@code 0} = unbounded (default,
- *                               backward-compatible). When {@code > 0}, the catalog evicts the
- *                               least-recently-accessed entry; the engine then falls back to the
- *                               durable {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}
- *                               (when {@code persistenceEnabled = true}) to honor the idempotency
+ * @param terminalCatalogMaxSize bounds the in-memory terminal catalog only; {@code 0} = unbounded
+ *                               (default). With {@code persistenceEnabled} and a
+ *                               {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore} bound,
+ *                               the engine writes one durable terminal row per finished instance
+ *                               in either mode and never reclaims it; that row is the fence after
+ *                               an eviction or a restart, and the store's binder owns its
+ *                               retention. Without a store an evicted or cleared entry has no
  *                               fence — see {@code docs/subsystems/flow.md}
  *                               §Terminal-State Catalog Retention. (since 0.7.0)
  * @param defaultSagaTimeoutShortNanos baseline timeout for short-lived (transactional) sagas;
@@ -222,7 +222,8 @@ public value record FlowEngineConfig(
      * @throws NullPointerException     if {@code engineName} is {@code null}
      * @throws IllegalArgumentException if {@code engineName} is blank
      * @apiNote Persistence is off here, so cross-restart choreography wake is unsupported by
-     *          contract until the caller enables it. Operators sizing an off-heap deployment start
+     *          contract until the caller enables it, and a Start redelivered after a restart runs a
+     *          finished flow again. Operators sizing an off-heap deployment start
      *          from {@link #enterpriseDefaults(String)} instead and override {@code partitionBytes}
      *          and the slab-sizing fields.
      */
@@ -259,7 +260,9 @@ public value record FlowEngineConfig(
      *          the deployment's density target before using this in production. Keep
      *          {@code persistenceEnabled} on while {@code terminalCatalogMaxSize > 0}: an evicted
      *          catalog entry has to stay recoverable from the snapshot store for the resubmit fence
-     *          to hold.
+     *          to hold. One durable row per finished instance holds in every mode: the engine
+     *          reclaims none, the binder owns their retention, and deleting a row reopens that
+     *          instance id.
      */
     public static FlowEngineConfig enterpriseDefaults(String engineName) {
         return new FlowEngineConfig(
