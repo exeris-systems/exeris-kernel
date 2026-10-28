@@ -222,6 +222,16 @@ public final class CommunityTlsEngine implements TlsEngine, TlsHandshakeFailureC
 	/**
 	 * Forwards to the wrapped {@link OffHeapTlsEngine}.
 	 *
+	 * @return the errno the last fatal {@code wrap} left after {@code SSL_ERROR_SYSCALL}, {@code 0} when
+	 *         it had another cause, {@code -1} where errno cannot be read
+	 */
+	public int lastWriteErrno() {
+		return delegate.lastWriteErrno();
+	}
+
+	/**
+	 * Forwards to the wrapped {@link OffHeapTlsEngine}.
+	 *
 	 * @return the {@code SSL_get_error} code of the failed handshake step, {@code 0} until one fails
 	 */
 	@Override

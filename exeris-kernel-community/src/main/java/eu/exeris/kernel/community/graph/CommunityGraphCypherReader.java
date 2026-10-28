@@ -7,7 +7,7 @@ package eu.exeris.kernel.community.graph;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
-import eu.exeris.kernel.spi.graph.model.GraphTraversal;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import org.neo4j.driver.Value;
 
@@ -44,45 +44,46 @@ final class CommunityGraphCypherReader {
     }
 
     /**
-     * Runs a multi-hop MATCH from {@code traversal}'s start node out to its max depth and
-     * collects the visited node IDs.
+     * Executes a path traversal over the Cypher backend and returns the terminal frontier node IDs.
      *
-     * @param traversal traversal configuration
-     * @return node IDs visited, in result order
+     * @param path path specification
+     * @return node IDs in the terminal frontier
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
      *         if the underlying Cypher query fails
      */
     // Neo4j driver raises RuntimeException; map to GraphQueryException
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
-    /* default */ List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
-        String query = dialect.buildMultiHopQuery(traversal.edgeDescriptor(), 1, traversal.maxDepth());
-        Map<String, Object> params = Map.of(PARAM_SOURCE_ID, traversal.startNodeId().toString());
+    /* default */ List<UUID> traversePath(GraphPathSpec path) {
+        Map<String, Object> params = Map.of(PARAM_SOURCE_ID, path.startNodeId().toString());
         try {
+            String query = dialect.buildPathQuery(path.hops());
             return executor.executeRead(query, params, result -> {
                 List<UUID> ids = new ArrayList<>();
                 while (result.hasNext()) {
-                    ids.add(asUuid(result.next().get("id"), "BFS"));
+                    ids.add(asUuid(result.next().get("id"), "PATH"));
                 }
                 return ids;
             });
+        } catch (GraphQueryException e) {
+            throw e;
         } catch (RuntimeException cause) {
-            throw new GraphQueryException("BFS", CYPHER_EXECUTION_DETAIL, cause);
+            throw new GraphQueryException("PATH", CYPHER_EXECUTION_DETAIL, cause);
         }
     }
 
     /**
-     * Runs {@link #traverseBreadthFirst} and encodes the resulting node IDs as a UTF-8 JSON
+     * Runs {@link #traversePath} and encodes the resulting terminal frontier node IDs as a UTF-8 JSON
      * array (via {@link CommunityGraphBufferOps#toUuidJsonArray}) into a network buffer from
-     * {@code KernelProviders.MEMORY_ALLOCATOR}.
+     * {@code KernelProviders.allocator()}.
      *
-     * @param traversal traversal configuration
+     * @param path path specification
      * @return a buffer holding the encoded JSON; caller-owned, caller must close it
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
      *         if the underlying Cypher query fails
      */
-    /* default */ LoanedBuffer streamBfsJson(GraphTraversal traversal) {
-        List<UUID> bfs = traverseBreadthFirst(traversal);
-        byte[] jsonBytes = CommunityGraphBufferOps.toUuidJsonArray(bfs);
+    /* default */ LoanedBuffer streamPathJson(GraphPathSpec path) {
+        List<UUID> frontier = traversePath(path);
+        byte[] jsonBytes = CommunityGraphBufferOps.toUuidJsonArray(frontier);
         LoanedBuffer buffer = KernelProviders.allocator().allocateNetwork(jsonBytes.length);
         MemorySegment.copy(jsonBytes, 0, buffer.segment(), ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
         buffer.setSize(jsonBytes.length);

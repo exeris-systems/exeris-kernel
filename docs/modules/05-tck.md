@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-27
+last-verified: 2026-10-28
 ---
 
 # Physical Tier: TCK (The Judge)
@@ -79,7 +79,7 @@ an assertion error:
 
 | Contract | Suite | Assertion | In-repository binding |
 | :-- | :-- | :-- | :-- |
-| Allocation on the TLS path | `CryptoZeroAllocTck`, over `JfrAllocationMonitor` (JFR) | No `eu.exeris.*` heap allocation per iteration when the binding overrides `supportsZeroGcHotPath()` to return `true`; otherwise at most `maxExerisAllocationsPerIteration()` per iteration (default 5) | `CoreOffHeapTlsEngineZeroAllocTckTest`: the zero contract, measured on the guard path; the steady-state cipher path is not measured |
+| Allocation on the TLS path | `CryptoZeroAllocTck`, over `JfrAllocationMonitor` (JFR) | No `eu.exeris.*` heap allocation per iteration when the binding overrides `supportsZeroGcHotPath()` to return `true`; otherwise at most `maxExerisAllocationsPerIteration()` per iteration (8 in this suite; the base default is 5) | `CoreOffHeapTlsEngineZeroAllocTckTest`: the zero contract, measured on the guard path; the steady-state cipher path is not measured |
 | `LoanedBuffer` leaks | `AbstractMemoryLeakDetectionTck` | The allocator runs in `LeakDetectionMode.PARANOID`; `allocatedBytes()` returns to 0 once every chunk is closed; `leakCount()` rises after GC for a buffer left open on purpose | `CommunityMemoryLeakDetectionParanoidTckTest` |
 
 `CryptoZeroAllocTck` extends `AbstractSubsystemZeroAllocTck`, the base other subsystems' allocation
@@ -120,6 +120,14 @@ any request byte is sent. It is a suite apart from `AbstractHttpClientEngineTck`
 when its client verifies; the Community client binds it (`CommunityHttpClientTlsPeerVerificationTckTest`),
 and the Core fixture client, which speaks no TLS, does not. Its servers are the JDK's TLS stack and a
 ClientHello probe, so no case depends on the provider's own server.
+
+`AbstractHttp2HeaderLimitTck` (since 0.13) judges the three HTTP/2 header keys of `HttpConfig` —
+`maxHeaderBlockSize`, `maxHeaderListSize`, `maxStringLiteralSize` — from a raw socket speaking cleartext
+HTTP/2 with prior knowledge. For each key a request at the limit is served and a request one octet over
+it is refused without reaching the handler, and the server advertises `maxHeaderListSize` as
+`SETTINGS_MAX_HEADER_LIST_SIZE`. A refusal is a `431` on the stream, a reset or a `GOAWAY`; the HPACK
+dynamic table survives a refusal that keeps the connection, and a malformed block is
+`GOAWAY(COMPRESSION_ERROR)`. Obs-text octets in a value count one each, both against `maxHeaderListSize` and in the dynamic table, where a request referencing an entry older than an obs-text insertion must be served. The Community server binds it (`CommunityHttp2HeaderLimitTckTest`).
 
 ### Current Core Binding Coverage (HTTP)
 

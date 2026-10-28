@@ -4,14 +4,13 @@
  */
 package eu.exeris.kernel.community.security;
 
-import java.security.interfaces.RSAPublicKey;
-
 /**
  * Internal seam that resolves a verification key for a JWT {@code kid} header.
  *
  * <p>Contract:
  * <ul>
- *   <li>returns the {@link RSAPublicKey} when the {@code kid} is currently acceptable;</li>
+ *   <li>returns the {@link JwsVerificationKey} when the {@code kid} is currently acceptable; the key
+ *       carries the one algorithm it is pinned to;</li>
  *   <li>returns {@code null} for a genuinely-unknown {@code kid} (the validator keeps
  *       throwing today's {@code unknown-kid} deny);</li>
  *   <li>throws {@link eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException}
@@ -27,9 +26,10 @@ import java.security.interfaces.RSAPublicKey;
      * Resolves the verification key for the given {@code kid}.
      *
      * @param kid the JWT key-id header value (never {@code null} or blank)
-     * @return the matching public key, or {@code null} when the {@code kid} is unknown
+     * @return the matching verification key with its pinned algorithm, or {@code null} when the
+     *         {@code kid} is unknown
      * @throws eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException
      *         ({@code EX-SEC-2002}) on terminal rotation / staleness deny
      */
-    RSAPublicKey resolve(String kid);
+    JwsVerificationKey resolve(String kid);
 }

@@ -51,6 +51,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li><b>Backpressure park-and-resume.</b> When the client stops reading, the emitting virtual thread
  *       PARKS inside {@code emit()} (no on-heap queue); when the client drains / window credit returns it
  *       RESUMES. This is the most regression-prone path across tiers.</li>
+ *   <li><b>An event larger than the credit window</b> is admitted once nothing else is outstanding:
+ *       {@code emit()} completes and the client receives the event intact, then the end of the
+ *       stream.</li>
  *   <li><b>JWT-expiry mid-stream</b> closes the stream with {@link KernelErrorCodes#EX_HTTP_4012}
  *       (fail-closed per ADR-012 §5, never a silent drop).</li>
  *   <li><b>Stream-open shed</b> reuses {@link KernelErrorCodes#EX_NET_4006} + the existing
@@ -146,6 +149,19 @@ public abstract class AbstractHttpStreamExchangeTck {
      */
     protected boolean supportsBackpressureProbe() {
         return false;
+    }
+
+    /**
+     * The egress credit window, in bytes, the binding's stream runs with: the outstanding-bytes bound
+     * past which {@code emit()} parks. The default is the reference engine's window; a binding that
+     * runs a smaller (or larger) window overrides it so that the oversized-event case builds an event
+     * that really exceeds it.
+     *
+     * @return the egress credit window in bytes; {@code 65_536} by default
+     */
+    protected int egressCreditWindowBytes() {
+        // Literal rather than a Core constant: this suite depends on SPI only.
+        return 65_536;
     }
 
     /**
@@ -443,6 +459,36 @@ public abstract class AbstractHttpStreamExchangeTck {
                         .isZero();
             }
         }
+
+        @Test
+        @Timeout(value = SLOW_PROBE_TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
+        @DisplayName("emit() of an event larger than the credit window completes and is delivered intact")
+        void emitOfAnEventLargerThanTheCreditWindowCompletes() {
+            // "data: " + payload + "\n" + "\n" frames a single-line ASCII payload; size it so the framed
+            // event is one byte past the window.
+            int framingBytes = "data: ".length() + 2;
+            String payload = "x".repeat(egressCreditWindowBytes() + 1 - framingBytes);
+            StreamScenario scenario = openStream(exchange -> {
+                exchange.emit(StreamEvent.of(payload));
+                exchange.close();
+            });
+
+            try (scenario) {
+                List<StreamEvent> observed = scenario.awaitEvents(1);
+                assertThat(observed)
+                        .as("an event larger than the window MUST be admitted when nothing is outstanding")
+                        .hasSize(1);
+                assertThat(observed.get(0).data())
+                        .as("the oversized event MUST arrive intact")
+                        .isEqualTo(payload);
+                assertThat(scenario.awaitEndOfStream())
+                        .as("END_STREAM follows the oversized event")
+                        .isTrue();
+                assertThat(scenario.handlerError())
+                        .as("the emit MUST NOT park forever or fail")
+                        .isNull();
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -596,7 +642,8 @@ public abstract class AbstractHttpStreamExchangeTck {
         List<StreamEvent> awaitEvents(int count);
 
         /**
-         * Blocks until the client observes a clean end-of-stream (graceful {@code close()} FIN).
+         * Blocks until the client observes the protocol's clean end of stream (a FIN on HTTP/1.1,
+         * END_STREAM on HTTP/2) after a graceful {@code close()}.
          *
          * @return {@code true} if a clean end-of-stream was observed
          */
@@ -634,8 +681,9 @@ public abstract class AbstractHttpStreamExchangeTck {
         long outstandingLoans();
 
         /**
-         * Stalls the client read side so the egress window fills and the emitting VT parks. Only called
-         * when {@link #supportsBackpressureProbe()} is {@code true}.
+         * Stops the client returning credit, by not reading or by withholding flow-control credit while
+         * it still reads, so the egress window fills and the emitting VT parks. Only called when
+         * {@link #supportsBackpressureProbe()} is {@code true}.
          */
         default void stallClient() {
             throw new UnsupportedOperationException("stallClient not wired by this binding");

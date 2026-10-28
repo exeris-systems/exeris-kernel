@@ -59,4 +59,14 @@ public final class PathParamStreamExchange implements HttpStreamExchange {
     public void close() {
         delegate.close();
     }
+
+    @Override
+    public String remoteAddress() {
+        return delegate.remoteAddress();
+    }
+
+    @Override
+    public int remotePort() {
+        return delegate.remotePort();
+    }
 }

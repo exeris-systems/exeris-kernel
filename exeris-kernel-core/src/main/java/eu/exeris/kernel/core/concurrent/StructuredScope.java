@@ -48,6 +48,10 @@ import java.util.concurrent.Callable;
  * try-with-resources; {@code fork} and {@code join} are confined to the thread that opened the
  * scope and reject calls from any other.
  *
+ * <p>A task that has terminated is dropped from the scope's tracking at the next {@code fork}, so a
+ * long-lived scope that forks repeatedly holds only its running tasks; {@link #join()} and
+ * {@link #close()} wait for those.
+ *
  * <h2>Memory model</h2>
  *
  * <p>Two groups of state, protected by two different things — the mix of plain and {@code volatile}
@@ -139,10 +143,20 @@ public final class StructuredScope implements AutoCloseable {
         if (joined || closed) {
             throw new IllegalStateException("fork() after join()/close()");
         }
+        tasks.removeIf(ForkedTask::isTerminated);
         ForkedTask<T> task = new ForkedTask<>(body, bindings);
         tasks.add(task);
         task.start();
         return task;
+    }
+
+    /**
+     * Returns how many forked tasks the scope currently tracks: every running task, plus any task
+     * that terminated since the last {@link #fork}.
+     */
+    /* default */ int trackedTaskCount() {
+        ensureOwner();
+        return tasks.size();
     }
 
     /**
@@ -269,6 +283,10 @@ public final class StructuredScope implements AutoCloseable {
 
         private void start() {
             thread.start();
+        }
+
+        private boolean isTerminated() {
+            return state != State.RUNNING;
         }
 
         private void interruptIfRunning() {

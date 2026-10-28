@@ -4,6 +4,8 @@
  */
 package eu.exeris.kernel.community.transport;
 
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
+
 import java.nio.channels.SocketChannel;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,7 +51,24 @@ final class ChannelRuntimeRegistry {
      *                               if the registry is sealed
      */
     ChannelRuntimeState registerRuntime(NativeTcpStream stream, SocketChannel channel, String refusal) {
-        ChannelRuntimeState runtime = new ChannelRuntimeState(channel, stream, channelOwner);
+        return registerRuntime(stream, channel, refusal, null);
+    }
+
+    /**
+     * Registers a new channel/stream pair, recording the workload gate whose admission the connection
+     * holds, which its close must release.
+     *
+     * @param stream          the stream reading and writing {@code channel}
+     * @param channel         the channel to register
+     * @param refusal         what to report if the registry is sealed
+     * @param admittedBy      the gate that admitted the connection, or {@code null} when it holds no admission
+     * @return the runtime state created for this pair
+     * @throws IllegalStateException if {@code channel} is already registered, or ({@code refusal})
+     *                               if the registry is sealed
+     */
+    ChannelRuntimeState registerRuntime(NativeTcpStream stream, SocketChannel channel, String refusal,
+                                        WorkloadAdmission admittedBy) {
+        ChannelRuntimeState runtime = new ChannelRuntimeState(channel, stream, channelOwner, admittedBy);
         synchronized (admissionLock) {
             if (sealed) {
                 throw new IllegalStateException(refusal);
@@ -110,10 +129,13 @@ final class ChannelRuntimeRegistry {
         private final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner;
         private final AtomicReference<NativeTcpReactor> owner = new AtomicReference<>();
         private final AtomicBoolean lifecycleCleanup = new AtomicBoolean(false);
+        private final WorkloadAdmission admittedBy;
 
         private ChannelRuntimeState(SocketChannel channel,
                                     NativeTcpStream stream,
-                                    ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner) {
+                                    ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner,
+                                    WorkloadAdmission admittedBy) {
+            this.admittedBy = admittedBy;
             this.channel = channel;
             this.stream = stream;
             this.socketBackend = stream.plainSocketBackendName();
@@ -126,6 +148,24 @@ final class ChannelRuntimeRegistry {
 
         NativeTcpStream stream() {
             return stream;
+        }
+
+        /**
+         * Whether the connection holds an admission of a workload gate; fixed at registration so the
+         * single lifecycle cleanup releases exactly the admissions that were taken.
+         */
+        boolean inboundAdmitted() {
+            return admittedBy != null;
+        }
+
+        /**
+         * The gate that admitted the connection, or {@code null} when it holds no admission. The release
+         * goes to this gate, never to whichever gate the carrier holds when the connection closes: a
+         * carrier that restarted under another gate must not return the admission to a gate that did not
+         * grant it.
+         */
+        WorkloadAdmission admittedBy() {
+            return admittedBy;
         }
 
         String socketBackend() {

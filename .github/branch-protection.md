@@ -51,6 +51,9 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
 
 ## Deliberately not required
 
+- **`Native Smoke (GraalVM 25)`** — runs from `native-smoke.yml`. Deliberately not required because
+  a job skipped by `if:` (label-gated on `native-smoke`) reports as passing in GitHub Actions, which
+  makes requiring it on general pull requests meaningless.
 - **`TLS OpenSSL <version>`** — a matrix job, so its check name carries the OpenSSL version.
   Requiring it by name pins the ruleset to a version string and a matrix edit silently drops the
   requirement. It becomes requirable when a summary job with a fixed name gathers the matrix with

@@ -5,6 +5,8 @@
 package eu.exeris.kernel.community.persistence;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -18,9 +20,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -31,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * WS5 Integration: SHARED RLS tenant isolation via {@link RlsConnectionInterceptor} against a live
@@ -42,6 +45,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>128 concurrent virtual threads alternating between two tenants produce no cross-tenant leaks.</li>
  *   <li>All connections are returned to the pool after a structured scope exits — zero active
  *       connections remain.</li>
+ *   <li>A tenant-less context is refused on read and on write by the reference policy's raising tenant
+ *       arm, each against a control under a tenant.</li>
  * </ul>
  *
  * <h2>Execution</h2>
@@ -57,7 +62,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CommunityPersistenceTenantIsolationIT {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
 
     private static PersistenceEngine engine;
 
@@ -68,6 +73,8 @@ class CommunityPersistenceTenantIsolationIT {
     private static final String TENANT_B = "tenant-b";
     private static final ImmutableStorageContext CTX_A = ImmutableStorageContext.shared(TENANT_A);
     private static final ImmutableStorageContext CTX_B = ImmutableStorageContext.shared(TENANT_B);
+    // A tenant of its own for the absent-tenant controls, so their rows never reach the A/B assertions.
+    private static final ImmutableStorageContext CTX_CONTROL = ImmutableStorageContext.shared("tenant-control");
 
     @BeforeAll
     static void startEngine() {
@@ -146,11 +153,42 @@ class CommunityPersistenceTenantIsolationIT {
         assertThat(finalB).isNotEmpty().allSatisfy(v -> assertThat(v).matches("B-\\d+|seed-b"));
     }
 
+    @Test
+    @DisplayName("an absent tenant raises on read — a tenant-less context is refused, not served an empty result")
+    void tenantlessRead_isRefused_andATenantReadIsServed() {
+        insertTenantRow(engine, CTX_CONTROL, "seed-read-control");
+
+        assertThatThrownBy(() -> readVisibleRows(engine, ImmutableStorageContext.GLOBAL))
+                .isInstanceOf(PersistenceProviderException.class)
+                .satisfies(refusal -> assertThat(((PersistenceProviderException) refusal).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_PERS_5003));
+
+        assertThat(readVisibleRows(engine, CTX_CONTROL))
+                .as("the same read under a tenant is served")
+                .contains("seed-read-control");
+    }
+
+    @Test
+    @DisplayName("an absent tenant raises on write — a tenant-less context cannot write a row owned by the empty tenant")
+    void tenantlessWrite_isRefused_andATenantWriteIsAdmitted() {
+        assertThatThrownBy(() -> insertRow(engine, ImmutableStorageContext.GLOBAL, "", "no-tenant-write"))
+                .isInstanceOf(PersistenceProviderException.class)
+                .satisfies(refusal -> assertThat(((PersistenceProviderException) refusal).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_PERS_5003));
+
+        insertTenantRow(engine, CTX_CONTROL, "tenant-write-control");
+
+        assertThat(readVisibleRows(engine, CTX_CONTROL))
+                .as("the same write under a tenant is admitted, and the refused one left nothing behind")
+                .contains("tenant-write-control")
+                .doesNotContain("no-tenant-write");
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================
 
-    private static PersistenceEngine createEngine(PostgreSQLContainer<?> container) {
+    private static PersistenceEngine createEngine(PostgreSQLContainer container) {
         PersistenceConfig config = new PersistenceConfig(
                 container.getJdbcUrl(),
                 APP_USER,
@@ -169,7 +207,7 @@ class CommunityPersistenceTenantIsolationIT {
         return new CommunityPersistenceProvider().createEngine(config);
     }
 
-    private static void bootstrapSchema(PostgreSQLContainer<?> container) {
+    private static void bootstrapSchema(PostgreSQLContainer container) {
         try (Connection conn = DriverManager.getConnection(
                      container.getJdbcUrl(), container.getUsername(), container.getPassword());
              Statement st = conn.createStatement()) {
@@ -178,14 +216,15 @@ class CommunityPersistenceTenantIsolationIT {
                        "    CREATE ROLE exeris_app LOGIN NOSUPERUSER PASSWORD 'exeris_app_pw'; " +
                        "  END IF; " +
                        "END $$");
+            st.execute(RlsReferencePolicy.REQUIRED_SETTING_FUNCTION);
             st.execute("DROP TABLE IF EXISTS tenant_docs CASCADE");
             st.execute("CREATE TABLE tenant_docs (tenant_id TEXT NOT NULL, value TEXT NOT NULL)");
             st.execute("ALTER TABLE tenant_docs ENABLE ROW LEVEL SECURITY");
             st.execute("ALTER TABLE tenant_docs FORCE ROW LEVEL SECURITY");
             st.execute("DROP POLICY IF EXISTS tenant_isolation ON tenant_docs");
             st.execute("CREATE POLICY tenant_isolation ON tenant_docs " +
-                       "USING (tenant_id = current_setting('exeris.tenant_id', true)) " +
-                       "WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true))");
+                       "USING (" + RlsReferencePolicy.TENANT_ARM + ") " +
+                       "WITH CHECK (" + RlsReferencePolicy.TENANT_ARM + ")");
             st.execute("GRANT USAGE ON SCHEMA public TO exeris_app");
             st.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_docs TO exeris_app");
         } catch (SQLException e) {
@@ -194,10 +233,14 @@ class CommunityPersistenceTenantIsolationIT {
     }
 
     private static void insertTenantRow(PersistenceEngine e, StorageContext ctx, String value) {
+        insertRow(e, ctx, ctx.isolationKey().orElseThrow(), value);
+    }
+
+    private static void insertRow(PersistenceEngine e, StorageContext ctx, String owner, String value) {
         try (PersistenceConnection conn = e.openConnection(ctx);
              PersistenceStatement stmt = conn.prepare(
                      "INSERT INTO tenant_docs(tenant_id, value) VALUES (?, ?)")) {
-            stmt.bindString(0, ctx.isolationKey().orElseThrow())
+            stmt.bindString(0, owner)
                 .bindString(1, value)
                 .executeUpdate();
         }

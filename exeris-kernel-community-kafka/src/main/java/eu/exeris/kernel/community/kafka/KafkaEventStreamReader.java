@@ -36,6 +36,12 @@ import java.util.function.ToIntFunction;
  */
 public final class KafkaEventStreamReader implements EventStreamReader {
 
+    /**
+     * The isolation ordinal the replay path decodes its descriptors with. Replay yields payloads
+     * only and does not filter by isolation scope (ADR-101), so no record header is read here.
+     */
+    private static final int UNSCOPED = 0;
+
     private final KafkaEventConfig config;
     private final ToIntFunction<String> typeOrdinalResolver;
 
@@ -59,7 +65,7 @@ public final class KafkaEventStreamReader implements EventStreamReader {
         List<byte[]> frames = KafkaEventLog.readStreamFrames(config, streamId.streamIdHigh(), streamId.streamIdLow());
         List<byte[]> matched = new ArrayList<>(frames.size());
         for (byte[] frame : frames) {
-            if (KafkaEventLogCodec.decodeDescriptor(frame).occurredAtEpochMs() >= fromMillis) {
+            if (KafkaEventLogCodec.decodeDescriptor(frame, UNSCOPED).occurredAtEpochMs() >= fromMillis) {
                 matched.add(frame);
             }
         }
@@ -87,14 +93,15 @@ public final class KafkaEventStreamReader implements EventStreamReader {
         long fromMillis = fromTimestamp.toEpochMilli();
         List<byte[]> matched = new ArrayList<>();
         for (byte[] frame : KafkaEventLog.readAllFrames(config)) {
-            EventDescriptor descriptor = KafkaEventLogCodec.decodeDescriptor(frame);
+            EventDescriptor descriptor = KafkaEventLogCodec.decodeDescriptor(frame, UNSCOPED);
             if (descriptor.eventTypeOrdinal() == ordinal && descriptor.occurredAtEpochMs() >= fromMillis) {
                 matched.add(frame);
             }
         }
         // Cross-stream: partitions interleave, so impose a deterministic (occurredAt, sequence) order.
         matched.sort(Comparator
-                .comparingLong((byte[] frame) -> KafkaEventLogCodec.decodeDescriptor(frame).occurredAtEpochMs())
+                .comparingLong((byte[] frame) ->
+                        KafkaEventLogCodec.decodeDescriptor(frame, UNSCOPED).occurredAtEpochMs())
                 .thenComparingLong(KafkaEventLogCodec::decodeSequence));
         return new KafkaEventStream(matched);
     }

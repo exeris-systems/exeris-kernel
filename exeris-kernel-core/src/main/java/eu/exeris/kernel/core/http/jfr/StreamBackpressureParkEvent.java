@@ -22,7 +22,8 @@ import jdk.jfr.StackTrace;
  * thread (carrier-bound {@code EventWriter} straddle → SIGSEGV; the {@code ConnectionAcquireEvent}
  * precedent). This event records the park decision, not its duration.
  *
- * <p>Emitted from {@code HttpStreamEngine.awaitCredit}, once per park entry, at the point where
+ * <p>Emitted from {@code HttpStreamEngine.awaitCredit}, or from the egress's credit wait on a protocol
+ * with its own flow control, once per park entry, at the point where
  * queuing the next frame would push outstanding bytes over the stream's credit window — before
  * the virtual thread actually parks. A single wide park can straddle several unpark/re-check
  * cycles without this event firing again; it marks entry into the park, not each wakeup.
@@ -41,12 +42,30 @@ public final class StreamBackpressureParkEvent extends Event {
     public long streamId;
 
     /**
+     * The protocol's id for the stream on its connection: the HTTP/2 stream id, {@code 0} for HTTP/1.1,
+     * where the transport stream is the whole connection. Together with {@code streamId} it tells two
+     * streams of one connection apart.
+     */
+    @Label("Protocol Stream ID")
+    @Description("The protocol's stream id on its connection; 0 for HTTP/1.1.")
+    public int protocolStreamId;
+
+    /**
      * Bytes outstanding (queued to the transport but not yet released) at the moment the park
      * decision was made — not updated as the park continues or as credit is later released.
      */
     @Label("Outstanding Bytes")
     @Description("Bytes outstanding (queued but unacknowledged by the transport) at park time.")
     public long outstandingBytes;
+
+    /**
+     * The credit that was available when the park decision was made: the smaller of the stream's and
+     * the connection's flow-control window on HTTP/2, {@code -1} on HTTP/1.1, where credit is the
+     * outstanding-bytes bound.
+     */
+    @Label("Window Bytes")
+    @Description("Smaller of the stream and connection flow-control windows at park time; -1 on HTTP/1.1.")
+    public long windowBytes;
 
     /** Number of SSE events successfully emitted on this stream before this park. */
     @Label("Events Emitted")
@@ -72,6 +91,20 @@ public final class StreamBackpressureParkEvent extends Event {
      * @param eventsEmitted    events emitted before the park
      */
     public static void emit(long streamId, long outstandingBytes, long eventsEmitted) {
+        emit(streamId, 0, outstandingBytes, -1L, eventsEmitted);
+    }
+
+    /**
+     * Emits a backpressure-park event for a stream of a multiplexed protocol. Call BEFORE parking.
+     *
+     * @param streamId         the transport stream identifier
+     * @param protocolStreamId the protocol's stream id on its connection, {@code 0} where there is none
+     * @param outstandingBytes outstanding queued bytes at park time
+     * @param windowBytes      the available flow-control window at park time, {@code -1} where there is none
+     * @param eventsEmitted    events emitted before the park
+     */
+    public static void emit(long streamId, int protocolStreamId, long outstandingBytes, long windowBytes,
+                            long eventsEmitted) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -80,6 +113,8 @@ public final class StreamBackpressureParkEvent extends Event {
             return;
         }
         event.streamId = streamId;
+        event.protocolStreamId = protocolStreamId;
+        event.windowBytes = windowBytes;
         event.outstandingBytes = outstandingBytes;
         event.eventsEmitted = eventsEmitted;
         event.commit();

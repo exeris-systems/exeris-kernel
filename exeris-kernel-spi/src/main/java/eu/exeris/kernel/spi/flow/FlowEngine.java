@@ -125,6 +125,11 @@ public interface FlowEngine extends AutoCloseable {
      * Subsequent calls ADD additional mappers; they do NOT replace existing registrations.
      * Subscription tokens are owned by the engine and cancelled on {@link #close()}.
      *
+     * <p>A {@link ChoreographyDecision.Start} for an instance the engine already holds is a no-op
+     * for a running, parked or terminal instance, and the plan it carries is ignored. The limits on
+     * that no-op, across engine restarts and for durable rows that are not terminal, are stated on
+     * {@link ChoreographyDecision.Start}.
+     *
      * @param mapper         maps descriptors to decisions; must not be {@code null}
      * @param eventTypeNames event type names to subscribe to; must not be {@code null} or empty
      * @param bus            the {@link EventBus} on which to subscribe; must not be {@code null}

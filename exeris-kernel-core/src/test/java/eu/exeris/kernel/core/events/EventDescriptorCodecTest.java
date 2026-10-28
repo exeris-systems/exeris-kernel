@@ -70,6 +70,36 @@ class EventDescriptorCodecTest {
     }
 
     @Test
+    @DisplayName("a non-zero isolation ordinal survives write() then read()")
+    void roundTripPreservesIsolationOrdinal() {
+        EventDescriptor original = EventDescriptor.of(
+                1L, 2L, 3L, 4L, 7, EventDescriptor.FLAG_ORDERED, 999_000L, 101);
+
+        // CHECKSTYLE:OFF: DirectArenaAllocation — test-only, no approved allocator in test scope
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = arena.allocate(EventDescriptorCodec.WIRE_SIZE);
+            EventDescriptorCodec.write(seg, 0L, original);
+            EventDescriptor decoded = EventDescriptorCodec.read(seg, 0L);
+
+            assertThat(decoded.isolationOrdinal()).isEqualTo(101);
+            assertThat(decoded).isEqualTo(original);
+        }
+        // CHECKSTYLE:ON: DirectArenaAllocation
+    }
+
+    @Test
+    @DisplayName("a zero-filled 64-byte segment reads as an unscoped descriptor (isolationOrdinal 0)")
+    void zeroFilledSegmentReadsUnscoped() {
+        // CHECKSTYLE:OFF: DirectArenaAllocation — test-only, no approved allocator in test scope
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = arena.allocate(EventDescriptorCodec.WIRE_SIZE);
+            seg.fill((byte) 0);
+            assertThat(EventDescriptorCodec.read(seg, 0L).isolationOrdinal()).isZero();
+        }
+        // CHECKSTYLE:ON: DirectArenaAllocation
+    }
+
+    @Test
     @DisplayName("WIRE_SIZE is exactly 64 bytes (one CPU cache line)")
     void wireSizeIs64() {
         assertThat(EventDescriptorCodec.WIRE_SIZE).isEqualTo(64);

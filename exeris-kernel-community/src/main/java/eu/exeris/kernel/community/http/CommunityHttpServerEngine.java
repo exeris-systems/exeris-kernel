@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.spi.contract.ContractKernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMode;
@@ -94,8 +95,10 @@ final class CommunityHttpServerEngine implements HttpServerEngine {
 
         boolean startFailed = true;
         try {
-            CommunityHttpRequestProcessor processor =
-                    new CommunityHttpRequestProcessor(allocator, encoderRegistry, config);
+            // Read here, on the thread that runs inside the kernel scope, and handed down as a final
+            // field: the connection threads inherit no binding and would read an unbound slot.
+            CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                    allocator, encoderRegistry, config, null, null, ContractKernelProviders.workloadAdmission());
             transport.setStreamHandler(stream -> processor.process(stream, handler));
             transport.start();
             CommunityHttpLifecycleEvent.emit("start", listenPort);

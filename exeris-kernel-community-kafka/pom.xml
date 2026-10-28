@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.12.0</version>
+        <version>0.13.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-community-kafka</artifactId>
@@ -102,12 +102,12 @@
         <!-- Testcontainers Kafka 3.x for integration tests (only run with -Dgroups=integration) -->
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>kafka</artifactId>
+            <artifactId>testcontainers-kafka</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -119,7 +119,7 @@
         -->
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
+            <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -135,7 +135,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
                 <configuration>
                     <argLine>@{coverage.argLine} ${jvm.args}</argLine>
                     <groups>${includedGroups}</groups>
@@ -146,7 +145,7 @@
                         `-DincludedGroups=integration -DexcludedGroups=` against this module)
                         actually discovers CommunityKafkaEventEngineTckIT /
                         CommunityKafkaFlowChoreographyTckIT / CommunityCrossEngineChoreographyIT.
-                        Default Surefire 3.2.5 includes only *Test.java / *Tests.java / Test*.java /
+                        Surefire's default includes are only *Test.java / *Tests.java / Test*.java /
                         *TestCase.java; the three IT files end in IT and were silently dead
                         before this include addition. Default tag-exclusion still skips them
                         on `mvn test` without the integration group override.

@@ -48,6 +48,16 @@ public interface EventEngine extends AutoCloseable {
     /**
      * Exposes the publish/subscribe face of this engine.
      *
+     * <p>Publishing stamps the isolation ordinal from the publisher's bound storage context before
+     * the event is routed (ADR-101). A {@code 0} ordinal is replaced by the one the bound key resolves
+     * to through {@link #isolationRegistry()}, and a pre-stamped ordinal that matches passes through
+     * unchanged. A non-zero ordinal that disagrees with the bound context is refused, and so is a
+     * publication with no bound context that carries a non-zero ordinal, and a bound key the registry
+     * does not hold. Each refusal is {@code EX-EVENT-6009} with reason {@code "isolation-mismatch"} or
+     * {@code "unregistered-isolation-key"}, and the bus releases the payload before it throws. The Core
+     * in-memory primitive that a binding delegates to does not stamp, so a binding that exposes it
+     * stamps before it delegates.
+     *
      * @return the engine's bus; never {@code null}
      * @apiNote Valid once {@link #start()} has returned; the behaviour of a bus obtained before
      *          start is undefined.
@@ -79,6 +89,21 @@ public interface EventEngine extends AutoCloseable {
      * @return the engine's registry; never {@code null}
      */
     EventRegistry registry();
+
+    /**
+     * Exposes the tenant isolation key registry (ADR-101) that maps isolation keys to the ordinals
+     * carried on {@link EventDescriptor#isolationOrdinal()}.
+     *
+     * @return the engine's isolation key registry; never {@code null}
+     * @throws EventEngineException {@code EX-EVENT-6001} when the binding does not implement
+     *         isolation scoping
+     * @implSpec The default refuses. A binding that returns a registry must also refuse any
+     *           publication whose descriptor carries an ordinal the registry does not hold.
+     * @since 0.13
+     */
+    default IsolationKeyRegistry isolationRegistry() {
+        throw new EventEngineException("This event engine does not implement tenant isolation scoping");
+    }
 
     /**
      * Brings every component to a state where events may be published and processed — the point

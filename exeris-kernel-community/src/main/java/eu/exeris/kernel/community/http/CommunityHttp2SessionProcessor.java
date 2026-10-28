@@ -5,30 +5,43 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
-import eu.exeris.kernel.core.http.http2.Http2FrameEncoder;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.http.StreamMatch;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * Community: the HTTP/2 connection frame loop — reads and validates frames off the connection's
  * aggregate buffer, decodes completed HEADERS(+CONTINUATION) blocks via {@link Http2SessionContext},
  * accumulates DATA into the matching {@link Http2RequestStreamState}, and on a complete request
  * dispatches it through {@link CommunityHttpRequestDispatcher} before framing and coalescing the
- * response into one write.
+ * response into one write. A request whose route is a stream route is resolved here, on the frame loop,
+ * and then opened, authorized and served by a task forked for that stream alone.
  *
  * <p>Entered from either upgrade path — {@link #handlePriorKnowledge} (the 24-byte connection
  * preface) or {@link #handleUpgrade} (an HTTP/1.1 {@code Upgrade: h2c} request already answered with
@@ -36,15 +49,27 @@ import java.util.Objects;
  * until a connection-fatal condition — a protocol error, a peer GOAWAY, a Rapid Reset budget trip,
  * the buffered-frame aggregate exceeding its configured capacity, or a read returning end-of-stream —
  * ends it.
+ *
+ * <p>The frame loop is the connection's only reader. Every write goes through the connection's
+ * {@link Http2ConnectionWriter}, which orders it against writes from other threads, and a response
+ * that the peer's flow-control windows cannot carry yet continues on a task forked into the
+ * connection's {@link Http2Connection} scope while the loop goes on reading the frames that open the
+ * windows. A stream route's task holds one slot of the concurrent-stream cap from its registration
+ * until it returns, so the cap bounds the live handler threads as well as the requests in flight.
  */
-// QA-018a extracted 4 seams: Http2SessionContext (HPACK + assembler + per-stream state),
-// PendingRequestHeaders (HPACK-decode accumulator), CommunityHttp2ControlFrames (SETTINGS/PING/
-// RST_STREAM/GOAWAY writers), and CommunityHttp2FrameFragments (pad/priority extraction).
-// Residual processor retains the frame-loop, frame dispatcher, headers/data frame handlers,
-// response writer, and ingress read loop.
+// QA-018a extracted four collaborators: Http2SessionContext holds the HPACK decoder, the assembler and
+// the per-stream request state; PendingRequestHeaders accumulates a decoded header block;
+// CommunityHttp2ControlFrames writes the SETTINGS, PING, RST_STREAM and GOAWAY frames; and
+// CommunityHttp2FrameFragments extracts padding and priority fields. The processor keeps the frame loop,
+// the frame dispatcher, the headers and data handlers, the response hand-off and the ingress read loop.
+// Response serialization and the HPACK encoder live in Http2ConnectionWriter, and the per-connection
+// state is held by Http2Connection.
 // Retained suppressions:
-// - GodClass / TooManyMethods: residual WMC=72; frame-loop + dispatcher + frame handlers +
-//   response writer remain cohesive; further split deferred.
+// - TooManyMethods / GodClass: frame-loop + dispatcher + frame handlers + the hand-off of both response
+//   paths (respond-once and stream route) are one connection's state machine over one session; splitting
+//   the stream-open path off would hand it the connection, the dispatchers and the allocator again.
+// - UseTryWithResources: the response body changes owner when a continuation task takes it, so it is
+//   closed here only when nothing took it.
 // - AvoidCatchingGenericException: frame-loop catches RuntimeException to surface PROTOCOL_ERROR via GOAWAY.
 // - CloseResource: LoanedBuffer ownership transfers via response.body() pipeline.
 // - CyclomaticComplexity: frame-dispatcher switch + frame loop are intrinsically cohesive.
@@ -54,8 +79,9 @@ import java.util.Objects;
 //   reflects this orchestration role; QA-018a already extracted everything semantically
 //   splittable, so further splitting would fragment the frame-loop entry point.
 @SuppressWarnings({
-        "PMD.GodClass",
         "PMD.TooManyMethods",
+        "PMD.GodClass",
+        "PMD.UseTryWithResources",
         "PMD.AvoidCatchingGenericException",
         "PMD.CloseResource",
         "PMD.CyclomaticComplexity",
@@ -67,30 +93,42 @@ final class CommunityHttp2SessionProcessor {
             System.getLogger(CommunityHttp2SessionProcessor.class.getName());
 
     private static final String CRLF = "\r\n";
+    private static final String HTTP2_SETTINGS_HEADER = "HTTP2-Settings";
     private static final long HTTP2_FRAME_LOOP_INVALID = -1L;
     private static final long HTTP2_FRAME_LOOP_STOP = -2L;
-    private static final int HTTP2_MAX_HEADER_BLOCK_BYTES = 65_536;
-    private static final int HTTP2_MAX_FRAME_PAYLOAD_BYTES = 16 * 1024;
-    private static final int HTTP2_FLAG_END_STREAM = 0x01;
-    private static final int HTTP2_FLAG_END_HEADERS = 0x04;
+    private static final long HTTP2_FRAME_LOOP_COMPRESSION_ERROR = -3L;
+    private static final long HTTP2_FRAME_LOOP_FRAME_SIZE_ERROR = -4L;
+    private static final long CLIENT_PREFACE_MISMATCH = -1L;
+    private static final long CLIENT_PREFACE_END_OF_STREAM = -2L;
+    private static final int WINDOW_UPDATE_PAYLOAD_BYTES = 4;
+    private static final ValueLayout.OfInt BIG_ENDIAN_INT =
+            ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
     private final MemoryAllocator allocator;
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
     private final HttpConfig config;
     private final CommunityHttpRequestDispatcher requestDispatcher;
+    private final CommunityHttpStreamDispatcher streamDispatcher;
     private final int readChunkBytes;
     private final int maxAggregateBytes;
+    private final WorkloadAdmission workloadAdmission;
+    private final boolean workloadEnforced;
 
     /* default */ CommunityHttp2SessionProcessor(MemoryAllocator allocator,
                                    HttpResponseBodyEncoderRegistry encoderRegistry,
                                    HttpConfig config,
-                                   CommunityHttpRequestDispatcher requestDispatcher,
+                                   CommunityHttpDispatchers dispatchers,
                                    int readChunkBytes,
-                                   int maxAggregateBytes) {
+                                   int maxAggregateBytes,
+                                   WorkloadAdmission workloadAdmission) {
+        this.workloadAdmission = Objects.requireNonNull(workloadAdmission, "workloadAdmission must not be null");
+        this.workloadEnforced = workloadAdmission.enforced();
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.encoderRegistry = Objects.requireNonNull(encoderRegistry, "encoderRegistry must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
-        this.requestDispatcher = Objects.requireNonNull(requestDispatcher, "requestDispatcher must not be null");
+        Objects.requireNonNull(dispatchers, "dispatchers must not be null");
+        this.requestDispatcher = dispatchers.request();
+        this.streamDispatcher = dispatchers.stream();
         this.readChunkBytes = readChunkBytes;
         this.maxAggregateBytes = maxAggregateBytes;
     }
@@ -104,9 +142,11 @@ final class CommunityHttp2SessionProcessor {
             LOG.log(System.Logger.Level.INFO,
                     "HTTP/2 prior-knowledge preface detected; entering h2c request frame-loop mode");
         }
-        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream, config.maxHeaderListSize());
-        try (Http2SessionContext session = Http2SessionContext.create(allocator, config)) {
-            processBufferedHttp2Frames(stream, handler, session, state, totalBytes, initialFrameOffset);
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config);
+             Http2Connection connection = openConnection(stream, handler, session)) {
+            CommunityHttp2ControlFrames.sendServerSettings(
+                    allocator, connection.writer(), config.maxHeaderListSize());
+            processBufferedHttp2Frames(connection, state, totalBytes, initialFrameOffset);
         }
     }
 
@@ -116,42 +156,120 @@ final class CommunityHttp2SessionProcessor {
                        ProcessingState state) {
         LoanedBuffer aggregate = state.aggregate();
         writeHttp11UpgradeResponse(stream);
-        long bufferedHttp2Bytes = CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
-        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream, config.maxHeaderListSize());
-        try (Http2SessionContext session = Http2SessionContext.create(allocator, config)) {
-            processBufferedHttp2Frames(stream, handler, session, state, bufferedHttp2Bytes, 0);
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config);
+             Http2Connection connection = openConnection(stream, handler, session)) {
+            // The body is copied out of the aggregate before the unread bytes are moved over it.
+            session.holdPendingUpgrade(upgradeRequestAsStreamOne(readResult, aggregate));
+            long bufferedHttp2Bytes =
+                    CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
+            CommunityHttp2ControlFrames.sendServerSettings(
+                    allocator, connection.writer(), config.maxHeaderListSize());
+            long afterPreface = readClientPreface(connection, state, bufferedHttp2Bytes);
+            if (afterPreface == CLIENT_PREFACE_MISMATCH) {
+                CommunityHttp2ControlFrames.sendGoAway(
+                        allocator, connection.writer(), session.lastProcessedStreamId(),
+                        Http2ErrorCode.PROTOCOL_ERROR);
+                return;
+            }
+            if (afterPreface == CLIENT_PREFACE_END_OF_STREAM) {
+                CommunityHttp2ControlFrames.sendGoAwayNoError(allocator, connection.writer());
+                return;
+            }
+            processBufferedHttp2Frames(
+                    connection, state, afterPreface, CommunityHttpH2cUpgradeDetector.prefaceLength());
         }
     }
 
+    /**
+     * The upgrade request as the request on stream 1 (RFC 9113 section 3.4): the headers that have no
+     * HTTP/2 form, and the {@code HTTP2-Settings} header, which is not applied, are dropped.
+     */
+    private Http2RequestStreamState upgradeRequestAsStreamOne(ReadResult readResult, LoanedBuffer aggregate) {
+        List<HttpHeader> headers = new ArrayList<>(readResult.headers().size());
+        for (HttpHeader header : readResult.headers()) {
+            if (!Http2SessionContext.isConnectionSpecificHeader(header.name())
+                    && !HTTP2_SETTINGS_HEADER.equalsIgnoreCase(header.name())) {
+                headers.add(header);
+            }
+        }
+        Http2DecodedRequest request = new Http2DecodedRequest(
+                1, readResult.method(), readResult.path(), headers, readResult.method() != null);
+        Http2RequestStreamState upgradeRequest = new Http2RequestStreamState(1, request);
+        upgradeRequest.appendBody(allocator, aggregate.segment(), readResult.bodyStart(), readResult.bodyLength());
+        return upgradeRequest;
+    }
+
+    /**
+     * Reads the client connection preface that follows the {@code 101} (RFC 9113 section 3.4),
+     * starting with the bytes already buffered. The preface may arrive in several reads, so bytes are
+     * compared as they come and a wrong one is refused as soon as it is seen; a silent peer is left to
+     * the connection's idle timeout.
+     *
+     * @return the number of bytes buffered once the whole preface is there, or
+     *         {@link #CLIENT_PREFACE_MISMATCH} or {@link #CLIENT_PREFACE_END_OF_STREAM}
+     */
+    private long readClientPreface(Http2Connection connection, ProcessingState state, long bufferedBytes) {
+        long buffered = bufferedBytes;
+        while (true) {
+            if (!CommunityHttpH2cUpgradeDetector.isPrefaceOrPrefix(state.aggregate().segment(), buffered)) {
+                return CLIENT_PREFACE_MISMATCH;
+            }
+            if (buffered >= CommunityHttpH2cUpgradeDetector.prefaceLength()) {
+                return buffered;
+            }
+            int read = readHttp2Bytes(connection.transport(), state, buffered);
+            if (read < 0) {
+                return CLIENT_PREFACE_END_OF_STREAM;
+            }
+            if (read > 0) {
+                buffered += read;
+                state.aggregate().setSize(buffered);
+            }
+        }
+    }
+
+    private Http2Connection openConnection(TransportStream stream, HttpHandler handler,
+                                           Http2SessionContext session) {
+        Http2ConnectionWriter writer = Http2ConnectionWriter.create(
+                stream, allocator, session.maxConcurrentStreams(),
+                CommunityHttpStreamDispatcher.creditWindowBytes(), workloadEnforced);
+        return new Http2Connection(stream, handler, session, writer);
+    }
+
     private void writeHttp11UpgradeResponse(TransportStream stream) {
+        String marker = workloadEnforced
+                ? WorkloadAdmission.LICENCE_HEADER + ": " + WorkloadAdmission.DEVELOPMENT_MARKER + CRLF
+                : "";
         byte[] responseBytes = (
                 "HTTP/1.1 101 Switching Protocols" + CRLF
                         + "Connection: Upgrade" + CRLF
                         + "Upgrade: h2c" + CRLF
+                        + marker
                         + CRLF)
                 .getBytes(StandardCharsets.US_ASCII);
         MemorySegment responseSegment = MemorySegment.ofArray(responseBytes);
         stream.write(responseSegment, responseBytes.length);
     }
 
-    private void processBufferedHttp2Frames(TransportStream stream,
-                                            HttpHandler handler,
-                                            Http2SessionContext session,
+    private void processBufferedHttp2Frames(Http2Connection connection,
                                             ProcessingState state,
                                             long initialBytes,
                                             long initialFrameOffset) {
+        Http2SessionContext session = connection.session();
+        Http2ConnectionWriter writer = connection.writer();
         long bufferedBytes = initialBytes;
         long offset = initialFrameOffset;
 
         while (true) {
             LoanedBuffer aggregate = state.aggregate();
-            offset = processAvailableHttp2Frames(stream, handler, session, aggregate, bufferedBytes, offset);
+            offset = processAvailableHttp2Frames(connection, aggregate, bufferedBytes, offset);
             if (offset == HTTP2_FRAME_LOOP_STOP) {
                 return;
             }
-            if (offset == HTTP2_FRAME_LOOP_INVALID) {
+            Http2ErrorCode failure = frameLoopFailure(offset);
+            if (failure != null) {
                 CommunityHttp2ControlFrames.sendGoAway(
-                        allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
+                        allocator, writer, session.lastProcessedStreamId(), failure);
                 return;
             }
 
@@ -161,13 +279,13 @@ final class CommunityHttp2SessionProcessor {
 
             if (bufferedBytes >= maxAggregateBytes) {
                 CommunityHttp2ControlFrames.sendGoAway(
-                        allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.FRAME_SIZE_ERROR);
+                        allocator, writer, session.lastProcessedStreamId(), Http2ErrorCode.FRAME_SIZE_ERROR);
                 return;
             }
 
-            int read = readHttp2Bytes(stream, state, bufferedBytes);
+            int read = readHttp2Bytes(connection.transport(), state, bufferedBytes);
             if (read < 0) {
-                CommunityHttp2ControlFrames.sendGoAwayNoError(allocator, stream);
+                CommunityHttp2ControlFrames.sendGoAwayNoError(allocator, writer);
                 return;
             }
             if (read > 0) {
@@ -177,17 +295,33 @@ final class CommunityHttp2SessionProcessor {
         }
     }
 
-    private long processAvailableHttp2Frames(TransportStream stream,
-                                             HttpHandler handler,
-                                             Http2SessionContext session,
+    private static Http2ErrorCode frameLoopFailure(long frameLoopResult) {
+        if (frameLoopResult == HTTP2_FRAME_LOOP_INVALID) {
+            return Http2ErrorCode.PROTOCOL_ERROR;
+        }
+        if (frameLoopResult == HTTP2_FRAME_LOOP_COMPRESSION_ERROR) {
+            return Http2ErrorCode.COMPRESSION_ERROR;
+        }
+        if (frameLoopResult == HTTP2_FRAME_LOOP_FRAME_SIZE_ERROR) {
+            return Http2ErrorCode.FRAME_SIZE_ERROR;
+        }
+        return null;
+    }
+
+    private long processAvailableHttp2Frames(Http2Connection connection,
                                              LoanedBuffer aggregate,
                                              long bufferedBytes,
                                              long startOffset) {
+        Http2SessionContext session = connection.session();
         long offset = startOffset;
         while (bufferedBytes - offset >= Http2FrameParser.FRAME_HEADER_SIZE) {
             try {
                 Http2FrameParser.FrameHeader header =
-                        session.codec().parseAndValidate(aggregate.segment(), offset);
+                        Http2FrameParser.parseHeaderBigEndian(aggregate.segment(), offset);
+                // Refused on the header alone: the payload of a frame this large is never waited for.
+                if (header.length() > session.codec().maxFrameSize()) {
+                    return HTTP2_FRAME_LOOP_FRAME_SIZE_ERROR;
+                }
                 long frameLength = (long) Http2FrameParser.FRAME_HEADER_SIZE + header.length();
                 long frameEnd = offset + frameLength;
                 if (bufferedBytes < frameEnd) {
@@ -198,10 +332,12 @@ final class CommunityHttp2SessionProcessor {
                     session.validateContinuationMode(header);
                 }
                 long payloadOffset = offset + Http2FrameParser.FRAME_HEADER_SIZE;
-                if (!handleHttp2Frame(stream, handler, session, aggregate, payloadOffset, header)) {
+                if (!handleHttp2Frame(connection, aggregate, payloadOffset, header)) {
                     return HTTP2_FRAME_LOOP_STOP;
                 }
                 offset = frameEnd;
+            } catch (Http2CompressionException _) {
+                return HTTP2_FRAME_LOOP_COMPRESSION_ERROR;
             } catch (RuntimeException _) {
                 return HTTP2_FRAME_LOOP_INVALID;
             }
@@ -209,94 +345,186 @@ final class CommunityHttp2SessionProcessor {
         return offset;
     }
 
-    private boolean handleHttp2Frame(TransportStream stream,
-                                     HttpHandler handler,
-                                     Http2SessionContext session,
+    private boolean handleHttp2Frame(Http2Connection connection,
                                      LoanedBuffer aggregate,
                                      long payloadOffset,
                                      Http2FrameParser.FrameHeader header) {
         Http2FrameType frameType = header.frameType();
+        Http2ConnectionWriter writer = connection.writer();
+        // After an upgrade the client's first frame is its SETTINGS (RFC 9113 section 3.4), and the
+        // upgrade request is not served before that SETTINGS is applied.
+        if (connection.session().hasPendingUpgrade()
+                && (frameType != Http2FrameType.SETTINGS || header.isAck())) {
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, writer, connection.session().lastProcessedStreamId(),
+                    Http2ErrorCode.PROTOCOL_ERROR);
+            return false;
+        }
         if (frameType == null) {
             return true;
         }
 
         return switch (frameType) {
-            case SETTINGS -> {
-                if (header.streamId() != 0) {
-                    throw new IllegalStateException("Invalid SETTINGS stream");
-                }
-                if (!header.isAck()) {
-                    session.applyPeerSettings(aggregate, payloadOffset, header.length());
-                    CommunityHttp2ControlFrames.sendSettingsAck(allocator, stream);
-                }
-                yield true;
-            }
+            case SETTINGS -> handleSettingsFrame(connection, aggregate, payloadOffset, header);
             case PING -> {
                 if (header.streamId() != 0 || header.length() != 8) {
                     throw new IllegalStateException("Invalid PING frame");
                 }
                 if (!header.isAck()) {
-                    CommunityHttp2ControlFrames.sendPingAck(allocator, stream, aggregate, payloadOffset);
+                    CommunityHttp2ControlFrames.sendPingAck(allocator, writer, aggregate, payloadOffset);
                 }
                 yield true;
             }
-            case HEADERS -> handleHttp2HeadersFrame(stream, handler, session, aggregate, payloadOffset, header);
+            case HEADERS -> handleHttp2HeadersFrame(connection, aggregate, payloadOffset, header);
             case CONTINUATION -> {
-                handleHttp2ContinuationFrame(stream, handler, session, aggregate, payloadOffset, header);
+                handleHttp2ContinuationFrame(connection, aggregate, payloadOffset, header);
                 yield true;
             }
-            case DATA -> {
-                handleHttp2DataFrame(stream, handler, session, aggregate, payloadOffset, header);
-                yield true;
-            }
+            case DATA -> handleHttp2DataFrame(connection, aggregate, payloadOffset, header);
+            case WINDOW_UPDATE -> handleWindowUpdateFrame(connection, aggregate, payloadOffset, header);
             case GOAWAY -> false;
-            case RST_STREAM -> {
-                session.clearPendingIfStreamMatches(header.streamId());
-                session.resetRequestStream(header.streamId());
-                // CVE-2023-44487 (Rapid Reset): each freed slot lets the peer re-open without
-                // ever hitting SETTINGS_MAX_CONCURRENT_STREAMS, so the cap alone is no defense.
-                // The net reset budget trips GOAWAY(ENHANCE_YOUR_CALM) and stops the frame loop.
-                if (session.recordInboundRstStream()) {
-                    Http2RapidResetFloodEvent.emit(
-                            session.rapidResetCount(), session.lastProcessedStreamId());
-                    CommunityHttp2ControlFrames.sendGoAway(
-                            allocator, stream, session.lastProcessedStreamId(),
-                            Http2ErrorCode.ENHANCE_YOUR_CALM);
-                    yield false;
-                }
-                yield true;
-            }
+            case RST_STREAM -> handleRstStreamFrame(connection, header);
             default -> true;
         };
     }
 
-    private boolean handleHttp2HeadersFrame(TransportStream stream,
-                                            HttpHandler handler,
-                                            Http2SessionContext session,
+    private boolean handleSettingsFrame(Http2Connection connection,
+                                        LoanedBuffer aggregate,
+                                        long payloadOffset,
+                                        Http2FrameParser.FrameHeader header) {
+        Http2SessionContext session = connection.session();
+        Http2ConnectionWriter writer = connection.writer();
+        if (header.streamId() != 0) {
+            throw new IllegalStateException("Invalid SETTINGS stream");
+        }
+        if (header.isAck()) {
+            return true;
+        }
+        Http2ErrorCode settingsError =
+                session.applyPeerSettings(aggregate, payloadOffset, header.length(), writer);
+        if (settingsError != Http2ErrorCode.NO_ERROR) {
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, writer, session.lastProcessedStreamId(), settingsError);
+            return false;
+        }
+        CommunityHttp2ControlFrames.sendSettingsAck(allocator, writer);
+        Http2RequestStreamState upgradeRequest = session.takePendingUpgrade();
+        if (upgradeRequest != null) {
+            dispatchUpgradeRequest(connection, upgradeRequest);
+        }
+        return true;
+    }
+
+    private void dispatchUpgradeRequest(Http2Connection connection, Http2RequestStreamState upgradeRequest) {
+        Http2DecodedRequest request = upgradeRequest.request();
+        connection.session().setLastProcessedStreamId(request.streamId());
+        if (!request.valid()) {
+            upgradeRequest.close();
+            writeHttp2NoBodyResponse(connection, request.streamId(), HttpStatus.BAD_REQUEST);
+            return;
+        }
+        dispatchHttp2Request(connection, request.streamId(), request, upgradeRequest.detachBody(), 0L);
+    }
+
+    private boolean handleRstStreamFrame(Http2Connection connection, Http2FrameParser.FrameHeader header) {
+        Http2SessionContext session = connection.session();
+        Http2ConnectionWriter writer = connection.writer();
+        session.clearPendingIfStreamMatches(header.streamId());
+        session.resetRequestStream(header.streamId());
+        writer.resetByPeer(header.streamId());
+        // CVE-2023-44487 (Rapid Reset): each freed slot lets the peer re-open without
+        // ever hitting SETTINGS_MAX_CONCURRENT_STREAMS, so the cap alone is no defense.
+        // The net reset budget trips GOAWAY(ENHANCE_YOUR_CALM) and stops the frame loop.
+        if (session.recordInboundRstStream()) {
+            Http2RapidResetFloodEvent.emit(
+                    session.rapidResetCount(), session.lastProcessedStreamId());
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, writer, session.lastProcessedStreamId(),
+                    Http2ErrorCode.ENHANCE_YOUR_CALM);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Applies a WINDOW_UPDATE (RFC 9113 §6.9). A stream the server no longer tracks is ignored
+     * rather than treated as a connection error, because a peer may still credit a stream the server
+     * has already finished. A stream whose request is
+     * still arriving has its credit held until the response stream exists.
+     *
+     * @return {@code false} when the frame ended the connection
+     */
+    private boolean handleWindowUpdateFrame(Http2Connection connection,
                                             LoanedBuffer aggregate,
                                             long payloadOffset,
                                             Http2FrameParser.FrameHeader header) {
+        Http2SessionContext session = connection.session();
+        Http2ConnectionWriter writer = connection.writer();
+        if (header.length() != WINDOW_UPDATE_PAYLOAD_BYTES) {
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, writer, session.lastProcessedStreamId(), Http2ErrorCode.FRAME_SIZE_ERROR);
+            return false;
+        }
+        int increment = aggregate.segment().get(BIG_ENDIAN_INT, payloadOffset) & 0x7FFF_FFFF;
+        int streamId = header.streamId();
+        if (streamId == 0) {
+            Http2ErrorCode error = writer.applyConnectionWindowUpdate(increment);
+            if (error != Http2ErrorCode.NO_ERROR) {
+                CommunityHttp2ControlFrames.sendGoAway(
+                        allocator, writer, session.lastProcessedStreamId(), error);
+                return false;
+            }
+            return true;
+        }
+        // The writer's table is searched first: it is a scan of an array, where the request table is
+        // a map keyed by a boxed id, and a stream is never in both.
+        if (writer.applyStreamWindowUpdate(streamId, increment)) {
+            return true;
+        }
+        Http2RequestStreamState requestStream = session.requestStream(streamId);
+        if (requestStream == null) {
+            return true;
+        }
+        if (increment == 0) {
+            CommunityHttp2ControlFrames.sendRstStream(
+                    allocator, writer, streamId, Http2ErrorCode.PROTOCOL_ERROR);
+            session.resetRequestStream(streamId);
+        } else if (!requestStream.addSendWindowIncrement(increment, writer.peerInitialWindowSize())) {
+            CommunityHttp2ControlFrames.sendRstStream(
+                    allocator, writer, streamId, Http2ErrorCode.FLOW_CONTROL_ERROR);
+            session.resetRequestStream(streamId);
+        }
+        return true;
+    }
+
+    private boolean handleHttp2HeadersFrame(Http2Connection connection,
+                                            LoanedBuffer aggregate,
+                                            long payloadOffset,
+                                            Http2FrameParser.FrameHeader header) {
+        Http2SessionContext session = connection.session();
+        Http2ConnectionWriter writer = connection.writer();
         if (header.streamId() <= 0) {
             throw new IllegalStateException("Invalid HEADERS stream");
         }
         if (session.isAwaitingContinuation()) {
             CommunityHttp2ControlFrames.sendGoAway(
-                    allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
+                    allocator, writer, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
             return false;
         }
         // HTTP-112: RFC 7540 §5.1.1 stream-id monotonicity + §5.1.2
         // SETTINGS_MAX_CONCURRENT_STREAMS cap. INVALID_ID is a connection-fatal protocol
         // error (GOAWAY + close loop); OVER_CAP is a per-stream refusal that keeps the
-        // connection open for other streams (RST_STREAM REFUSED_STREAM + skip body).
+        // connection open for other streams (RST_STREAM REFUSED_STREAM + skip body). The cap
+        // counts the requests still arriving plus the response streams a continuation still holds.
         Http2SessionContext.StreamAdmission admission =
-                session.admitClientStreamId(header.streamId());
+                session.admitClientStreamId(header.streamId(), writer.openStreamCount());
         if (admission == Http2SessionContext.StreamAdmission.REJECT_INVALID_ID) {
             CommunityHttp2ControlFrames.sendGoAway(
-                    allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
+                    allocator, writer, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
             return false;
         }
         if (admission == Http2SessionContext.StreamAdmission.REJECT_OVER_CAP) {
-            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, stream, header.streamId());
+            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, header.streamId());
             return true;
         }
         CommunityHttp2FrameFragments.Fragment fragment =
@@ -306,37 +534,65 @@ final class CommunityHttp2SessionProcessor {
         if (session.isAwaitingContinuation()) {
             return true;
         }
-        decodeAndDispatchCompletedHeaderBlock(stream, handler, session);
+        decodeAndDispatchCompletedHeaderBlock(connection);
         return true;
     }
 
-    private void handleHttp2ContinuationFrame(TransportStream stream,
-                                              HttpHandler handler,
-                                              Http2SessionContext session,
+    private void handleHttp2ContinuationFrame(Http2Connection connection,
                                               LoanedBuffer aggregate,
                                               long payloadOffset,
                                               Http2FrameParser.FrameHeader header) {
+        Http2SessionContext session = connection.session();
         session.appendContinuation(header, aggregate.segment(), payloadOffset, header.length());
         if (session.isAwaitingContinuation()) {
             return;
         }
-        decodeAndDispatchCompletedHeaderBlock(stream, handler, session);
+        decodeAndDispatchCompletedHeaderBlock(connection);
     }
 
-    private void handleHttp2DataFrame(TransportStream stream,
-                                      HttpHandler handler,
-                                      Http2SessionContext session,
-                                      LoanedBuffer aggregate,
-                                      long payloadOffset,
-                                      Http2FrameParser.FrameHeader header) {
-        if (header.streamId() <= 0) {
+    /**
+     * Takes one DATA frame off the read buffer and returns the credit it carried (RFC 9113 §6.9).
+     * Credit goes back when the frame loop has consumed the frame — appended to the request, or
+     * discarded for a stream that is gone — and not when it arrived or when a handler finishes, so a
+     * slow handler cannot grow what the loop buffers beyond the windows and the configured body bound.
+     *
+     * @return {@code false} when the frame ended the connection
+     */
+    private boolean handleHttp2DataFrame(Http2Connection connection,
+                                         LoanedBuffer aggregate,
+                                         long payloadOffset,
+                                         Http2FrameParser.FrameHeader header) {
+        Http2SessionContext session = connection.session();
+        Http2ConnectionWriter writer = connection.writer();
+        int streamId = header.streamId();
+        if (streamId <= 0) {
             throw new IllegalStateException("Invalid DATA stream");
         }
 
-        Http2RequestStreamState requestStream = session.requestStream(header.streamId());
+        // The whole payload is flow-controlled, the pad length and padding included.
+        int flowControlledBytes = header.length();
+        if (!session.consumeConnectionReceiveWindow(flowControlledBytes)) {
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, writer, session.lastProcessedStreamId(), Http2ErrorCode.FLOW_CONTROL_ERROR);
+            return false;
+        }
+
+        Http2RequestStreamState requestStream = session.requestStream(streamId);
         if (requestStream == null) {
-            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, stream, header.streamId());
-            return;
+            // DATA after the request ended: a stream the writer still serves is closed (RFC 9113
+            // section 5.1) and its task stopped; a stream nobody knows is refused.
+            if (!writer.resetStream(streamId, Http2ErrorCode.STREAM_CLOSED)) {
+                CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, streamId);
+            }
+            replenishConnectionWindow(connection);
+            return true;
+        }
+        if (!requestStream.consumeReceiveWindow(flowControlledBytes)) {
+            CommunityHttp2ControlFrames.sendRstStream(
+                    allocator, writer, streamId, Http2ErrorCode.FLOW_CONTROL_ERROR);
+            session.resetRequestStream(streamId);
+            replenishConnectionWindow(connection);
+            return true;
         }
 
         CommunityHttp2FrameFragments.Fragment dataFragment =
@@ -344,185 +600,320 @@ final class CommunityHttp2SessionProcessor {
         int nextBodyBytes = requestStream.bodyBytes() + dataFragment.length();
         long maxBodyBytes = config.maxRequestBodyBytes();
         if (maxBodyBytes >= 0 && nextBodyBytes > maxBodyBytes) {
-            CommunityHttp2ControlFrames.sendRstStreamCancel(allocator, stream, header.streamId());
-            session.resetRequestStream(header.streamId());
-            return;
+            CommunityHttp2ControlFrames.sendRstStreamCancel(allocator, writer, streamId);
+            session.resetRequestStream(streamId);
+            replenishConnectionWindow(connection);
+            return true;
+        }
+        if (session.exceedsRequestBodyBudget(maxBodyBytes, dataFragment.length())) {
+            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, streamId);
+            session.resetRequestStream(streamId);
+            replenishConnectionWindow(connection);
+            return true;
         }
 
-        requestStream.appendBody(allocator, aggregate.segment(), dataFragment.offset(), dataFragment.length());
+        session.appendRequestBody(requestStream, allocator, aggregate.segment(),
+                dataFragment.offset(), dataFragment.length());
         if (!header.isEndStream()) {
-            return;
+            // The stream is offered no more than the body bound still leaves room for, so credit
+            // never invites bytes the server would then refuse.
+            long target = maxBodyBytes < 0
+                    ? Http2SessionContext.INBOUND_WINDOW_BYTES
+                    : Math.min(Http2SessionContext.INBOUND_WINDOW_BYTES, maxBodyBytes - requestStream.bodyBytes());
+            int streamIncrement = requestStream.replenishReceiveWindow(target);
+            int connectionIncrement = session.replenishConnectionReceiveWindow();
+            CommunityHttp2ControlFrames.sendWindowUpdates(
+                    allocator, writer, streamId, streamIncrement, connectionIncrement);
+            return true;
         }
 
-        Http2RequestStreamState finished = session.takeRequestStream(header.streamId());
+        Http2RequestStreamState finished = session.takeRequestStream(streamId);
         if (finished == null) {
-            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, stream, header.streamId());
-            return;
+            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, streamId);
+            replenishConnectionWindow(connection);
+            return true;
         }
-        dispatchHttp2Request(stream, handler, session, finished.streamId(), finished.request(), finished.detachBody());
+        // Before dispatch: the response path may block on the peer's windows, and the credit is
+        // already earned.
+        replenishConnectionWindow(connection);
+        dispatchHttp2Request(connection, finished.streamId(), finished.request(), finished.detachBody(),
+                finished.pendingSendWindowIncrement());
+        return true;
     }
 
-    private void decodeAndDispatchCompletedHeaderBlock(TransportStream stream,
-                                                       HttpHandler handler,
-                                                       Http2SessionContext session) {
+    private void replenishConnectionWindow(Http2Connection connection) {
+        int increment = connection.session().replenishConnectionReceiveWindow();
+        CommunityHttp2ControlFrames.sendWindowUpdates(allocator, connection.writer(), 0, 0, increment);
+    }
+
+    private void decodeAndDispatchCompletedHeaderBlock(Http2Connection connection) {
+        Http2SessionContext session = connection.session();
         boolean requestEndedInHeaders = session.pendingEndStream();
         Http2DecodedRequest decoded = session.decodePendingRequest();
         session.setLastProcessedStreamId(decoded.streamId());
 
+        if (decoded.headersTooLarge()) {
+            writeHttp2NoBodyResponse(connection, decoded.streamId(),
+                    HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE);
+            return;
+        }
+
         if (!decoded.valid()) {
-            writeHttp2NoBodyResponse(stream, session, decoded.streamId(), HttpStatus.BAD_REQUEST);
+            writeHttp2NoBodyResponse(connection, decoded.streamId(), HttpStatus.BAD_REQUEST);
             return;
         }
 
         if (requestEndedInHeaders) {
-            dispatchHttp2Request(stream, handler, session, decoded.streamId(), decoded, null);
+            dispatchHttp2Request(connection, decoded.streamId(), decoded, null, 0L);
             return;
         }
 
         session.openRequestStream(decoded);
     }
 
-    private void dispatchHttp2Request(TransportStream stream,
-                                      HttpHandler handler,
-                                      Http2SessionContext session,
+    private void dispatchHttp2Request(Http2Connection connection,
                                       int streamId,
                                       Http2DecodedRequest decoded,
-                                      LoanedBuffer bodyBuffer) {
+                                      LoanedBuffer bodyBuffer,
+                                      long pendingSendWindowIncrement) {
         // Real work credits the Rapid Reset budget (CVE-2023-44487): a peer interleaving genuine
         // requests with cancels nets out and never trips the flood defense.
-        session.recordDispatchedRequest();
-        try (LoanedBuffer requestBody = bodyBuffer) {
-            HttpRequest request = new HttpRequest(
-                    decoded.method(),
-                    decoded.path(),
-                    HttpVersion.HTTP_2,
-                    decoded.headers(),
-                    requestBody);
-            InMemoryHttp2Exchange exchange = new InMemoryHttp2Exchange(request, allocator, encoderRegistry);
-            requestDispatcher.dispatch(request, exchange, handler);
+        connection.session().recordDispatchedRequest();
+        // Before the route is resolved and before anything is forked, so a refused request, a stream
+        // route included, reaches no handler and no task. The answer is HEADERS with END_STREAM, not a
+        // reset, so the client reads a response instead of a transport error.
+        if (workloadEnforced && !workloadAdmission.tryAdmitRequest()) {
+            if (bodyBuffer != null) {
+                bodyBuffer.close();
+            }
+            writeHttp2Response(connection, streamId, pendingSendWindowIncrement,
+                    CommunityHttpThrottle.response(HttpVersion.HTTP_2));
+            return;
+        }
+        HttpRequest request = new HttpRequest(
+                decoded.method(),
+                decoded.path(),
+                HttpVersion.HTTP_2,
+                decoded.headers(),
+                bodyBuffer);
+        // Resolved on the frame loop, before authorization and outside any handler binding: the route
+        // decides which dispatch the request takes, and authorization belongs to the dispatch.
+        StreamMatch match;
+        try {
+            match = streamDispatcher.resolveStreamHandler(request, connection.handler());
+        } catch (RuntimeException resolverDefect) {
+            if (bodyBuffer != null) {
+                bodyBuffer.close();
+            }
+            throw resolverDefect;
+        }
+        if (match != null) {
+            openHttp2Stream(connection, streamId, pendingSendWindowIncrement, request, match);
+            return;
+        }
+        try (bodyBuffer) {
+            InMemoryHttp2Exchange exchange =
+                    new InMemoryHttp2Exchange(request, connection.transport(), allocator, encoderRegistry);
+            requestDispatcher.dispatch(request, exchange, connection.handler());
             if (!CommunityHttpRequestDispatcher.isResponded(exchange)) {
                 exchange.respond(HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, HttpVersion.HTTP_2));
             }
             HttpResponse response = exchange.capturedResponse();
             if (response == null) {
-                writeHttp2NoBodyResponse(stream, session, streamId, HttpStatus.INTERNAL_SERVER_ERROR);
+                writeHttp2NoBodyResponse(connection, streamId, HttpStatus.INTERNAL_SERVER_ERROR);
                 return;
             }
 
-            writeHttp2Response(stream, session, streamId, response);
+            writeHttp2Response(connection, streamId, pendingSendWindowIncrement, response);
         }
     }
 
-    private void writeHttp2Response(TransportStream stream,
-                                    Http2SessionContext session,
-                                    int streamId,
-                                    HttpResponse response) {
-        // PERF (egress coalesce): serialize the whole framed response (HEADERS[+CONTINUATION] + all
-        // DATA) into ONE buffer and issue a single stream.write(), so the TLS path does one
-        // wrap()/SSL_write and the reactor one outbound enqueue per response instead of one per frame.
-        // Wire framing is unchanged — still multiple H2 frames, each <= SETTINGS_MAX_FRAME_SIZE; only
-        // the socket write is coalesced.
-        try (LoanedBuffer headerBlock = allocator.allocateNetwork(HTTP2_MAX_HEADER_BLOCK_BYTES)) {
-            int headerBytes = (int) session.encodeResponseHeaders(headerBlock.segment(), response);
-            LoanedBuffer bodyBuffer = response.body();
-            try (bodyBuffer) {
-                int bodyBytes = bodyBuffer == null ? 0 : (int) bodyBuffer.size();
-                boolean headerEndsStream = bodyBytes == 0;
-                int dataFrames = bodyBytes == 0 ? 0 : frameCount(bodyBytes);
-                long framedSize = (long) headerBytes + bodyBytes
-                        + (long) Http2FrameParser.FRAME_HEADER_SIZE * (frameCount(headerBytes) + dataFrames);
-                try (LoanedBuffer outbound = allocator.allocateNetwork((int) framedSize)) {
-                    long position = serializeHeaderBlockFrames(
-                            outbound.segment(), 0L, streamId, headerBlock.segment(), headerBytes, headerEndsStream);
-                    if (bodyBytes > 0) {
-                        position = serializeDataFrames(
-                                outbound.segment(), position, streamId, bodyBuffer.segment(), bodyBytes);
-                    }
-                    stream.write(outbound.segment(), (int) position);
+    /**
+     * Registers a response stream for a request that resolved to a stream route and forks the task
+     * that serves it, which then owns the request body. A stream the writer cannot take has already
+     * been answered with a RST_STREAM by the writer; a scope that cannot take the task resets it here.
+     */
+    private void openHttp2Stream(Http2Connection connection,
+                                 int streamId,
+                                 long pendingSendWindowIncrement,
+                                 HttpRequest request,
+                                 StreamMatch match) {
+        Http2ConnectionWriter writer = connection.writer();
+        Http2OutboundStream out = writer.register(streamId, pendingSendWindowIncrement);
+        if (out == null) {
+            closeBody(request);
+            return;
+        }
+        try {
+            connection.streamScope().fork(() -> runHttp2Stream(connection, out, request, match));
+        } catch (RuntimeException forkFailure) {
+            closeBody(request);
+            writer.resetLocal(out, Http2ErrorCode.INTERNAL_ERROR);
+            writer.release(out);
+            if (LOG.isLoggable(System.Logger.Level.WARNING)) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "HTTP/2 stream task could not be forked", forkFailure);
+            }
+        }
+    }
+
+    private static void closeBody(HttpRequest request) {
+        LoanedBuffer body = request.body();
+        if (body != null) {
+            body.close();
+        }
+    }
+
+    /**
+     * Runs one stream route on the thread forked for it: authorization and the handler, through the
+     * same dispatch the HTTP/1.1 path uses, so a denial is framed on this stream and the handler runs
+     * under the bindings authorization establishes. A handler that fails resets this stream and no
+     * other. The slot is released here, when the task is done and not before.
+     */
+    private Void runHttp2Stream(Http2Connection connection,
+                                Http2OutboundStream out,
+                                HttpRequest request,
+                                StreamMatch match) {
+        Http2ConnectionWriter writer = connection.writer();
+        try {
+            Http2StreamEgress egress = new Http2StreamEgress(
+                    writer, out, connection.transport(), streamDispatcher.allocator());
+            DenialCapture denial = new DenialCapture(request, connection.transport(), allocator, encoderRegistry);
+            requestDispatcher.dispatchStream(request, denial,
+                    () -> streamDispatcher.dispatchHttp2Stream(request, egress, match));
+            InMemoryHttp2Exchange denied = denial.exchangeOrNull();
+            if (denied != null) {
+                HttpResponse response = denied.capturedResponse();
+                writer.respondOnStream(out, response != null
+                        ? response
+                        : HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, HttpVersion.HTTP_2));
+            }
+        } catch (RuntimeException failure) {
+            if (isShed(failure)) {
+                writer.resetLocal(out, Http2ErrorCode.REFUSED_STREAM);
+            } else {
+                if (LOG.isLoggable(System.Logger.Level.WARNING) && !isClosedSignal(failure)) {
+                    LOG.log(System.Logger.Level.WARNING, "Community HTTP/2 stream handler failed", failure);
                 }
+                writer.resetLocal(out, Http2ErrorCode.INTERNAL_ERROR);
+            }
+        } finally {
+            writer.release(out);
+            closeBody(request);
+        }
+        return null;
+    }
+
+    private static boolean isShed(RuntimeException failure) {
+        return failure instanceof TransportException shed
+                && KernelErrorCodes.EX_NET_4006.equals(shed.errorCode());
+    }
+
+    // Both forms mean the stream or its connection ended under the handler, which is the designed end of
+    // a stream and not a defect worth a log line: the engine's own signal and the transport's.
+    private static boolean isClosedSignal(RuntimeException failure) {
+        Throwable current = failure;
+        for (int depth = 0; depth < 4 && current != null; depth++) {
+            if (current instanceof StreamClosedException || current instanceof TransportStreamClosedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    /**
+     * Supplies the exchange a denial is written through, building it only when authorization denies:
+     * an admitted stream writes its own response and never needs one.
+     */
+    private static final class DenialCapture implements Supplier<HttpExchange> {
+        private final HttpRequest request;
+        private final TransportStream transport;
+        private final MemoryAllocator allocator;
+        private final HttpResponseBodyEncoderRegistry encoderRegistry;
+        private InMemoryHttp2Exchange exchange;
+
+        private DenialCapture(HttpRequest request, TransportStream transport, MemoryAllocator allocator,
+                              HttpResponseBodyEncoderRegistry encoderRegistry) {
+            this.request = request;
+            this.transport = transport;
+            this.allocator = allocator;
+            this.encoderRegistry = encoderRegistry;
+        }
+
+        @Override
+        public HttpExchange get() {
+            if (exchange == null) {
+                exchange = new InMemoryHttp2Exchange(request, transport, allocator, encoderRegistry);
+            }
+            return exchange;
+        }
+
+        private InMemoryHttp2Exchange exchangeOrNull() {
+            return exchange;
+        }
+    }
+
+    /**
+     * Hands the response to the connection's writer, which sends the head and as much of the body as
+     * both flow-control windows carry in a single write. A body the windows cannot carry yet is
+     * finished by a continuation task, which then owns the body buffer; otherwise the buffer is
+     * closed here.
+     */
+    private void writeHttp2Response(Http2Connection connection,
+                                    int streamId,
+                                    long pendingSendWindowIncrement,
+                                    HttpResponse response) {
+        Http2ConnectionWriter writer = connection.writer();
+        LoanedBuffer body = response.body();
+        boolean handedOff = false;
+        try {
+            Http2OutboundStream rest = writer.writeRespondOnce(streamId, pendingSendWindowIncrement, response);
+            if (rest != null) {
+                forkContinuation(connection, rest, body);
+                handedOff = true;
+            }
+        } finally {
+            if (!handedOff && body != null) {
+                body.close();
             }
         }
     }
 
     /**
-     * Number of HTTP/2 frames a payload of {@code payloadLength} bytes spans — zero when empty, to
-     * match the serialize loops (which emit no frame for a zero-length payload). Used only to size
-     * the coalescing buffer; the actual written length is the position returned by serialization.
+     * Forks the task that sends the rest of a body. The frame loop never waits for credit itself:
+     * it has to keep reading the WINDOW_UPDATE that frees the task. A scope that cannot take the
+     * task, or a body that is not there, resets the stream instead of leaving it half-written.
      */
-    private static int frameCount(int payloadLength) {
-        if (payloadLength <= 0) {
-            return 0;
+    private static void forkContinuation(Http2Connection connection, Http2OutboundStream rest,
+                                         LoanedBuffer body) {
+        Http2ConnectionWriter writer = connection.writer();
+        int total = (int) body.size();
+        long from = rest.bodyOffset;
+        try {
+            connection.streamScope().fork(() -> {
+                try (body) {
+                    writer.sendBody(rest, body, from, (int) (total - from), true);
+                } finally {
+                    writer.release(rest);
+                }
+                return null;
+            });
+        } catch (RuntimeException forkFailure) {
+            body.close();
+            writer.resetLocal(rest, Http2ErrorCode.INTERNAL_ERROR);
+            writer.release(rest);
+            if (LOG.isLoggable(System.Logger.Level.WARNING)) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "HTTP/2 response continuation could not be forked", forkFailure);
+            }
         }
-        return (payloadLength + HTTP2_MAX_FRAME_PAYLOAD_BYTES - 1) / HTTP2_MAX_FRAME_PAYLOAD_BYTES;
     }
 
-    private void writeHttp2NoBodyResponse(TransportStream stream,
-                                          Http2SessionContext session,
+    private void writeHttp2NoBodyResponse(Http2Connection connection,
                                           int streamId,
                                           HttpStatus status) {
-        writeHttp2Response(stream, session, streamId, HttpResponse.noBody(status, HttpVersion.HTTP_2));
-    }
-
-    private static long serializeHeaderBlockFrames(MemorySegment target,
-                                                   long position,
-                                                   int streamId,
-                                                   MemorySegment headerBlock,
-                                                   int headerLength,
-                                                   boolean endStream) {
-        int written = 0;
-        boolean firstFrame = true;
-        long pos = position;
-        while (written < headerLength) {
-            int chunk = Math.min(HTTP2_MAX_FRAME_PAYLOAD_BYTES, headerLength - written);
-            boolean last = (written + chunk) == headerLength;
-            int type = firstFrame ? Http2FrameType.HEADERS.code() : Http2FrameType.CONTINUATION.code();
-            int flags = last ? HTTP2_FLAG_END_HEADERS : 0;
-            if (firstFrame && endStream) {
-                flags |= HTTP2_FLAG_END_STREAM;
-            }
-            pos = serializeFrame(target, pos, type, flags, streamId, headerBlock, written, chunk);
-            written += chunk;
-            firstFrame = false;
-        }
-        return pos;
-    }
-
-    private static long serializeDataFrames(MemorySegment target,
-                                            long position,
-                                            int streamId,
-                                            MemorySegment body,
-                                            int bodyLength) {
-        int written = 0;
-        long pos = position;
-        while (written < bodyLength) {
-            int chunk = Math.min(HTTP2_MAX_FRAME_PAYLOAD_BYTES, bodyLength - written);
-            boolean endStream = (written + chunk) == bodyLength;
-            int flags = endStream ? HTTP2_FLAG_END_STREAM : 0;
-            pos = serializeFrame(target, pos, Http2FrameType.DATA.code(), flags, streamId, body, written, chunk);
-            written += chunk;
-        }
-        return pos;
-    }
-
-    /**
-     * Serializes one frame (9-byte header + payload slice) into {@code target} at {@code position}
-     * and returns the position just past it. No socket write — the whole response is written once by
-     * the caller (egress coalescing).
-     */
-    private static long serializeFrame(MemorySegment target,
-                                       long position,
-                                       int frameType,
-                                       int flags,
-                                       int streamId,
-                                       MemorySegment payloadSource,
-                                       int payloadOffset,
-                                       int payloadLength) {
-        Http2FrameEncoder.writeHeader(target, position, payloadLength, frameType, flags, streamId);
-        long payloadPos = position + Http2FrameParser.FRAME_HEADER_SIZE;
-        if (payloadLength > 0) {
-            MemorySegment.copy(payloadSource, payloadOffset, target, payloadPos, payloadLength);
-        }
-        return payloadPos + payloadLength;
+        writeHttp2Response(connection, streamId, 0L, HttpResponse.noBody(status, HttpVersion.HTTP_2));
     }
 
     private int readHttp2Bytes(TransportStream stream,

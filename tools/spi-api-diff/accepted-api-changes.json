@@ -10,5 +10,311 @@
     "since": "0.12",
     "adr": "ADR-043",
     "justification": "Core method: it keeps its name and parameters and now returns eu.exeris.kernel.spi.http.StreamMatch, as HttpRouter's implementation of the SPI interface eu.exeris.kernel.spi.http.StreamRouteResolver (ADR-043 Amendment A1). The changed return type changes the method descriptor, so a caller compiled against 0.11 is recompiled against 0.12; the release notes carry the upgrade step. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.http.hpack.HpackDecoder#decode(java.lang.foreign.MemorySegment, long, long, eu.exeris.kernel.core.http.hpack.HpackDecoder$HeaderListener)",
+    "since": "0.13",
+    "adr": "ADR-071",
+    "justification": "Core method: the descriptor is unchanged, the failure contract is not. A field section over http.maxHeaderListSize or a literal over http.maxStringLiteralSize is now read to its end, applying every dynamic-table insertion and size update and discarding the fields, and fails with HpackDecodingException of kind SIZE_LIMIT_EXCEEDED, where it stopped part-way and left the table short of what the client assumed. Every other decode failure keeps kind MALFORMED. The Community HTTP/2 server maps SIZE_LIMIT_EXCEEDED to a 431 stream response and MALFORMED to GOAWAY(COMPRESSION_ERROR), where both were a 400 on an open connection. A caller that decodes through HpackDecoder and treats every HpackDecodingException alike keeps compiling and now sees the table in step with the client; one that must tell a refusal from a corrupt block reads HpackDecodingException#kind(). Names and values are decoded one char per octet (ISO-8859-1), where they were UTF-8 with a malformed sequence replaced by U+FFFD, and dynamic-table entries and the header list are sized from the octets read. The release notes carry the behaviour change. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.crypto.AbstractCryptoEngineTck#bindToSocket(eu.exeris.kernel.spi.crypto.TlsEngine, java.nio.channels.SocketChannel)",
+    "since": "0.13",
+    "adr": "ADR-074",
+    "justification": "TCK contract: AbstractCryptoEngineTck gains three cases asserting CryptoProviderConfig#minimumTlsVersion as the handshake floor (a TLS 1.2-only peer refused at the default TLSv1.3, served at TLSv1.2; an unsupported value fails createTlsEngine). They drive a handshake through the new template method bindToSocket, which throws by default, so an existing binding fails them until it implements it or returns false from honoursMinimumTlsVersion() because its provider does not build the TLS context from the configuration. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.bootstrap.AbstractFailurePolicyTck",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "TCK contract: the three abstract boolean hooks missingDependencyFailsInAllSelector, degradeContinuesOnOptionalFailure and failFastAbortsOnOptionalFailure are replaced by one abstract template method, bootCapturing(List<Subsystem>, boolean, Runnable), which boots the kernel over exactly the subsystems the TCK supplies. The TCK now owns counting probe subsystems and judges the boot by their initialize/start/stop counts and whether kernelMain ran, because a hook that returned a hardcoded true satisfied the previous contract. An existing binding stops compiling until it removes the three overrides and implements bootCapturing, as AbstractSubsystemErrorRoutingTck's bindings do. Source-breaking for bindings; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.http.AbstractHttpProviderTck#selectAmong(java.util.List)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "TCK contract: the graph, persistence, HTTP and security provider TCKs (AbstractGraphProviderTck, AbstractPersistenceProviderTck, AbstractHttpProviderTck, AbstractSecurityProviderTck) each gain the template method selectAmong(List), which a binding implements by routing the candidates through its kernel's provider selection. highestPriorityWins stages a rival one priority step above and one below the provider under test, in both discovery orders, and requires that selection to return the highest by identity. selectAmong throws by default, so an existing binding fails highestPriorityWins until it implements it. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.events.EventEngine#bus()",
+    "since": "0.13",
+    "adr": "ADR-101",
+    "justification": "Behaviour: the bus an engine returns stamps each publication with the isolation ordinal of the bound KernelProviders.STORAGE_CONTEXT (ADR-101 Ruling 1). A publish under a bound isolation key that is not registered in EventEngine#isolationRegistry() is now refused with EX-EVENT-6009 \"unregistered-isolation-key\", and a descriptor carrying a non-zero ordinal other than the bound one with \"isolation-mismatch\"; before 0.13 both were published unscoped. The security interceptor binds a tenant context on every authenticated request, so an application registers every tenant key before publishing under it (MIGRATION.md). No signature changes: EventDescriptor keeps its seven-argument constructor and of(...), and the new members are additive on the spi.events package."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.events.AbstractEventBusTck",
+    "since": "0.13",
+    "adr": "ADR-101",
+    "justification": "TCK contract: the IsolationScoping cases require a binding's engine to return an IsolationKeyRegistry from EventEngine#isolationRegistry() and its bus to implement EventBus#subscribeScoped; both SPI defaults refuse, so a binding that has adopted neither fails those cases until it implements them. Source-compatible; the SPI additions are default methods and an eighth EventDescriptor component behind a retained seven-argument constructor."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.events.EventBus#publish(eu.exeris.kernel.spi.events.EventDescriptor, eu.exeris.kernel.spi.events.EventPayload)",
+    "since": "0.13",
+    "adr": "ADR-101",
+    "justification": "Behaviour on the Kafka binding (ADR-101 Ruling 2): a record the Kafka client rejects through the send callback before send returns (an ApiException such as a record too large, or the metadata timeout after max.block.ms) was lost before 0.13: publish returned normally and nothing recorded it. It is now refused with EX-EVENT-6009, as a thrown send already was, and is not counted as published. A send that fails after publish has returned is recorded, never thrown: a KafkaPublishFailedEvent with publishMode \"publishAsync\" and EventEngineStats#publishFailedTotal. No signature changes: EventEngineStats keeps its seven-argument constructor, which reports 0 for the new component, on the spi.events package."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.bootstrap.KernelBootstrap$Builder#initializeDeadline(java.time.Duration)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "Behaviour: Subsystem#initialize() is bounded by an initialization deadline of 300 s by default (ADR-007 amendment 2026-10-20). A subsystem whose initialize() is still running at the deadline is interrupted, and boot fails with EX-BOOT-0003 (SubsystemInitDeadlineException, rawArgs [subsystemName, deadlineMs]); under DEGRADE an optional subsystem is dropped with its dependents. Before 0.13 such a boot waited indefinitely. KernelBootstrap.Builder#initializeDeadline(Duration) changes the deadline, and Duration.ZERO restores the unbounded wait. The new SPI exception is additive; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "TCK contract: seeds a connected pair through a session and measures findShortestPath(GraphEdgeDescriptor, UUID, UUID); a binding needs a live backend; bootstrapSubsystem throws IllegalStateException unless the engine persists the seeded edges and the three-argument search finds the 2-hop path; source-compatible."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#deleteNode(java.lang.String, java.util.UUID)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour on the Community SQL/PGQ binding: connected edges in registered tables are removed; the SPI sentence was already \"and all connected edges\"; a registered edge table that names the label but whose table name is not a valid SQL identifier makes the call throw GraphQueryException before any statement runs, and one that does not exist in the current scope fails the statement with the persistence engine's translated error; nothing is deleted in either case; no signature change."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.bootstrap.KernelBootstrap$Builder#registerShutdownHook(boolean)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "Behaviour: boot() registers a JVM shutdown hook that runs KernelBootstrap.shutdown() unless registerShutdownHook(false) is set (ADR-007 section 5); before 0.13 a SIGTERM exited without stopping the subsystems. An embedding host that stops the kernel from its own lifecycle disables the hook in the release that adopts 0.13, or one SIGTERM starts two stop sequences. Subsystem#stop() may now run on a thread that carries none of the kernel's ScopedValue bindings, so a stop() that reads KernelProviders fails there. A second concurrent boot() on one KernelBootstrap instance throws IllegalStateException. No SPI signature changes; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#findShortestPath(java.util.UUID, java.util.UUID)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour: refuses unconditionally with GraphQueryException (EX-GRPH-5002, queryType SHORTEST_PATH) for distinct and equal ids; deprecated for removal before the graph SPI is promoted; now a default method on the preview SPI interface."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#findShortestPath(eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor, java.util.UUID, java.util.UUID)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Binary- and source-incompatible for implementers: the default that delegated to the two-argument overload is removed and the method is abstract on the preview SPI interface; an implementer that inherited it must now implement it (japicmp METHOD_NOW_ABSTRACT, the one preview break this release reports)."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphDialect#buildMatchQuery(eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour on both Community dialects: the query delegates to buildPathQuery over one hop, so the result column is id (was target_id) and the SQL binds the start node through CAST($1 AS uuid) in a leading CTE; the descriptor's direction is honoured; no signature change."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphDialect#buildMultiHopQuery(eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor, int, int)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour on both Community dialects: the query delegates to buildPathQuery over one ranged hop, so a maxHops above 64 throws IllegalArgumentException and minHops below 1 or maxHops below minHops is rejected by GraphHop; the result column is id; no signature change."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#traversePath(eu.exeris.kernel.spi.graph.model.GraphPathSpec)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Contract widening: new abstract method on the preview SPI interface for multi-hop path traversal; runs an ordered GraphPathSpec as one request, honours direction, and returns the terminal frontier with walk semantics."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#streamPathJson(eu.exeris.kernel.spi.graph.model.GraphPathSpec)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Contract widening: new abstract method on the preview SPI interface streaming the terminal frontier as UTF-8 JSON in a caller-owned LoanedBuffer."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphDialect#buildPathQuery(java.util.List)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Contract widening: new abstract method on the preview SPI interface generating dialect-specific query text for ordered hops."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#traverseBreadthFirst(eu.exeris.kernel.spi.graph.model.GraphTraversal)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour: direction and bidirectional are honoured on both backends; a descriptor with INCOMING, BOTH, or bidirectional returns reached nodes according to that orientation."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#streamBfsJson(eu.exeris.kernel.spi.graph.model.GraphTraversal)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour: direction and bidirectional are honoured on both backends; equivalent to streamPathJson over a single hop of the traversal's edge."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.graph.AbstractGraphSessionContractTck",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "TCK contract: refusal cases replace the not-found case; the same-node case uses the three-argument overload. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.graph.AbstractGraphDialectTck",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "TCK contract: new buildPathQuery group exercising multi-hop query generation. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour: the four traversal methods (traversePath, streamPathJson, traverseBreadthFirst, streamBfsJson) refuse under an ambient StorageContext that the binding cannot scope before database I/O, throwing GraphQueryException (EX-GRPH-5002, queryType ISOLATION_SCOPE). Community SQL/PGQ serves SEPARATED_SCHEMA and DEDICATED and refuses SHARED tenant contexts; Community Cypher refuses every tenant context; SQL/PGQ also refuses a tenant context when no PersistenceEngine is bound in the calling scope; system-scope callers are served. No SPI signature change."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.ContractBootstrapStep",
+    "since": "0.13",
+    "adr": "ADR-088",
+    "justification": "Behaviour: when license.manifest.path is unbound and the working directory holds no license-manifest.json, the contract gate reads the classpath; more than one distinct license-manifest.json URL there now fails the boot with ContractBreachException EX-LIC-0001 (rawArgs [\"classpath:license-manifest.json\"], the message listing every URL) instead of reading the first in classpath order. The same URL reported twice by a loader delegation chain counts once. A deployment whose dependency jars carry a second manifest binds license.manifest.path to the one to use. No signature changes; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.ContractBootstrapStep#run",
+    "since": "0.13",
+    "adr": "ADR-089",
+    "justification": "Signature: ContractBootstrapStep.run(ConfigProvider, ClassLoader) returns the new ContractDecision, the contract together with the WorkloadAdmission its drivers consult, instead of the bare ExecutionContract; a caller outside the kernel takes .contract() for the old value. KernelBootstrap binds both in one scope, and its package-private Builder.contractGate takes the same type. The admission is WorkloadAdmission.UNGATED unless a developer key signed the manifest and an EntitlementRequirement is declared. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.contract.EntitlementRequirement#entitlementClass()",
+    "since": "0.13",
+    "adr": "ADR-089",
+    "justification": "Source-breaking for implementers of a preview interface: entitlementClass() is abstract with no default, so no implementation is silently given the weaker class. Every implementer adds one method returning EntitlementClass.COMMERCIAL or ENTERPRISE_PRIVATE; MIGRATION.md gives the step. The gate checks that the signing key may entitle the class of every declared requirement (EX-LIC-0012), and a null class or one identifier under two classes stops the boot with EX-LIC-0008."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.contract.ExecutionEnvironment#requiresEntitlement()",
+    "since": "0.13",
+    "adr": "ADR-089",
+    "justification": "Renamed to isProductionClass() in a preview package. The accessor answers the same set of environments (production, production-load-sim, dr-hot) and no longer decides whether a manifest is needed: a declared requirement needs one in every environment. Callers change the name; MIGRATION.md records the step."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.ContractBootstrapStep",
+    "since": "0.13",
+    "adr": "ADR-089",
+    "justification": "Behaviour: a declared EntitlementRequirement with no license manifest stops the boot with EX-LIC-0005 in every environment, development included, where outside the production classes the gate booted the Community contract with a SOFT warning. A manifest is verified inside the scope of its signing key in every environment, and the declared environment must lie in that scope (EX-LIC-0009); with a requirement the class of every declared requirement must be one the key may entitle (EX-LIC-0012) and the contract must authorize the environment and each capability at the level its rules set, in every environment. A deployment with an entitlement-requiring artifact and no manifest for a non-production environment obtains one; see MIGRATION.md. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.crypto.IssuerKeyResolver#resolve(java.lang.String)",
+    "since": "0.13",
+    "adr": "ADR-088",
+    "justification": "Signature: resolve returns a TrustedIssuerKey, the public key together with its IssuerKeyScope, instead of a bare PublicKey. A resolver written as a lambda returns the key with a scope; IssuerKeyResolver.of keeps its signature and gives each key the unrestricted ENT scope, and ofScoped takes scoped keys. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.crypto.TrustedIssuerKeyStore",
+    "since": "0.13",
+    "adr": "ADR-088",
+    "justification": "Behaviour: exeris-root-2026-k1 is removed from the embedded trust roots and resolves to EX-LIC-0002; the store pins exeris-prod-2026-k1, exeris-dev-2026-k1 and exeris-ent-2026-k1, each with an IssuerKeyScope that LicenseManifestVerifier.verifyScoped enforces (EX-LIC-0009, EX-LIC-0010, EX-LIC-0011, EX-LIC-0013). resolve and trustedKeyIds() are public. No manifest signed with the removed key was issued. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.AbstractLicenseManifestCryptoTck",
+    "since": "0.13",
+    "adr": "ADR-088",
+    "justification": "TCK contract, source-breaking for bindings: verifyManifest takes a TckKeyScope, and a new abstract decide hook runs the contract gate's decision for a declared environment and the requirements of each entitlement class. Tests 5 to 8 refuse an environment, a validity, a workload envelope and a requirement class outside the signing key's scope, and further cases pin the rule levels, the order of the checks and EX-LIC-0005 in every environment. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.flow.AbstractSagaRecoveryTck#createBoundedEngine(int)",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "TCK contract: AbstractSagaRecoveryTck gains BoundedTerminalCatalogFence, which asserts that a completed saga stays completed after a bounded terminal catalog evicts it or the engine restarts (a resubmit is absorbed as terminal, lookupParked is empty, a wake is refused NOT_PARKED). The cases build their engine through the new template method createBoundedEngine(int terminalCatalogMaxSize), which throws UnsupportedOperationException by default, so an existing binding fails them until it implements it; a skip would report green. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.flow.model.FlowSnapshotStore#save(eu.exeris.kernel.spi.flow.model.FlowSnapshot)",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the implementor obligation is stated. save must accept a snapshot in any FlowState, COMPLETED and FAILED_ROLLEDBACK included, and load must return it as written, because under any terminal-catalog bound the engine replaces an instance's row with a COMPLETED snapshot on completion and relies on it as the proof of completion after an eviction or a restart. A store that kept only PARKED rows, or filtered load by state, loses that proof; AbstractDistributedFlowSnapshotStoreTck now checks both. The stability matrix records it as a 0.13 behavioural note on spi.flow. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.flow.model.FlowSnapshotStore#delete(long, long)",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the caller of delete is. The engine no longer calls it on completion; it replaces the row with a COMPLETED snapshot whatever the terminal-catalog bound, and relies on terminal rows as proof an instance finished. delete is the binder's retention tool, and deleting a terminal row lets that instance id run again, so a retention window has to outlast the longest redelivery horizon. A store that already implements delete keeps compiling and behaves as before when the binder calls it. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.flow.FlowEngineConfig#terminalCatalogMaxSize()",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "SPI javadoc, stable spi.flow: the descriptor is unchanged, the stated meaning is narrower. terminalCatalogMaxSize bounds the in-memory terminal catalog only; with persistenceEnabled and a snapshot store bound the engine writes one durable terminal row per finished instance in either mode and never reclaims it, and that row, not the catalog, is the fence after an eviction or a restart. Before, the default unbounded mode deleted the row on completion. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.flow.AbstractSagaRecoveryTck",
+    "since": "0.13",
+    "adr": "ADR-013",
+    "justification": "TCK contract: AbstractSagaRecoveryTck gains the nested case CompletedInstanceAcrossRestart, which asserts that a finished instance on the unbounded createEngine() is not run again, not offered as parked and not woken by an engine rebuilt on the same store, while a fresh instance still runs. RestartUnderLoad is inverted: the resumed fleet's rows end COMPLETED where they were expected to be reclaimed, so a binding whose engine deletes the row on completion now fails it. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream#write(java.lang.foreign.MemorySegment, int)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "SPI javadoc, stable spi.transport: the descriptor is unchanged, the failure contract is stated. A send that fails because the peer ended the stream (a reset, a broken pipe, or a TLS close_notify) throws TransportStreamClosedException (EX-NET-4008, an IllegalStateException) with the EX-NET-4002 transport failure as its cause, where the Community driver threw TransportException (EX-NET-4002) or, after a TLS close_notify, TlsHandshakeException. TransportException stays the failure of a send the peer did not end. A caller that catches IllegalStateException around a send keeps working; one that catches TransportException to detect a disconnect catches TransportStreamClosedException instead and reads the cause through getCause(), as MIGRATION.md says. AbstractTransportStreamTck.PeerEndRefusesWrites pins it after a peer reset, so a binding adopts it. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream#queueWrite(eu.exeris.kernel.spi.memory.LoanedBuffer, int)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "SPI javadoc, stable spi.transport: the descriptor is unchanged, the failure contract is stated, and the buffer stays with the caller on the throw as before. A send that fails because the peer ended the stream (a reset, a broken pipe, or a TLS close_notify) throws TransportStreamClosedException (EX-NET-4008, an IllegalStateException) with the EX-NET-4002 transport failure as its cause, where the Community driver threw TransportException (EX-NET-4002) or, after a TLS close_notify, TlsHandshakeException. TransportException stays the failure of a send the peer did not end. A caller that catches IllegalStateException around a send keeps working; one that catches TransportException to detect a disconnect catches TransportStreamClosedException instead and reads the cause through getCause(), as MIGRATION.md says. AbstractTransportStreamTck.PeerEndRefusesWrites pins it after a peer reset, so a binding adopts it. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.transport.AbstractTransportStreamTck$PeerEndRefusesWrites#writesAfterThePeersResetAreRefusedWithThePeerCode()",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "TCK contract: AbstractTransportStreamTck gains PeerEndRefusesWrites, two cases asserting that after the peer's reset(long) the first failure of a write, and of a queueWrite, is TransportStreamClosedException with EX-NET-4008, with no read before it. A binding whose send reports another failure first, such as TransportException, fails them until it throws the closed signal for a peer that ended the stream; Enterprise transports that bind the suite adopt it. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.AbstractSharedScopeAccessMatrixTck#retagScope(eu.exeris.kernel.spi.security.StorageContext, java.lang.String, java.lang.String)",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: AbstractSharedScopeAccessMatrixTck gains nine cells that pin the shared-scope tag a written row carries: an insert tagged with a scope the request does not hold is refused, an insert tagged with the published scope or untagged is accepted, an unscoped request cannot write a scoped row, a re-tag to a scope the request does not hold is refused, a re-tag to the published scope is accepted, and an owner may un-share its own row from a request that lacks the scope. The re-tag cells go through the new template method retagScope(StorageContext, String, String), which throws UnsupportedOperationException by default, so an existing binding fails them until it implements it and installs a WITH CHECK that pins the tag; a skip would report green. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.persistence.PersistenceEngine#registerInterceptor(eu.exeris.kernel.spi.persistence.ConnectionInterceptor)",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "Behaviour on the Community binding, and SPI javadoc on stable spi.persistence: the descriptor is unchanged, the refusal is stated. An implementation MAY refuse to install its row-level-security interceptor when the connected database role bypasses row-level security (SUPERUSER or BYPASSRLS), by throwing PersistenceProviderException EX-PERS-5009; the Community engine does so on PostgreSQL unless persistence.rlsAllowBypassRole is set, and refuses with EX-PERS-5001 when the role probe cannot run. A deployment that registers the interceptor as a bypassing role stops booting, as MIGRATION.md says. The SPI compatibility gate diffs signatures only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.AbstractRlsBypassRoleCheckTck",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: a new suite, AbstractRlsBypassRoleCheckTck, asserting that a binding which installs its row-level-security interceptor refuses a SUPERUSER or BYPASSRLS role with EX-PERS-5009 and boots an ordinary role, or a bypassing role with the operator's consent. A binding implements roleName, bootWithRlsAs and tenantContext; an Enterprise persistence binding that installs such an interceptor adopts it. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportConfig",
+    "since": "0.13",
+    "adr": "ADR-071",
+    "justification": "SPI record, stable spi.transport: TransportConfig gains the component maxQueuedWriteBytes after maxActiveStreams, the per-stream outbound bound (default 256 KiB via DEFAULT_MAX_QUEUED_WRITE_BYTES, -1 via UNBOUNDED_QUEUED_WRITE_BYTES for none, 0 and other negatives refused at construction). The canonical constructor descriptor changes from nine parameters to ten. The 0.12 nine-argument descriptor is kept as an explicit overload that applies the default, and the eight-argument bridge delegates with the default as well, so code compiled or written against either still links and compiles. A record deconstruction pattern or reflection over the component list sees a different shape; no gate reports that. Binary-additive."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream#queueWrite(eu.exeris.kernel.spi.memory.LoanedBuffer, int)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "Behaviour and implementor obligation, stable spi.transport: the descriptor is unchanged. queueWrite never waits for the peer: it returns once the loan is in the stream's outbound order, and the one wait it may make is for the connection to finish being established, bounded by the driver's deadline and reported as EX-NET-4003. The loan is released once its bytes have left the stream's outbound queue, or when the stream ends, and not before, so the release is the caller's backpressure signal. A transport whose queueWrite sends synchronously, or releases the loan before its bytes leave the queue, no longer conforms; AbstractTransportStreamTck.QueueWriteDoesNotWait fails it."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream#write(java.lang.foreign.MemorySegment, int)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "Behaviour, stable spi.transport: the descriptor is unchanged. write blocks the calling thread while the stream holds TransportConfig#maxQueuedWriteBytes() bytes its peer has not taken, until enough drain or the stream ends, and never blocks an event-loop thread or while holding a monitor; with UNBOUNDED_QUEUED_WRITE_BYTES it does not block for backpressure. The Community stream now honours the blocking this method already documented, so a caller that holds a lock across write orders other senders behind a slow peer, and a write that throws after blocking may already have queued a prefix of its source."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.transport.TransportStream",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "SPI javadoc, stable spi.transport: the class-level implementor obligation of a terminal wake is stated. Every transition that ends the stream (close, reset, the parent connection's close, a send failure that ends it, the peer's reset, a teardown by the transport) wakes every thread blocked in read or write on it; a woken read returns -1 while it can still report end of stream and otherwise throws the closed-stream signal, and a woken write throws it. AbstractTransportStreamTck has pinned this since the terminal-wake cases landed; no earlier entry recorded it."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.transport.AbstractTransportStreamTck",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "TCK contract: AbstractTransportStreamTck gains QueueWriteDoesNotWait, ungated, which fails a binding whose queueWrite waits for a peer that does not read or releases a loan before its bytes leave the stream, and WriteBackpressure, behind the new hook supportsWriteBackpressure() (default false), which asserts that write blocks at a bounded outbound, resumes in order when the peer drains and is released by the stream's own close() with EX-NET-4009 and by the peer's reset() with EX-NET-4008. Source-compatible: the hook has a default. A binding whose queueWrite waits fails the ungated cases until it queues without waiting."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.AbstractSharedScopeAccessMatrixTck#tenantlessOwner()",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: AbstractSharedScopeAccessMatrixTck gains four cells asserting that a read and a write from a context that declares no tenant fail with PersistenceProviderException (EX-PERS-5003), each next to the same operation under a tenant, which must succeed. The write cell goes through the new template method tenantlessOwner(), which names the owner-column value an unpublished tenant key would match and throws UnsupportedOperationException by default, so an existing binding fails the cell until it overrides it and installs a policy whose tenant arm raises on an absent key; a skip would report green. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.persistence.PersistenceIsolationLeakTck",
+    "since": "0.13",
+    "adr": "ADR-012",
+    "justification": "TCK contract: PersistenceIsolationLeakTck gains two cases asserting that a read and a write from a context that declares no tenant, through the existing readSentinelRows and writeSentinelRow template methods, fail with PersistenceProviderException (EX-PERS-5003), each followed by the same operation under a tenant, which must succeed. A binding whose policy returns an empty result or admits a row owned by the empty tenant fails them until its tenant arm raises on an absent key. No template method is added. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.http.AbstractHttpStreamExchangeTck#egressCreditWindowBytes()",
+    "since": "0.13",
+    "adr": "ADR-043",
+    "justification": "TCK contract: AbstractHttpStreamExchangeTck gains the Backpressure case emitOfAnEventLargerThanTheCreditWindowCompletes, which emits one event whose encoded length is one byte past the binding's egress credit window and requires the event to arrive intact, followed by the end of the stream, without the emitter parking. The case sizes the event through the new hook egressCreditWindowBytes(), which defaults to 65536; a binding that runs a smaller window overrides it, and one that runs a larger window than the default still passes, because the event it builds then fits. An existing binding whose emit waits for credit that cannot return fails the case until it admits an event larger than the window when nothing is outstanding. Source-compatible; no SPI class changes. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.community.security.CommunityOidcIdentityProvider#overJwksEndpoint(java.net.URI, java.util.Map, eu.exeris.kernel.spi.security.identity.KeyRotationPolicy, java.time.Clock, java.lang.String, java.lang.String)",
+    "since": "0.13",
+    "adr": "ADR-040",
+    "justification": "Behaviour on the Community OIDC driver (ADR-040 Amendment A1): a fetched JWKS entry is installed only when its use is absent or sig, its alg is absent or the one its key type verifies (RS256 for an RSA key, EdDSA for an Ed25519 key), and no other installed entry publishes its kid; each installed key verifies only that algorithm, and an Ed25519 key now verifies EdDSA tokens. Before 0.13 use and alg were ignored and the last of two entries with one kid won, so an RSA key declaring RSA-OAEP or RS512, a key with use enc, and a kid two installable keys share verified RS256 tokens that are now denied with EX-SEC-2002. No signature changes: the static RSAPublicKey map constructors and the initialKeys parameter keep their types and pin each key to RS256. Community class, so this entry is a record for the release notes and is not read by the SPI compatibility gate."
   }
 ]

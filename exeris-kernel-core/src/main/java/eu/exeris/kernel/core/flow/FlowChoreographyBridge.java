@@ -27,26 +27,37 @@ import java.util.Objects;
  * <p>The {@code payload} is closed in all branches, including {@code Ignore} and
  * exception paths, via the try-with-resources block.
  *
+ * <h2>Repeated Start</h2>
+ * <p>A {@code Start} for an instance the engine already holds is absorbed, not refused: delivery
+ * is at least once, so a redelivered event is expected. The bridge reports the absorbed case through
+ * {@link ChoreographyStartIgnoredEvent} and does not throw, because a throwing handler would make a
+ * broker-backed binding redeliver the same event.
+ *
  * @since 0.5
  */
 final class FlowChoreographyBridge implements EventHandler {
 
     private final FlowChoreographyMapper mapper;
     private final FlowScheduler scheduler;
+    private final CoreFlowRuntime runtime;
 
     /**
-     * Wires this bridge to the mapper that decides what an incoming event means for a saga and the
-     * scheduler that carries out that decision.
+     * Wires this bridge to the mapper that decides what an incoming event means for a saga and to the
+     * engine that carries out that decision.
      *
      * @param mapper    translates an event descriptor into a {@link ChoreographyDecision}; must not
      *                  be {@code null}
-     * @param scheduler receives the resulting {@code wake} or {@code schedule} call; must not be
-     *                  {@code null}
-     * @throws NullPointerException if {@code mapper} or {@code scheduler} is {@code null}
+     * @param scheduler receives the resulting {@code wake} call; must not be {@code null}. In the
+     *                  engine this is {@code runtime.scheduler()}
+     * @param runtime   receives the resulting {@code Start}, and reports what it did with it; must
+     *                  not be {@code null}
+     * @throws NullPointerException if any argument is {@code null}
      */
-    /* default */ FlowChoreographyBridge(FlowChoreographyMapper mapper, FlowScheduler scheduler) {
+    /* default */ FlowChoreographyBridge(
+            FlowChoreographyMapper mapper, FlowScheduler scheduler, CoreFlowRuntime runtime) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.runtime = Objects.requireNonNull(runtime, "runtime");
     }
 
     /**
@@ -87,7 +98,7 @@ final class FlowChoreographyBridge implements EventHandler {
                     // "looks migrated, is not drivable" failure the ADR names. Threading a
                     // captured source in belongs with the rest of the choreography path.
                     long timeoutNanos = System.nanoTime() + plan.timeoutDurationNanos();
-                    scheduler.schedule(
+                    CoreFlowRuntime.ScheduleOutcome outcome = runtime.submitStart(
                             plan,
                             new HeapFlowContext(
                                     most,
@@ -96,6 +107,13 @@ final class FlowChoreographyBridge implements EventHandler {
                                     0,
                                     FlowState.CREATED,
                                     timeoutNanos));
+                    // A Start for an instance the engine already holds is the case an operator needs
+                    // to see; a run that never launched held no instance and is not reported here.
+                    if (outcome.absorbed()) {
+                        ChoreographyStartIgnoredEvent.emit(
+                                runtime.engineName(), most, least,
+                                runtime.existingState(new FlowKey(most, least), outcome));
+                    }
                 }
                 case ChoreographyDecision.Ignore() -> { /* intentional no-op */ }
             }

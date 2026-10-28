@@ -9,6 +9,7 @@ import javax.annotation.processing.Filer;
 import javax.annotation.processing.Messager;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
+import javax.annotation.processing.SupportedOptions;
 import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.AnnotationMirror;
@@ -19,9 +20,13 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.tools.Diagnostic;
+import javax.tools.FileObject;
 import javax.tools.JavaFileObject;
+import javax.tools.StandardLocation;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -49,12 +54,24 @@ import java.util.TreeMap;
  *   <li>{@code matchIsAll(int methodId)} — boolean discriminator so the runtime
  *       picks the right primitive comparison.</li>
  *   <li>{@code methodCount()} — number of annotated entry points compiled.</li>
- *   <li>{@code methodNames()} — ordered list of fully-qualified method
- *       identifiers (for diagnostics; never on the hot path).</li>
+ *   <li>{@code methodName(int methodId)} — fully-qualified method identifier
+ *       for diagnostics (never on the hot path).</li>
+ *   <li>{@code roleNames()} — set of all known role names.</li>
  *   <li>{@code roleNameToBit(String)} — build-time role-name → bit lookup so
  *       the runtime can resolve principal claim strings against the same
  *       canonical assignment used at compile time.</li>
  * </ul>
+ *
+ * <h2>Native-image metadata</h2>
+ * <p>When annotated methods exist, the processor emits reachability metadata for
+ * GraalVM native image at
+ * {@code META-INF/native-image/eu.exeris.kernel.security.generated/role-check-registry/reachability-metadata.json}
+ * (default path, configurable via the {@value #NATIVE_IMAGE_METADATA_DIR_OPTION}
+ * option). The metadata registers {@value #GENERATED_CLASS_FQN} and the five static
+ * accessors reflectively bound by {@code GeneratedRoleRegistryLoader}:
+ * {@code requiredAny(int)}, {@code requiredAll(int)}, {@code matchIsAll(int)},
+ * {@code methodCount()}, and {@code roleNameToBit(String)}. The registered names
+ * must stay in sync with {@code GeneratedRoleRegistryLoader}'s binding.
  *
  * <h2>Determinism</h2>
  * <p>Method IDs are assigned in alphabetical order of the fully-qualified
@@ -73,6 +90,7 @@ import java.util.TreeMap;
  */
 @SupportedAnnotationTypes(RequiresRoleProcessor.REQUIRES_ROLE_FQN)
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
+@SupportedOptions(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_DIR_OPTION)
 public final class RequiresRoleProcessor extends AbstractProcessor {
 
     /** Fully-qualified name of the SPI annotation processed by this implementation. */
@@ -83,6 +101,42 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
 
     /** Reserved range for kernel system roles (bits {@code [0, 8)}). Mirrors {@code KernelRoles}. */
     public static final int SYSTEM_ROLE_BIT_LIMIT = 8;
+
+    /**
+     * Processor option to override the output directory for reachability-metadata.json.
+     * Must be a relative path under {@code META-INF/native-image/} with no empty,
+     * {@code '.'}, or {@code '..'} segments.
+     */
+    public static final String NATIVE_IMAGE_METADATA_DIR_OPTION =
+            "exeris.requiresrole.nativeImageMetadataDir";
+
+    /** Default reachability metadata directory under {@code CLASS_OUTPUT}. */
+    public static final String DEFAULT_NATIVE_IMAGE_METADATA_DIR =
+            "META-INF/native-image/eu.exeris.kernel.security.generated/role-check-registry";
+
+    /** Reachability metadata file name. */
+    public static final String NATIVE_IMAGE_METADATA_FILE =
+            "reachability-metadata.json";
+
+    private static final String NATIVE_IMAGE_METADATA_DIR_PREFIX =
+            "META-INF/native-image/";
+
+    private static final String REACHABILITY_METADATA_JSON = """
+            {
+              "reflection": [
+                {
+                  "type": "eu.exeris.kernel.security.generated.RoleCheckRegistry",
+                  "methods": [
+                    { "name": "requiredAny", "parameterTypes": ["int"] },
+                    { "name": "requiredAll", "parameterTypes": ["int"] },
+                    { "name": "matchIsAll", "parameterTypes": ["int"] },
+                    { "name": "methodCount", "parameterTypes": [] },
+                    { "name": "roleNameToBit", "parameterTypes": ["java.lang.String"] }
+                  ]
+                }
+              ]
+            }
+            """;
 
     private static final String GENERATED_PACKAGE = "eu.exeris.kernel.security.generated";
     private static final String GENERATED_SIMPLE_NAME = "RoleCheckRegistry";
@@ -235,6 +289,61 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
         try (PrintWriter writer = new PrintWriter(source.openWriter())) {
             writeRegistry(writer);
         }
+        emitReachabilityMetadata(filer);
+    }
+
+    private void emitReachabilityMetadata(Filer filer) {
+        String dir = resolveMetadataDir();
+        if (dir == null) {
+            return;
+        }
+        String resourcePath = dir + "/" + NATIVE_IMAGE_METADATA_FILE;
+        try {
+            FileObject resource = filer.createResource(
+                    StandardLocation.CLASS_OUTPUT, "", resourcePath);
+            try (OutputStream out = resource.openOutputStream()) {
+                out.write(REACHABILITY_METADATA_JSON.getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (IOException ex) {
+            processingEnv.getMessager().printMessage(
+                    Diagnostic.Kind.ERROR,
+                    "RequiresRoleProcessor: failed to write " + resourcePath
+                            + " — " + ex.getMessage());
+        }
+    }
+
+    private String resolveMetadataDir() {
+        String option = processingEnv.getOptions().get(NATIVE_IMAGE_METADATA_DIR_OPTION);
+        if (option == null) {
+            return DEFAULT_NATIVE_IMAGE_METADATA_DIR;
+        }
+        if (option.startsWith(NATIVE_IMAGE_METADATA_DIR_PREFIX)) {
+            String rest = option.substring(NATIVE_IMAGE_METADATA_DIR_PREFIX.length());
+            while (rest.endsWith("/")) {
+                rest = rest.substring(0, rest.length() - 1);
+            }
+            if (isValidMetadataDirRest(rest)) {
+                return NATIVE_IMAGE_METADATA_DIR_PREFIX + rest;
+            }
+        }
+        processingEnv.getMessager().printMessage(
+                Diagnostic.Kind.ERROR,
+                "RequiresRoleProcessor option " + NATIVE_IMAGE_METADATA_DIR_OPTION
+                        + " must be a relative path under META-INF/native-image/ with no empty, '.' or '..' segment, but was: "
+                        + option);
+        return null;
+    }
+
+    private static boolean isValidMetadataDirRest(String rest) {
+        if (rest.isEmpty() || rest.contains("\\")) {
+            return false;
+        }
+        for (String segment : rest.split("/", -1)) {
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void assignApplicationBits() {

@@ -4,12 +4,15 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
+
 import java.util.Comparator;
 import java.util.ServiceLoader;
 import java.util.function.ToIntFunction;
 
 /**
- * Picks one provider out of everything {@link ServiceLoader} finds.
+ * Picks one provider out of everything {@link ServiceLoader} finds, delegating to
+ * {@link BootstrapProviderSelector} so the community subsystems rank providers exactly as the core does.
  *
  * <p>Highest {@code priority()} wins; ties break on fully-qualified class name so two providers at the
  * same tier resolve identically on every JVM and every classpath ordering. That determinism is the
@@ -33,11 +36,7 @@ final class CommunityProviderDiscovery {
      * @return the selected provider, or {@code null}
      */
     /* default */ static <T> T highestPriority(Class<T> contract, ToIntFunction<T> priority) {
-        return ServiceLoader.load(contract)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(priority)
-                        .thenComparing(provider -> provider.getClass().getName()))
+        return BootstrapProviderSelector.loadHighestPriority(contract, Comparator.comparingInt(priority))
                 .orElse(null);
     }
 }

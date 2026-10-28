@@ -11,13 +11,14 @@ import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
+import eu.exeris.kernel.tck.support.PriorityRivals;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.Comparator;
+import java.util.List;
 import java.util.ServiceLoader;
 import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,9 +38,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   <li>{@code authenticate(LoanedBuffer)} returns a fully-populated {@link AuthenticationResult}</li>
  *   <li>{@code authenticate()} with invalid token throws {@link SecurityAuthenticationException}</li>
  *   <li>{@code systemStorageContext()} returns a valid, non-null context</li>
- *   <li>ServiceLoader discovery selects the highest-priority provider</li>
+ *   <li>The binding's provider selection returns the highest-priority provider among staged rivals</li>
  *   <li>An unsecured ({@code alg=none}) or algorithm-confused (symmetric MAC keyed on an
  *       asymmetric public key) token is denied, never accepted (algorithm downgrade defense)</li>
+ *   <li>A token under an algorithm its key was not pinned to is denied: the algorithm is fixed
+ *       by the key that verifies, so a header may only agree with it, never choose it
+ *       ({@link #createEdDsaTokenUnderRsaKidBuffer()} and its siblings)</li>
  *   <li>A token with an unknown or missing {@code kid}, an expired {@code exp}, a wrong
  *       {@code iss}/{@code aud}, or a tampered signature is denied</li>
  *   <li>An isolation strategy claim resolves to the matching {@link StorageContext}: absent
@@ -96,6 +100,23 @@ public abstract class AbstractSecurityProviderTck {
      * @return a configured provider instance
      */
     protected abstract SecurityProvider createProvider();
+
+    /**
+     * Runs the selection the binding's kernel applies to discovered {@code SecurityProvider}s over exactly
+     * {@code candidates}, and returns the provider that selection picks.
+     *
+     * <p>Delegate to the production selection routine, not to a reduction written in the binding:
+     * the precedence contract is judged against whatever this method returns.
+     *
+     * @param candidates the providers to choose between, in discovery order
+     * @return the selected provider
+     * @throws UnsupportedOperationException by default, so a binding that does not route the candidates
+     *         through its kernel's selection fails the precedence contract rather than skipping it
+     */
+    protected SecurityProvider selectAmong(List<SecurityProvider> candidates) {
+        throw new UnsupportedOperationException(
+                "Override selectAmong to route the candidates through the kernel's provider selection");
+    }
 
     /**
      * Creates a {@link LoanedBuffer} containing a valid, parseable token.
@@ -248,6 +269,77 @@ public abstract class AbstractSecurityProviderTck {
      *         invalid-token default for bindings that cannot mint one
      */
     protected LoanedBuffer createAlgConfusionTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding a valid, correctly signed token whose header names
+     * {@code EdDSA} and whose {@code kid} resolves to an Ed25519 verification key.
+     * The provider MUST accept it.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createValidTokenBuffer()} for bindings that verify no EdDSA
+     * token; a binding that accepts EdDSA SHOULD override with a real one.
+     *
+     * @return a loaned buffer holding an acceptable EdDSA token, or the valid-token default
+     */
+    protected LoanedBuffer createEdDsaValidTokenBuffer() {
+        return createValidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding an EdDSA token, signed by an Ed25519 key, presented
+     * under the {@code kid} of a key that verifies a different algorithm (an RSA key).
+     * The provider MUST deny it — the key decides the algorithm, so a header cannot move a token
+     * onto another key's algorithm.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding an EdDSA token under an RSA key's {@code kid}, or the
+     *         invalid-token default
+     */
+    protected LoanedBuffer createEdDsaTokenUnderRsaKidBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding an RS256 token presented under the {@code kid} of an
+     * Ed25519 key. The provider MUST deny it.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding an RS256 token under an Ed25519 key's {@code kid}, or the
+     *         invalid-token default
+     */
+    protected LoanedBuffer createRs256TokenUnderEdDsaKidBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding a token signed by an Ed25519 key, under that key's
+     * {@code kid}, whose header names a different algorithm (RS256) than the key's.
+     * The provider MUST deny it — a header that disagrees with the key's algorithm is never
+     * reconciled in the header's favour.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding an Ed25519-signed token whose header names RS256, or the
+     *         invalid-token default
+     */
+    protected LoanedBuffer createEdDsaSignedTokenNamingRs256Buffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} holding a token signed by an RSA key, under that key's own
+     * {@code kid}, with an RSA algorithm the key is not pinned to (RS512). The signature is
+     * valid for that algorithm; the provider MUST still deny it.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding a validly signed RSA token under an unpinned algorithm, or
+     *         the invalid-token default
+     */
+    protected LoanedBuffer createRsaTokenUnderUnpinnedAlgorithmBuffer() {
         return createInvalidTokenBuffer();
     }
 
@@ -778,6 +870,57 @@ public abstract class AbstractSecurityProviderTck {
     }
 
     // =========================================================================
+    // Per-key algorithm pin
+    // =========================================================================
+
+    @Nested
+    @DisplayName("authenticate() — the key's algorithm, not the header's")
+    class PerKeyAlgorithmPinContract {
+
+        @Test
+        @DisplayName("accepts an EdDSA token under the kid of its Ed25519 key")
+        void acceptsEdDsaTokenUnderItsOwnKey() {
+            try (LoanedBuffer token = createEdDsaValidTokenBuffer()) {
+                AuthenticationResult result = provider.authenticate(token);
+                assertThat(result).isNotNull();
+                assertThat(result.principal()).isNotNull();
+            }
+        }
+
+        @Test
+        @DisplayName("denies an EdDSA token presented under an RSA key's kid")
+        void deniesEdDsaTokenUnderRsaKid() {
+            assertDenied(createEdDsaTokenUnderRsaKidBuffer());
+        }
+
+        @Test
+        @DisplayName("denies an RS256 token presented under an Ed25519 key's kid")
+        void deniesRs256TokenUnderEdDsaKid() {
+            assertDenied(createRs256TokenUnderEdDsaKidBuffer());
+        }
+
+        @Test
+        @DisplayName("denies a token whose header names another algorithm than its Ed25519 key's")
+        void deniesHeaderNamingAnotherAlgorithmThanItsEd25519Key() {
+            assertDenied(createEdDsaSignedTokenNamingRs256Buffer());
+        }
+
+        @Test
+        @DisplayName("denies an RSA-signed token under an algorithm its key is not pinned to")
+        void deniesRsaTokenUnderUnpinnedAlgorithm() {
+            assertDenied(createRsaTokenUnderUnpinnedAlgorithmBuffer());
+        }
+
+        private void assertDenied(LoanedBuffer buffer) {
+            try (LoanedBuffer token = buffer) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+    }
+
+    // =========================================================================
     // systemStorageContext()
     // =========================================================================
 
@@ -836,20 +979,22 @@ public abstract class AbstractSecurityProviderTck {
                     .isGreaterThanOrEqualTo(1);
         }
 
+        /**
+         * Stages a rival one priority step above and one below the provider under test, in both
+         * discovery orders, and requires the binding's selection to return the highest by identity.
+         */
         @Test
         @DisplayName("Highest-priority provider wins selection")
         void highestPriorityWins() {
-            SecurityProvider selected = ServiceLoader.load(SecurityProvider.class)
-                    .stream()
-                    .map(ServiceLoader.Provider::get)
-                    .max(Comparator.comparingInt(SecurityProvider::priority))
-                    .orElseThrow();
-            // This computes the max directly over the classpath rather than exercising any
-            // dispatcher, so it only pins a floor: no provider visible to the ServiceLoader
-            // outranks the one under test. It does not assert that the max-priority provider
-            // found is this test's own provider instance.
-            assertThat(selected.priority())
-                    .isGreaterThanOrEqualTo(provider.priority());
+            SecurityProvider higher = PriorityRivals.rival(
+                    SecurityProvider.class, Math.addExact(provider.priority(), 1), "tck-higher-priority");
+            SecurityProvider lower = PriorityRivals.rival(
+                    SecurityProvider.class, Math.subtractExact(provider.priority(), 1), "tck-lower-priority");
+
+            assertThat(selectAmong(List.of(lower, provider, higher))).as("higher-priority rival listed last").isSameAs(higher);
+            assertThat(selectAmong(List.of(higher, provider, lower))).as("higher-priority rival listed first").isSameAs(higher);
+            assertThat(selectAmong(List.of(lower, provider))).as("provider under test listed last").isSameAs(provider);
+            assertThat(selectAmong(List.of(provider, lower))).as("provider under test listed first").isSameAs(provider);
         }
     }
 

@@ -57,13 +57,14 @@ It initializes before any other subsystem (including Memory) and provides:
   slab allocations based on detected CPU cache line widths (L1/L2), eliminating false sharing without
   manual tuning.~~ **Not implemented.** No CPU cache-line-width detection and no config-driven slab
   sizing on that basis exists anywhere in `exeris-kernel-spi`, `-core` or `-community`.
-- **Deterministic T-Minus 0 — API exists, nothing calls it today:** `ConfigProviderException`
+- **Deterministic T-Minus 0 — wired for one key only:** `ConfigProviderException`
   ships typed factories for exactly this (`missingProperty()` → `EX-CFG-1001`, `typeMismatch()` →
   `EX-CFG-1002`), and `Dynamic.required()` is declared on every `@Dynamic` field for the same intent.
-  But grepping the whole repository for `missingProperty(`, `typeMismatch(`, `EX_CFG_1001` and
-  `EX_CFG_1002` turns up no call site outside `ConfigProvider.java` itself (and the error-code /
-  mapper-registry tests, which exercise the codes generically, not through a real missing-key path);
-  `.required()` is likewise never read anywhere. Nothing today aborts bootstrap through this specific
+  Only `typeMismatch()` has a live call site: `ContractBootstrapStep` raises `EX-CFG-1002` when the
+  `environment` key names none of the six environment classes. Grepping the whole repository for
+  `missingProperty(` and `EX_CFG_1001` turns up no call site outside `ConfigProvider.java` itself (and
+  the error-code / mapper-registry tests, which exercise the codes generically, not through a real
+  missing-key path); `.required()` is never read anywhere. Nothing aborts bootstrap through this
   mechanism because a `REQUIRED` key is absent — a subsystem that needs one enforces it itself, with
   its own exception type (`CommunityStorageSubsystem`'s `BlobStorageException.missingConfiguration`,
   for example, not `ConfigProviderException`).
@@ -75,8 +76,8 @@ It initializes before any other subsystem (including Memory) and provides:
   redacted or truncated by the caller before emission. Raw secrets, credentials, or tokens must never reach the
   binary telemetry dump. See `KernelErrorCodes.EX_CFG_1002` for the canonical enforcement comment — this
   redaction logic (a private `sanitizeConfigValue` helper inside `ConfigProviderException`) is real and
-  runs whenever `typeMismatch(...)` is called, even though — per the point above — nothing in this
-  repository currently calls it from a live missing/malformed key at bootstrap.
+  runs whenever `typeMismatch(...)` is called; its only live caller is the `environment` check named in the
+  point above.
 
 ---
 
@@ -121,8 +122,8 @@ A file change triggers an atomic state reload in Core without a JVM restart — 
 > `Flexible Constructor` returns nothing. `ConfigProviderException`'s constructor is a plain
 > `super(errorCode, message, cause, rawArgs)` call with no statements ahead of it, and no class in
 > the config subsystem performs pre-`super()` validation of any kind. Combined with the
-> "Deterministic T-Minus 0" finding above (nothing currently throws `EX-CFG-1001`/`EX-CFG-1002` from
-> a real missing/malformed key), this whole subsection describes an intended validation strategy that
+> "Deterministic T-Minus 0" finding above (nothing throws `EX-CFG-1001`, and `EX-CFG-1002` is thrown
+> only for a malformed `environment`), this whole subsection describes an intended validation strategy that
 > was never built, not a delivered mechanism. Left here as a record of intent rather than deleted
 > outright — a future implementation of the required-key check above is the natural place to either
 > build this or drop the idea.
@@ -141,8 +142,8 @@ A file change triggers an atomic state reload in Core without a JVM restart — 
 2. Provide type-safe extraction (`get()`, `getInt()`, `getBoolean()`) via SPI.
 3. Watch the filesystem and atomically update fields annotated `@Dynamic`.
 4. ~~Abort bootstrap with `EX-CFG-1001` if any `REQUIRED` property is absent at T-minus 0.~~ Not
-   today — see "Deterministic T-Minus 0" under Core Philosophy above; the mechanism exists in the SPI
-   but nothing in this repository calls it.
+   today — see "Deterministic T-Minus 0" under Core Philosophy above; the factory exists in the SPI
+   but nothing in this repository calls `missingProperty`.
 
 **What Config DOES NOT DO:**
 
@@ -168,11 +169,12 @@ A file change triggers an atomic state reload in Core without a JVM restart — 
 it is a strict caller contract. See `KernelErrorCodes.EX_CFG_1002` Javadoc for the canonical CWE-532 enforcement
 comment.
 
-> **`EX-CFG-1001` / `EX-CFG-1002` are defined and ready, not yet thrown.** As detailed under "Deterministic
-> T-Minus 0" above, no call site in this repository currently constructs a `ConfigProviderException` with
-> either code — the "Fatal halt at T-0" row describes the contract a caller gets by using the typed factory,
-> not something this kernel currently does on its own for any key. `EX-CFG-1003` and `EX-CFG-1004` are real:
-> both are emitted by `DynamicConfigFileWatcher` today.
+> **`EX-CFG-1001` is defined and ready, not yet thrown; `EX-CFG-1002` is thrown for one key.** As detailed
+> under "Deterministic T-Minus 0" above, no call site in this repository constructs a
+> `ConfigProviderException` with `EX-CFG-1001`, and the only one that constructs it with `EX-CFG-1002` is
+> `ContractBootstrapStep`, for the `environment` key. The "Fatal halt at T-0" rows describe the contract a
+> caller gets by using the typed factory, not something this kernel does on its own for any other key.
+> `EX-CFG-1003` and `EX-CFG-1004` are real: both are emitted by `DynamicConfigFileWatcher`.
 
 ---
 
@@ -262,6 +264,11 @@ A read is one plain `volatile` load; a reload is one plain `volatile` store swap
 acquire/release scheme a manually-managed `VarHandle` field would use. The record's immutability is what makes
 the single-reference swap safe: a reader never observes a half-updated object.
 
+The registry matches a changed `.properties` line on the exact registered key (`persistence.admission` here,
+a bare prefix), and the callback re-resolves through the same `ConfigProvider`. The Community provider reads
+system properties and environment variables only, so a file edit under the config directory cannot change
+what `CommunityAdmissionConfig` reads.
+
 ### 4. No Classpath Secrets — Vault Injection via ScopedValue (Explicit Zeroing)
 
 ```java
@@ -295,8 +302,8 @@ not listed here.
 > **Not exhaustive.** A `configProvider.get*(...)` grep across this repository turns up several
 > dozen real, code-read keys this table does not list — most of `http.*` (`h2cUpgradeEnabled`,
 > `maxHeaderBlockSize`, `maxResponseBodyBytes`, …), most of
-> `persistence.*` (`connectionTimeoutMs`, `maxLifetimeMs`, `perTenantPooling`, `rlsEnabled`,
-> `useTls`, `pool.warmup.*`, …), `event.*`, `flow.*`, `graph.*`, `scheduling.schedulerName`,
+> `persistence.*` (`perTenantPooling`, `rlsEnabled`,
+> `useTls`, `maxTenantPools`, `minIdleConnections`, `pool.warmup.*`, …), `event.*`, `flow.*`, `graph.*`, `scheduling.schedulerName`,
 > `transport.auto.{minReactors,maxReactors,reserveCores}`, and the plain `network.certPath` /
 > `network.keyPath` pair `transport.certPath` / `transport.keyPath` fall back to. Each of those
 > subsystems is its own `docs/subsystems/*.md`; this table catalogues the keys that live in or
@@ -312,6 +319,8 @@ not listed here.
 | Key                                                | Type      | Default             | Reload       | Status      | Description                                              |
 |:---------------------------------------------------|:----------|:-------------------:|:------------:|:-----------:|:---------------------------------------------------------|
 | `globalMemoryMb`                                   | `long`    | `512`                | ❌ IMMUTABLE | ✅ WIRED    | Total off-heap arena budget (`KernelSettings.globalMemoryMb`) |
+| `environment`                                      | `string`  | `development`       | ❌ IMMUTABLE | ✅ WIRED    | The environment the kernel declares: `development`, `staging`, `production`, `production-load-sim`, `dr-cold` or `dr-hot`; any other value fails the boot with `EX-CFG-1002`. It names where the kernel runs and **does not lift the manifest requirement**: a commercial artifact (an `EntitlementRequirement` on the classpath) needs a license manifest in every environment, and the declared environment must lie in the scope of the key that signed it (`EX-LIC-0009`). The kernel profile plays no part. System property `-Dexeris.environment`, variable `EXERIS_ENVIRONMENT` |
+| `license.manifest.path`                            | `string`  | *(none)*            | ❌ IMMUTABLE | ✅ WIRED    | The license manifest file. When bound, only this file is read, and a blank, missing or unreadable path fails the boot with `EX-LIC-0001`; when unbound, `license-manifest.json` in the working directory, then the classpath, which may hold at most one. System property `-Dexeris.license.manifest.path`, variable `EXERIS_LICENSE_MANIFEST_PATH` |
 | `network.port`                                     | `int`     | `8443`              | ❌ IMMUTABLE | ✅ WIRED    | Data-plane TCP/QUIC port (`NetworkSettings.port`)        |
 | `network.bufferSize`                               | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | Per-connection off-heap buffer size in bytes (`NetworkSettings.bufferSize`) |
 | `network.nativeTransportPreferred`                 | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Hint to prefer native async I/O transport (`NetworkSettings.nativeTransportPreferred`) |
@@ -320,8 +329,9 @@ not listed here.
 | `persistence.jdbcUrl`                              | `string`  | `jdbc:postgresql://localhost:5432/exeris` | ❌ IMMUTABLE | ✅ WIRED | JDBC connection URL (`PersistenceSettings.jdbcUrl`) |
 | `persistence.username`                             | `string`  | `exeris`            | ❌ IMMUTABLE | ✅ WIRED    | Database user — **SECRET**, redacted in telemetry        |
 | `persistence.password`                             | `string`  | `""`                | ❌ IMMUTABLE | ✅ WIRED    | Database password — **SECRET**, redacted in telemetry    |
-| `persistence.maxPoolSize`                          | `int`     | adaptive when unset (`max(min(cores × 2, 32), 2)`) | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections; explicit config overrides the adaptive Community bootstrap sizing |
+| `persistence.maxPoolSize`                          | `int`     | adaptive when unset (`max(min(cores × 2, 32), 2)`) | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections (alias `persistence.pool.maxSize`); explicit config overrides the adaptive Community bootstrap sizing, and a value below `2` is refused |
 | `persistence.runMigrations`                        | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Run schema migrations on startup (`PersistenceSettings.runMigrations`) |
+| `persistence.rlsAllowBypassRole`                   | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Consent to a database role that bypasses row-level security (ADR-012 §4c.4). The Community engine checks the role when `RlsConnectionInterceptor` is registered and, on PostgreSQL, refuses a `SUPERUSER` or `BYPASSRLS` role with `EX-PERS-5009`; with the key set it boots instead, logging an ERROR line and emitting the JFR event `eu.exeris.kernel.persistence.RlsBypassRole` on every boot. A probe that cannot run is refused with `EX-PERS-5001` whatever the key says. Not checked on other databases. Limits: a later `SET ROLE` is not observed, the table-owner exemption of a table that is not `FORCE`'d is not detected, and a dedicated pool is probed before it is first used and refused at its first request. |
 | `telemetry.jfrEnabled`                             | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable JFR telemetry sink (`TelemetrySettings.jfrEnabled`) |
 | `telemetry.metricsEnabled`                         | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable Prometheus metrics endpoint (`TelemetrySettings.metricsEnabled`) |
 | `telemetry.tracingEnabled`                         | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Enable distributed tracing / OTEL (`TelemetrySettings.tracingEnabled`) |
@@ -336,7 +346,7 @@ not listed here.
 | `network.paqs.criticalThreshold`                   | `float`   | `0.85`              | ✅ DYNAMIC   | 🔲 planned  | WM `CRITICAL` level (fraction of off-heap budget)        |
 | `network.paqs.sheddingThreshold`                   | `float`   | `0.95`              | ✅ DYNAMIC   | 🔲 planned  | WM `SHEDDING` level (fraction of off-heap budget)        |
 | `network.paqs.endpointPriority.<path>`             | `string`  | `NORMAL`            | ✅ DYNAMIC   | 🔲 planned  | Static `StreamPriority` for path prefix                  |
-| `http.stream.creditWindowBytes`                    | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | SSE server-push (ADR-043) egress credit window: outstanding bytes before `emit()` parks the streaming VT. Direct `-D` system property (see note ⁑) |
+| `http.stream.creditWindowBytes`                    | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | SSE server-push (ADR-043) egress credit window: outstanding bytes before `emit()` parks the streaming VT; a single larger event is admitted when nothing is outstanding. Direct `-D` system property (see note ⁑) |
 | `http.client.defaultAuthority`                     | `string`  | *(none)*            | ❌ IMMUTABLE | ✅ WIRED    | Default peer of the HTTP client in `CLIENT` / `DUAL` mode, as `host:port` (ADR-074): the port is required, an IPv6 address is bracketed (`[::1]:8443`), and a value carrying a scheme or a path is refused at startup. Used for any request that names no authority of its own (`HttpRequest.withAuthority`, `KernelWebClient.withAuthority`). **No default**: unset, such a request is refused at send with `IllegalStateException`, and nothing fails at boot. **`http.bindHost` and `http.port` are listen addresses and do not address the client** — this key is the client's only configured destination (`HttpConfig.defaultAuthority`) |
 | `websocket.enabled`                                | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Whether the `websocket` subsystem boots a listener at all. **Default `false` on purpose**: the subsystem is on every Community classpath from 0.12, and a deployment that merely upgraded must not gain an open socket it never configured. Unlike `http`, the mode is not inferred from a configured port — a duplex endpoint is not the thing an application boots the kernel *for*, so inference would be the wrong default (ADR-084) |
 | `websocket.bindHost`                               | `string`  | `InetAddress.getLoopbackAddress()` (typically `127.0.0.1`) | ❌ IMMUTABLE | ✅ WIRED    | Listen address. Loopback by default, so enabling the subsystem without choosing an address does not publish it to the network — resolved from the JDK rather than a hardcoded literal, so an IPv6-only host gets its own loopback form instead of a failing `127.0.0.1` |
@@ -347,23 +357,29 @@ not listed here.
 | `websocket.keepAliveIntervalMillis`                | `long`    | `20000`             | ❌ IMMUTABLE | ✅ WIRED    | Carried on `WebSocketConfig` (`DEFAULT_KEEP_ALIVE_INTERVAL_MILLIS`) and **not honoured — the engine sends no server-initiated pings**, as `CommunityWebSocketProvider`'s javadoc states. `WIRED` here means the key reaches the settings record, which it does; it does not mean a ping rides on it. A client that sends its own PING is answered |
 | `websocket.maxMessageBytes`                        | `long`    | `1048576`           | ❌ IMMUTABLE | ✅ WIRED    | Maximum inbound message size, 1 MiB — two orders of magnitude above the 8 KB ADR-084 §5 measured as too small for a serialised model (`WebSocketConfig.DEFAULT_MAX_MESSAGE_BYTES`) |
 | `transport.paqs.maxActiveStreams`                  | `int`     | `5000`              | ❌ IMMUTABLE | ✅ WIRED    | PAQS ceiling on concurrently admitted streams (per engine). `-1` = no ceiling — memory-pressure shedding still applies; `0` and other negatives are refused at startup (ADR-071) |
+| `transport.maxQueuedWriteBytes`                     | `int`     | `262144`            | ❌ IMMUTABLE | ✅ WIRED    | Per-stream outbound bytes the peer has not taken before `write()` blocks; `-1` = no bound; `0` and other negatives are refused at startup (ADR-071 third class) |
 | `transport.tls` | `boolean` | `true` | ❌ IMMUTABLE | ✅ WIRED | Opt-out from TLS for any transport that would otherwise have it — server, client and dual alike. **The two sides cannot key on the same signal**: a server arms TLS from material it was given, a client holds no server material (the TLS end-to-end tests build the server with a certificate and the client with none, and both speak TLS) and arms from a bound crypto provider. Before 0.12 the client's answer had no override at all, so a kernel booting crypto to serve HTTPS could not make a plaintext outbound call. `false` is that missing escape hatch; half-configured material — one of the two paths — stays a boot failure regardless, because it is a deployment mistake and not a request for plaintext. Direct `-D` system property (see note ⁑): the provider is handed a `TransportConfig` and no `ConfigProvider`, and adding a component to that SPI record for a boolean costs more than the knob is worth (ADR-071 records the same reasoning for its siblings). Because it is a system property it is **process-wide**: `false` declines TLS for every listener and every client in the JVM at once. A client whose owner requires verified TLS — the S3 blob client for an `https://` endpoint, the OIDC provider's JWKS fetch for an `https://` URI — is not downgraded but refused (`EX-NET-4004`). It is the only switch there is: no setting keeps client TLS and skips server verification. |
 | `transport.idleTimeoutMillis`                      | `long`    | `30000`             | ❌ IMMUTABLE | ✅ WIRED    | Reclaim a connection that has moved no bytes for this long. `0` disables reclamation (ADR-071 capacity/timeout class); negatives are refused. `http.idleTimeoutMillis` is the same limit reaching the same carrier through `HttpConfig`. Enforced by a per-reactor sweep since 0.12.0 — **carried but enforced by nothing before that** |
-| `transport.socket.backend`                         | `string`  | `auto`              | ❌ IMMUTABLE | ✅ WIRED    | Community carrier socket path: `auto`, `nio`, `posix-hybrid`. Resolved through the provider first, then the legacy `-Dexeris.community.transport.socket.backend` / `EXERIS_COMMUNITY_TRANSPORT_SOCKET_BACKEND` ladder, which stays because it was published |
+| `transport.socket.backend`                         | `string`  | `auto`              | ❌ IMMUTABLE | ✅ WIRED    | Community carrier socket path: `auto`, `nio`, `posix-hybrid`. Resolved through the provider first, then the legacy `-Dexeris.community.transport.socket.backend` / `EXERIS_COMMUNITY_TRANSPORT_SOCKET_BACKEND` ladder, which stays because it was published. The ladder also accepts `SOCKET_BACKEND_ENV`, as a system property and as an environment variable; the full order is the provider, `-Dexeris.community.transport.socket.backend`, `-DSOCKET_BACKEND_ENV`, `EXERIS_COMMUNITY_TRANSPORT_SOCKET_BACKEND`, then the `SOCKET_BACKEND_ENV` environment variable |
 | `transport.maxTlsRecordsPerRead`                   | `int`     | `32`                | ❌ IMMUTABLE | ✅ WIRED    | Fairness cap on TLS records drained per readable event. Direct `-D` system property (see note ⁑) |
 | `transport.queueBackpressureEnabled`               | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Bounds the TLS ingress queue at 1000 entries; `false` leaves it count-unbounded — entries are off-heap loans, so the watermark arbiter still sheds under memory pressure. Direct `-D` system property (see note ⁑) |
+| `transport.defaultMaxReactors`                     | `int`     | unset (no cap)      | ❌ IMMUTABLE | ✅ WIRED    | Caps `TransportConfig.DEFAULT_REACTOR_COUNT` (available processors, minimum 1), the reactor count `TransportConfig.serverDefaults` uses; no Community bootstrap path calls that helper. Absent, blank, non-numeric or non-positive applies no cap. Resolved once, when `TransportConfig` loads, so it has no effect on a config that names its own reactor count. Direct `-D` system property (see note ⁑) |
+| `persistence.properties.<name>`                    | `string`  | *(none)*            | ❌ IMMUTABLE | ✅ WIRED    | JDBC data-source property passed to the Community connection pool as `<name>` (`PersistenceConfig.properties`). Read from `-Dexeris.persistence.properties.<name>` and from `EXERIS_PERSISTENCE_PROPERTIES_<NAME>`, whose suffix is lower-cased and also registered with `_` read as `.`; the system property wins. A value set here replaces a Community default: `cachePrepStmts=true`, `prepStmtCacheSize=250`, `prepStmtCacheSqlLimit=2048`, `defaultRowFetchSize=50` on PostgreSQL, and `ssl=true` / `sslmode=require` under `persistence.useTls`. Direct `-D` system property and environment variable (see note ⁑) |
 | `memory.jfr.sampleEvery`                           | `int`     | `64`                | ❌ IMMUTABLE | ✅ WIRED    | Emit one `CommunityAllocation` JFR event per N allocations; `1` emits every one. Resolved through the provider first, then the legacy `-Dexeris.community.memory.jfr.sampleEvery` |
 | `persistence.sqlTranslationCacheMaxEntries`        | `int`     | `1024`              | ❌ IMMUTABLE | ✅ WIRED    | Bound on the JDBC placeholder-translation memo cache, which **never evicts** — past the bound an application keeps the earliest statements it saw, not the hottest. `0` disables caching; negatives are refused rather than corrected |
+| `persistence.transaction.retry.maxAttempts`       | `int`     | `1`                 | ❌ IMMUTABLE | ✅ WIRED    | Total attempts the executor bound to `KernelProviders.TRANSACTIONAL_EXECUTOR` makes on PostgreSQL `40001` / `40P01`; `1` means no retry, values below `1` fail bootstrap (`TransactionRetryPolicy.fromConfig`) |
+| `persistence.transaction.retry.baseDelayMs`        | `long`    | `50`                | ❌ IMMUTABLE | ✅ WIRED    | First back-off delay of that executor, doubling per retry and capped at 30 s; used only when `maxAttempts` is above `1`; a negative value fails bootstrap whatever `maxAttempts` is |
 | `transport.acceptedSendBufferBytes`                | `int`     | `0` (OS default)    | ❌ IMMUTABLE | ✅ WIRED    | Optional `SO_SNDBUF` override on accepted sockets; `0` leaves the OS default. Tightens egress backpressure (smaller window ⇒ earlier `emit()` park). Direct `-D` system property (see note ⁑) |
-| `memory.watermarkPollIntervalMs`                   | `int`     | `50`                | ✅ DYNAMIC   | 🔲 planned  | `WatermarkManager` sampling interval                     |
+| `memory.offHeapBudgetBytes`                        | `long`    | *(unset)*           | ❌ IMMUTABLE | ✅ WIRED    | Community allocator's memory-pressure budget in bytes: the denominator of the utilisation its `stats()` report, not an allocation cap. Unset or `-1` means no budget, and the watermark level stays `NORMAL`; `0` and values below `-1` are refused at startup (ADR-071). With a budget set, 70% utilisation already sheds every Community stream (all carry `NORMAL` priority) |
+| `memory.watermarkPollIntervalMs`                   | `int`     | `50`                | ✅ DYNAMIC   | 🔲 planned  | planned; the Community carrier refreshes its watermark every 1 s, not configurable |
 | `memory.leakDetection`                             | `string`  | `SAMPLED`           | ❌ IMMUTABLE | 🔲 planned  | `DISABLED`, `SAMPLED`, `PARANOID`                        |
 | `telemetry.allocationSampleRate`                   | `double`  | `0.01`              | ✅ DYNAMIC   | 🔲 planned  | JFR allocation event sampling rate (0.0–1.0)             |
 | `telemetry.consoleSinkEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Enable Console telemetry sink                            |
-| `crypto.tls.minVersion`                            | `string`  | `TLSv1.3`           | ❌ IMMUTABLE | 🔲 planned  | Minimum TLS version accepted                             |
-| `crypto.tls.client.trustFile`                      | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | PEM file of the certificates a TLS client verifies its server's chain against (ADR-074 Amendment A1). It **replaces** OpenSSL's default trust; unset, the client uses that default, whose file and directory `SSL_CERT_FILE` and `SSL_CERT_DIR` name — those two variables change the default only, never a configured file. Read when each `CLIENT` or `DUAL` transport is built: from the kernel configuration, else from `-Dexeris.crypto.tls.client.trustFile`. A value that is not a readable regular file fails that transport's construction with `EX-NET-4004` (cause `EX-NET-2002`) even when outbound TLS is not armed; a file that holds no certificate OpenSSL can load fails it the same way where outbound TLS is armed, since only then is the file loaded. For a chained server certificate, include the intermediates: the Community server sends its leaf only. The OpenSSL builds under `/opt` that the TLS matrix uses, and minimal container images, can ship an empty default store; the transport logs a WARNING when neither default location exists, and every verification then fails, a chain sent without its root with `X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY` (20) |
-| `persistence.pool.connectionTimeoutMs`             | `int`     | `5000`              | ✅ DYNAMIC   | 🔲 planned  | JDBC pool acquisition timeout                            |
-| `persistence.pool.idleTimeoutMs`                   | `int`     | `600000`            | ✅ DYNAMIC   | 🔲 planned  | JDBC pool idle connection timeout                        |
-| `persistence.pool.keepaliveMs`                     | `int`     | `30000`             | ✅ DYNAMIC   | 🔲 planned  | JDBC pool keepalive heartbeat interval                   |
+| `crypto.tls.minVersion`                            | `string`  | `TLSv1.3`           | ❌ IMMUTABLE | ✅ WIRED    | Minimum TLS version of every Community listener and client context: `TLSv1.3` or `TLSv1.2`. Read from the kernel configuration when each transport is built; absent or blank keeps `TLSv1.3`, so a TLS 1.2-only peer is refused unless this is `TLSv1.2`. Any other value (`TLSv1.4`, `1.3`, `tlsv1.3`, `TLSv1.1`) fails that transport's construction with `EX-NET-4004` (cause `EX-NET-2002`), before any listener opens |
+| `crypto.tls.client.trustFile`                      | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | PEM file of the certificates a TLS client verifies its server's chain against (ADR-074 Amendment A1). It **replaces** OpenSSL's default trust; unset, the client uses that default, whose file and directory `SSL_CERT_FILE` and `SSL_CERT_DIR` name — those two variables change the default only, never a configured file. Read when each `CLIENT` or `DUAL` transport is built: from the kernel configuration, else from `-Dexeris.crypto.tls.client.trustFile`. A value that is not a readable regular file fails that transport's construction with `EX-NET-4004` (cause `EX-NET-2002`) even when outbound TLS is not armed; a file that holds no certificate OpenSSL can load fails it the same way where outbound TLS is armed, since only then is the file loaded. The Community server sends the whole chain its certificate file names, so a client needs only the root of a chained server's certificate in this file. The OpenSSL builds under `/opt` that the TLS matrix uses, and minimal container images, can ship an empty default store; the transport logs a WARNING when neither default location exists, and every verification then fails, a chain sent without its root with `X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY` (20) |
+| `persistence.connectionTimeoutMs`                  | `long`    | `250`               | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool acquisition timeout; a value below `250` is refused at engine construction (`PersistenceConfig.connectionTimeoutMs`) |
+| `persistence.idleTimeoutMs`                        | `long`    | `600000`            | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool idle connection timeout (`PersistenceConfig.idleTimeoutMs`) |
+| `persistence.maxLifetimeMs`                        | `long`    | `1800000`           | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool connection maximum lifetime (`PersistenceConfig.maxLifetimeMs`). The pool keepalive (30 s) and validation timeout (5 s) are fixed in `CommunityHikariSupport`, not keys |
 | `persistence.outbox.maxRetries`                    | `int`     | `10`                | ✅ DYNAMIC   | 🔲 planned  | Max Outbox delivery retries before DLQ                   |
 | `persistence.outbox.backoffBaseMs`                 | `int`     | `100`               | ✅ DYNAMIC   | 🔲 planned  | Outbox retry base backoff (ms)                           |
 | `config.vault.timeoutMs`                           | `int`     | `3000`              | ❌ IMMUTABLE | 🔲 planned  | Vault connection timeout during bootstrap                |
@@ -381,9 +397,9 @@ not listed here.
 
 > **Persistence helper note:** `PersistenceConfig.defaults(...)` is a fixed development/unit-test preset in the SPI helper API. It is not the Community runtime bootstrap default when `persistence.maxPoolSize` is unset.
 
-> **⁑ Direct system-property knobs:** `http.stream.creditWindowBytes`, `transport.acceptedSendBufferBytes`, `transport.maxTlsRecordsPerRead`, `transport.queueBackpressureEnabled` and `transport.tls` are read directly via `-Dexeris.<key>`, **not** through the config provider — they do not appear in `KernelSettings`/`NetworkSettings`.
+> **⁑ Direct system-property knobs:** `http.stream.creditWindowBytes`, `transport.acceptedSendBufferBytes`, `transport.maxTlsRecordsPerRead`, `transport.queueBackpressureEnabled`, `transport.tls`, `transport.defaultMaxReactors` and `persistence.properties.<name>` are read directly via `-Dexeris.<key>` (the last also from its environment variable), **not** through the config provider — they do not appear in `KernelSettings`/`NetworkSettings`.
 >
-> **The last two are on this list for a different reason than the first two, and it is worth stating.** They are `static final` fields on `NativeTcpCarrier` and `NativeTcpStream`, resolved when the class loads — before any `ConfigProvider` exists, and once per JVM for whatever touches the class first. Reading the provider *at class initialisation* would not fix that: it would freeze whatever happened to be bound at the moment of first load, which is worse than an honest `-D`, because it looks configurable and is not. Making them properly configurable means moving them to instance state on the ingress path — a hot-path change that owes a measurement, so a separate slice rather than a rename. Recorded here rather than left looking like drift.
+> **`transport.maxTlsRecordsPerRead` and `transport.queueBackpressureEnabled` are on this list for a different reason than the first two, and it is worth stating.** They are `static final` fields on `NativeTcpCarrier` and `NativeTcpStream`, resolved when the class loads — before any `ConfigProvider` exists, and once per JVM for whatever touches the class first. Reading the provider *at class initialisation* would not fix that: it would freeze whatever happened to be bound at the moment of first load, which is worse than an honest `-D`, because it looks configurable and is not. Making them properly configurable means moving them to instance state on the ingress path — a hot-path change that owes a measurement, so a separate slice rather than a rename. Recorded here rather than left looking like drift.
 
 ---
 
@@ -495,11 +511,12 @@ the old or new value itself. In regulated environments, this event stream is the
   `KernelConfigRegistryTest.SealContract` and `.ConcurrencyContract`.
 - ~~Fail-fast for missing `REQUIRED` fields (`EX-CFG-1001` with correct `rawArgs` layout).~~ ~~Type
   mismatch detection (`EX-CFG-1002`) with redacted `actualValue` — verified that raw value is NOT
-  present.~~ **No test exists for either.** A repository-wide grep for `missingProperty(` and
-  `typeMismatch(` turns up only their own definitions in `ConfigProvider.java` — no test file, in
-  `exeris-kernel-spi` or anywhere else, calls either factory or asserts its `rawArgs` layout or
-  redaction behaviour. This is the same gap as the missing call site noted above; the two are one
-  finding, not two.
+  present.~~ **No test exercises either factory directly.** A repository-wide grep for `missingProperty(`
+  and `typeMismatch(` in test sources turns up no call: nothing asserts the `rawArgs` layout of either
+  code or the redaction in `sanitizeConfigValue`. The one test that reaches `typeMismatch(` is
+  `ContractBootstrapStepTest`, which asserts that an `environment` value naming no environment class
+  fails with `EX-CFG-1002`. The missing `EX-CFG-1001` coverage is the same gap as the missing call site
+  noted above; the two are one finding, not two.
 
 ### Integration Tests
 
@@ -519,8 +536,9 @@ the old or new value itself. In regulated environments, this event stream is the
 > banned parsers, the raw `watch()` no-op contract on the per-tier provider in isolation).
 > `AbstractDynamicConfigRegistryTck` (bound by `CoreDynamicConfigRegistryTckTest`) separately covers
 > `KernelConfigRegistry`'s register/fireReload/seal dispatch contract. Neither exercises EX-CFG-1001 or
-> EX-CFG-1002 — that path coverage lives at the unit level in `exeris-kernel-spi` tests. Full end-to-end
-> TCK coverage (a bound provider driving a real file change through `KernelBootstrap`) is still pending.
+> EX-CFG-1002; the only live-path coverage of EX-CFG-1001/1002 is `ContractBootstrapStepTest`
+> (`EX-CFG-1002` for `environment`). `DynamicConfigFileWatcherTest` drives a real file change and asserts the
+> EX-CFG-1004 refusal event. Full end-to-end TCK coverage (a bound provider driving a real file change through `KernelBootstrap`) is still pending.
 
 ---
 

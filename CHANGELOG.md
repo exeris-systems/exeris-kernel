@@ -14,6 +14,507 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [0.13.0] — 2026-10-28
+
+### Breaking
+
+- **A finished saga keeps its snapshot row whenever a snapshot store is bound, and the engine no longer deletes rows (behaviour, stable `spi.flow`, ADR-013 A1).** With the default `terminalCatalogMaxSize = 0`, completion used to delete the instance's row; it now leaves a `COMPLETED` row in every terminal-catalog mode, so `exeris_saga_state` (or any `FlowSnapshotStore`) grows by one row per finished instance until the binder purges it. No signature changes. A binder needs a retention job; see MIGRATION.
+- **HTTP/2 header names and values reach handlers one char per octet (ISO-8859-1), as on HTTP/1.1 (Core `HpackDecoder`, ADR-071).** They were decoded as UTF-8 with an invalid sequence replaced by U+FFFD, so a valid UTF-8 value such as `é` (`C3 A9`) arrived as `é` and now arrives as `Ã©`, which is what the HTTP/1.1 parser has always delivered. A handler that expects UTF-8 in a non-ASCII value decodes `value.getBytes(StandardCharsets.ISO_8859_1)` as UTF-8; see MIGRATION.
+- **The Community OIDC validator installs only JWKS keys labelled for signing with the algorithm their type verifies (behaviour, Community security, ADR-040 A1).** A JWKS entry with `use` other than `sig`, an RSA key declaring an `alg` other than RS256 (for example `RSA-OAEP`), and a `kid` that two installable keys publish no longer verify tokens; before, `use` and `alg` were ignored and the last entry with a `kid` won. A deployment whose signing key carries such a label gets `EX-SEC-2002` until the issuer corrects it; see Security and MIGRATION.
+- **`TransportStream#write` blocks at the stream's outbound bound, `queueWrite` must never wait for the peer, and `TransportConfig` gains a component (SPI, stable `spi.transport`, ADR-007).** A Community `write` parks its caller while the stream holds `maxQueuedWriteBytes` (default 256 KiB) the peer has not taken, and never parks a reactor thread; a caller that holds a lock across `write` orders every other sender behind a slow peer, so a sender that must not block uses `queueWrite` and bounds the loans it has outstanding by their release. An implementor's `queueWrite` returns without waiting for the peer, apart from a connection that is still being established, and releases a loan once its bytes have left the stream's queue or the stream ends, not before; a transport whose `queueWrite` sends synchronously no longer conforms, and `AbstractTransportStreamTck.QueueWriteDoesNotWait` fails it. `TransportConfig` gains the component `maxQueuedWriteBytes` after `maxActiveStreams`; the 0.12 nine-argument and eight-argument constructors stay and apply the default, so source and binary compatibility hold, but a record pattern over `TransportConfig` or reflection over its components sees a different shape. See `MIGRATION.md`.
+
+- **A declared `EntitlementRequirement` with no manifest stops the boot in every environment, development included (ADR-088, ADR-089).** `EX-LIC-0005` is raised whatever the `environment` key says; a commercial artifact now needs a manifest wherever it runs, and a developer runs it under a developer licence. The verified manifest's environment and capability checks run in every environment too. See `MIGRATION.md`.
+- **`EntitlementRequirement` gains an abstract `entitlementClass()` (SPI, preview, ADR-089).** An implementer returns `EntitlementClass.COMMERCIAL` or `EntitlementClass.ENTERPRISE_PRIVATE`; there is no default, so no artifact is silently given the weaker class. One identifier declared under two classes, and a `null` class, stop the boot with `EX-LIC-0008`.
+- **`ExecutionEnvironment.requiresEntitlement()` is renamed `isProductionClass()` (SPI, preview, ADR-089).** The accessor says whether the environment serves live traffic; it no longer decides whether a manifest is needed.
+- **`exeris-root-2026-k1` is no longer a trust root (ADR-088).** The store pins `exeris-prod-2026-k1`, `exeris-dev-2026-k1` and `exeris-ent-2026-k1`, each with a scope; a manifest naming any other `issuer.keyId` fails with `EX-LIC-0002`.
+- **A manifest is valid only inside the scope of the key that signed it (ADR-088).** An environment outside the key's scope, a validity beyond its maximum, an envelope above its ceiling and a requirement of a class it may not entitle each stop the boot, with `EX-LIC-0009` to `EX-LIC-0013` (the last for a developer key that softens a `capability` or `environment` rule); see Added.
+- **Core: `IssuerKeyResolver.resolve` returns a `TrustedIssuerKey` instead of a `PublicKey` (ADR-088).** A resolver written as a lambda returns the key together with its scope; `IssuerKeyResolver.of` keeps its signature and gives each key the unrestricted enterprise scope.
+- **More than one `license-manifest.json` on the classpath now stops the boot (ADR-088 §5 step 1).** The contract gate read the first one in classpath order; it now fails with `EX-LIC-0001` and lists every URL. A deployment whose dependency jars carry a second manifest binds `license.manifest.path` to the one to use; see `MIGRATION.md`.
+- **Graph traversal refused under an unscopable storage context (ADR-102 Obligation 9).** Traversals under an unscopable tenant context are refused before any database I/O; see Changed.
+- **Graph SPI (preview): `GraphSession` gains abstract `traversePath`/`streamPathJson`, `GraphDialect` gains abstract `buildPathQuery`, and `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract (ADR-102).** An out-of-tree implementer must implement the three methods and the three-argument overload; it can no longer inherit the two-argument behaviour.
+- **`AbstractSagaRecoveryTck` gains `createBoundedEngine(int)`, and `FlowSnapshotStore` must keep terminal snapshots (TCK and SPI javadoc, stable `spi.flow`, ADR-013).** A binding of `AbstractSagaRecoveryTck` overrides `createBoundedEngine(int)` to return an engine with a bounded terminal catalog; the default throws, so a binding that does not fails its bounded-catalog cases instead of skipping them. A `FlowSnapshotStore` accepts a snapshot in any state, `COMPLETED` and `FAILED_ROLLEDBACK` included, and `load` returns it as written; `AbstractDistributedFlowSnapshotStoreTck` checks both. No signature changes.
+
+- **A send on a Community TCP or TLS stream that fails because the peer ended the stream throws `TransportStreamClosedException` (`EX-NET-4008`), an `IllegalStateException`, instead of `TransportException` (`EX-NET-4002`); the `EX-NET-4002` failure is its cause.** A caller that catches `TransportException` around a send no longer sees a peer that reset or closed; see `MIGRATION.md`. The peer's end is recognised by the carrier having observed it, by the send's errno on the core-socket seam and after a fatal TLS wrap status, by a TLS session the peer ended, and, on the NIO fallback, which has no errno, by a send that fails on the channel for any reason but a local close. `AbstractTransportStreamTck` gains the case that pins it after a peer `reset`, so an Enterprise transport that binds the suite adopts it.
+- **`AbstractSharedScopeAccessMatrixTck` gains `retagScope` and the shared-scope tag cells (TCK, stable `spi.persistence`, ADR-012 §4c.2).** A binding overrides `retagScope(StorageContext, String, String)` and installs a `WITH CHECK` that pins the tag; the default throws, so a binding that does not fails the tag cells instead of skipping them. `foreignScope()` is a new overridable key. An application that copied the reference policy and adopts the pinned one gets `EX-PERS-5003` for an update that keeps a scope tag from a request lacking that scope; see `MIGRATION.md`.
+
+- **`AbstractSharedScopeAccessMatrixTck` and `PersistenceIsolationLeakTck` assert that a tenant-less context is refused (TCK, stable `spi.persistence`, ADR-012 §4c.3).** A read and a write from `ImmutableStorageContext.GLOBAL` must fail with `PersistenceProviderException` (`EX-PERS-5003`), each next to the same operation under a tenant, which must succeed. `AbstractSharedScopeAccessMatrixTck` gains the template method `tenantlessOwner()`, whose default throws, so a binding that does not override it fails the write cell instead of skipping it; `PersistenceIsolationLeakTck` gains no new method. The reference policy's tenant arm raises on an absent key (`exeris_required_setting` on `TEXT` columns, the unguarded cast on `uuid`); a deployment that copied the old text sees `EX-PERS-5003` for a tenant-less statement against a scoped table instead of an empty result; see `MIGRATION.md`.
+
+- **A deployment with row-level security stops booting when its database role is a superuser or has `BYPASSRLS` (ADR-012 §4c.4).** Registering `RlsConnectionInterceptor` on a PostgreSQL engine now probes the role and throws `EX-PERS-5009`; `persistence.rlsAllowBypassRole=true` boots it instead. See `MIGRATION.md` and Added.
+
+### Security
+
+- **The reference RLS policy no longer lets a tenant-less request read an empty result or write a row owned by the empty tenant (ADR-012 §4c.3).** A context that declares no tenant publishes `exeris.tenant_id` as `''`; under the plain `tenant_id = current_setting(...)` text a read returned nothing without an error and `WITH CHECK` admitted a row whose owner is `''`, which every later tenant-less request read back. The tenant arm now raises (SQLSTATE `42501`); the function text is in `docs/subsystems/persistence.md`, and the kernel does not install it.
+- **The reference shared-scope policy no longer lets a row's own column grant visibility (ADR-012 §4c.2).** Its `WITH CHECK` pinned only the owner, so an owner could write a row tagged with any scope, publishing it to that scope's members without a token that carried the scope. The check now admits only `''`, `NULL` or the scope the request published; the policy text is in `RlsConnectionInterceptor`'s javadoc and `docs/subsystems/persistence.md`.
+- **The Community crypto provider enforces `CryptoProviderConfig#minimumTlsVersion`.** Every context,
+  listener and verifying client alike, was created without a protocol floor, so a TLS 1.2-only peer
+  completed a handshake against the default `TLSv1.3` configuration. `CommunityKernelCryptoProvider`
+  now sets the floor on each `SSL_CTX` (`TLSv1.2` or `TLSv1.3`), and a value naming neither makes
+  `createTlsEngine` and `createClientTlsEngine` throw `CryptoBootstrapException` (`EX-NET-2002`)
+  instead of falling back to the library's. The default floor `TLSv1.3` now holds: a Community
+  listener refuses a client that speaks only TLS 1.2, and a Community client refuses such a server,
+  unless `crypto.tls.minVersion` is set to `TLSv1.2`. That key is now read when a transport is built;
+  a value other than `TLSv1.2` or `TLSv1.3` fails the transport's construction (`EX-NET-4004`, cause
+  `EX-NET-2002`). `AbstractCryptoEngineTck` asserts the floor against a JDK TLS peer.
+  **For anyone binding the TCK:** the three floor cases need the template method `bindToSocket`,
+  which throws by default, so a binding fails them until it implements it; a binding whose provider
+  does not build the TLS context from `CryptoProviderConfig` returns `false` from
+  `honoursMinimumTlsVersion()` and the cases are skipped. The Enterprise crypto engine binds
+  `AbstractCryptoEngineTck` and needs one of the two when it moves to 0.13.
+- **A bound `HttpRoutePolicy` is asked about the route the router dispatches to.** The Community
+  dispatcher removes the query component, and asks a `HEAD` request as `GET` when `HttpRouter`
+  serves it from the `GET` route because no `HEAD` route matches; it passed the raw request-target
+  and method before, so under a policy answering `permitAll()` for unmatched routes, `GET /p?x=1`
+  and `HEAD /p` reached the `GET /p` handler without its requirement (GHSA-6gmf-jp4g-gvmh, CWE-863;
+  affects 0.11.0–0.12.0 with a policy bound). A `HEAD` rule now governs only a request dispatched
+  to a `HEAD` route; where the `GET` handler runs, the `GET` rule does. `HttpRouter.routeMethod`
+  names the method of the route a request is dispatched to.
+
+- **A JWKS key labelled for another use or algorithm no longer verifies tokens (ADR-040 A1).** The Community OIDC validator installs a JWKS entry only when its `use` is absent or `sig`, its `alg` is absent or the one its key type verifies (RS256 for an RSA key, EdDSA for an Ed25519 key), and no other installed entry publishes its `kid`. An RSA key declaring `RSA-OAEP` or `RS512`, a key with `use: enc`, and both entries of a `kid` that two installable keys publish are skipped; before, `use` and `alg` were ignored and the last of two entries with one `kid` won, so a key published for encryption, or a second key sharing a signing key's `kid`, could verify tokens. A deployment whose JWKS carries such an entry for the key that signs its tokens now sees `EX-SEC-2002` until the issuer corrects the entry.
+
+### Changed
+
+
+- **`…spi.http` (the whole package), `…spi.security` with `…security.identity`, `…spi.events`, `…spi.crypto`, `…spi.scheduling` and `…spi.storage.blob` are `stable` (ADR-100).** The SPI compatibility gate now fails a binary- or source-incompatible change to them, as it does for transport, persistence, flow and memory; they are semver-binding from 1.0. `…spi.contract`, `…spi.graph`, `…spi.time` and `…spi.websocket` stay `preview`. No signature changes; see `docs/stability-matrix.md`.
+
+- **The Community HTTP/2 writer hands every frame to the transport through `queueWrite`, so a slow peer no longer holds its lock.** Stream heads, end-of-stream frames, `RST_STREAM`, coalesced responses and the control frames (PING and SETTINGS acknowledgements, GOAWAY) were written with the blocking `write`; the bytes on the wire and their order are unchanged.
+- **The four stream JFR events carry the protocol's stream id, and the park event the window.**
+  `StreamOpened`, `StreamClosed`, `StreamAbortiveTeardown` and `StreamBackpressurePark` gain
+  `protocolStreamId`, the HTTP/2 stream id and `0` on HTTP/1.1, so two streams of one connection are told
+  apart by `(streamId, protocolStreamId)`. `StreamBackpressurePark` also gains `windowBytes`, the smaller of
+  the stream's and the connection's window at the park and `-1` on HTTP/1.1. The existing `emit` overloads
+  remain.
+- **Changed (Core): `ContractBootstrapStep.run` returns a `ContractDecision` instead of an `ExecutionContract` (ADR-089).** The decision pairs the contract with the `WorkloadAdmission` the drivers consult; a caller outside the kernel reads `.contract()` for the old value. The admission is `WorkloadAdmission.UNGATED` unless a developer key signed the manifest and a requirement is declared.
+- **Changed (Core): the issuance-facing contract surface is public (ADR-088).** `IssuerKeyScope` (`PROD`, `DEV`, `ENT`),
+  `TrustedIssuerKey`, `IssuerKeyResolver.ofScoped`, `IssuerKeyResolver.embedded`, `LicenseManifestVerifier.verifyScoped` with its `VerifiedManifest`,
+  `TrustedIssuerKeyStore.resolve` and `TrustedIssuerKeyStore.trustedKeyIds()` are `public` with `@since 0.13`, so a
+  tool that signs licences checks a manifest against the same scope rules the kernel applies before it signs. They
+  stay preview until 1.0.
+- **Changed (Core): the contract gate reads the manifest's validity through the kernel time source (ADR-082).**
+  `TimeKernelProviders.timeSource()` supplies the instant, the platform clock until a time provider is bound.
+- **`ContractResolvedEvent` gains `keyId` and `developerLicence`.** The signing key and whether the kernel runs under
+  a developer licence; both are empty or `false` when no manifest was verified.
+- **A Community transport connection releases its admission to the gate that admitted it.** After a stop and a start
+  under another gate, the release no longer lands on the new gate.
+- **`PaqsScheduler` no longer reports a peer-closed stream as a handler failure.** A handler that ends with
+  `EX-NET-4008` is recorded as `StreamLifecycle` outcome `PEER_CLOSED`, logged at `DEBUG` with the stream id
+  and engine, and emits no `PaqsHandlerFailure` event. Only the thrown exception's own type counts: a failure
+  that wraps the signal, or follows a disconnect, keeps the `WARNING` and the event. A raw `StreamHandler` that
+  ends on the Community stream's peer-closed signal leaves the `ERROR` count; Community HTTP swallows the signal
+  itself, a send that fails because the peer ended the stream reports `EX-NET-4008` too and ends as
+  `PEER_CLOSED`, and an Enterprise stream takes the quiet path once it adopts the type. Community also reports `EX-NET-4008` for a stream its
+  carrier reclaims idle or tears down after a dispatch fault, so those end as `PEER_CLOSED` too.
+- **A handler failure that `PaqsScheduler` isolates is logged with the stream id, the engine name and the
+  exception class name.** The record named none of them, so it could not be matched to the
+  `PaqsHandlerFailureEvent` of the same failure. An `Error` is logged at `ERROR` before it is rethrown.
+  Neither record carries the exception message or a stack trace: a handler's message may hold request data.
+- **`boot()` registers a JVM shutdown hook by default — embedding hosts must opt out.** The hook runs
+  `KernelBootstrap.shutdown()`. A host that stops the kernel from its own lifecycle passes
+  `registerShutdownHook(false)` in the same release that adopts 0.13, or a `SIGTERM` starts two stop sequences.
+  The Spring host runtime is one such host. See `MIGRATION.md`.
+- **`Subsystem.stop()` may run on a thread with no kernel `ScopedValue` bindings.** A `stop()` that reads
+  `KernelProviders` fails when the hook or a host's lifecycle thread runs it. A `stop()` must not call
+  `System.exit`, `Runtime.exit` or `Runtime.halt`, and `initialize()` and `start()` must not call `System.exit`.
+- **`SubsystemOrchestrator.shutdown()` runs once under concurrent callers, and every caller returns after it
+  completed.** A caller that loses the race waits for the winner; a call from a `stop()` on the stopping thread
+  returns at once.
+- **A second concurrent `boot()` on one `KernelBootstrap` instance throws `IllegalStateException`.** Booting
+  again after a boot returned is unchanged.
+- **Graph traversal refused under an unscopable storage context (ADR-102 Obligation 9).** Community SQL/PGQ serves `SEPARATED_SCHEMA` and `DEDICATED` and refuses `SHARED` tenant contexts; Community Cypher refuses every tenant context; SQL/PGQ also refuses a tenant context when no `PersistenceEngine` is bound in the calling scope; system-scope callers are unaffected; `GraphQueryException` `ISOLATION_SCOPE`.
+- **Every graph traversal honours the descriptor's direction (ADR-102).** `traverseBreadthFirst` and `streamBfsJson` with an `INCOMING`, `BOTH` or `bidirectional` descriptor now return a different set than before; a caller relying on the old result moves to an explicit `OUTGOING` descriptor.
+- **`findShortestPath(UUID, UUID)` throws `GraphQueryException` instead of returning not-found (ADR-102).** Two-argument shortest path is refused with `EX-GRPH-5002` (`SHORTEST_PATH`) for distinct and equal ids; callers must specify a `GraphEdgeDescriptor` through the three-argument overload.
+- **Community refuses a traversal whose path length bound exceeds 64 (ADR-102).** A traversal where `Σ maxRepeat` (or `maxDepth` for breadth-first) exceeds 64 is refused before any I/O with `GraphQueryException` (`EX-GRPH-5002`, query type `PATH_LIMIT`).
+- **`GraphDialect.buildMatchQuery` returns column `id` on both Community dialects, and `buildMultiHopQuery` refuses a bound above 64 (ADR-102).** Both now delegate to `buildPathQuery`: the result column was `target_id` and is `id`, and the SQL takes the start node through `CAST($1 AS uuid)` in a leading CTE. A caller reading the column of a transpiled `MatchDslTranspiler#transpileBfs` query by name reads `id`; `buildMultiHopQuery` with `maxHops` above 64 throws `IllegalArgumentException`.
+- **A failing Community traversal surfaces as `GraphQueryException` (`PATH`) on both backends.** Exceptions during traversal execution are uniformly wrapped in `GraphQueryException` with query type `PATH`.
+- **Two `HttpProvider`s at equal priority resolve by implementation class name.** The Community HTTP
+  subsystem now selects through `BootstrapProviderSelector`, as the graph, persistence, security and
+  crypto providers do, instead of taking the equal-priority provider `ServiceLoader` listed first. The
+  Community persistence and security subsystems share the same routine, so their ranking is unchanged.
+- **A subsystem's `initialize()` is bounded by a 300-second deadline (EX-BOOT-0003).** The orchestrator
+  interrupts the booting thread when one `initialize()` runs past the deadline, and the boot fails with
+  `SubsystemInitDeadlineException` (`EX-BOOT-0003`, rawArgs `[subsystemName, deadlineMs]`). The deadline
+  holds even when `initialize()` then returns normally. The failure policy applies as for any other
+  initialization failure, so an optional subsystem is dropped under `DEGRADE`. This is a behaviour change
+  for adopters: an `initialize()` that legitimately takes longer than 300 seconds, such as a large
+  migration, now fails the boot. Raise the limit with `KernelBootstrap.Builder#initializeDeadline(Duration)`
+  (or `SubsystemOrchestrator.Builder#initializeDeadline(Duration)`), or pass `Duration.ZERO` to restore an
+  unbounded wait. Only `initialize()` is bounded; `start()` and `stop()` are not. An `initialize()` that
+  ignores interruption still holds the boot until it returns. The JFR event
+  `eu.exeris.kernel.bootstrap.SubsystemInitDeadlineExceeded` records the expiry while `initialize()` is
+  still blocked.
+- **A publish under a bound but unregistered isolation key is refused (ADR-101).** A publish now resolves
+  its isolation ordinal from the publisher's bound `STORAGE_CONTEXT`, so a publish under a tenant key that
+  the engine's `isolationRegistry()` does not hold is refused with `EX-EVENT-6009` (reason
+  `"unregistered-isolation-key"`), and was accepted before. There is no escape hatch: a refusal is
+  fail-closed by design. Register each tenant key before publishing under its context. The outbox relay and
+  the Kafka consumer loop are not affected, because they do not re-stamp. See `MIGRATION.md`.
+
+- **On a brokered bus, a normal return from `EventBus.publish` means the client accepted the record, not that
+  the broker acknowledged it (ADR-101 Ruling 2).** Two client-side failures change:
+  - A record the Kafka client rejects before accepting it (a record too large, or a metadata timeout after
+    `max.block.ms`) was lost: nothing read the failed send, and `publish` returned normally. `publish` now
+    throws `EX-EVENT-6009` (reason `delivery-failed`) for these, so a caller that ignored the return will
+    see the failure.
+  - A send the producer completes exceptionally after `publish` has returned is never thrown. It is recorded
+    as `KafkaPublishFailedEvent` with `publishMode` `"publishAsync"` and counted in
+    `EventEngineStats.publishFailedTotal()`.
+
+  A caller that needs the broker's acknowledgement uses `publishAndAwait`, unchanged. `EventBus.publish`
+  states the promise in its Javadoc.
+
+- **The `ScopedValue` slots of the `preview` surfaces move to holders in their own packages (ADR-100
+  §3).** `EXECUTION_CONTRACT` and `executionContract()`, added on the 0.13 line and never released,
+  leave `KernelProviders` for `spi.contract.ContractKernelProviders`. `GRAPH_PROVIDER`,
+  `GRAPH_ENGINE` and `graphEngine()` move to `spi.graph.GraphKernelProviders`, and `TIME_SOURCE` and
+  `timeSource()` to `spi.time.TimeKernelProviders`, with the behaviour of each unchanged
+  (`timeSource()` returns `TimeSource.SYSTEM` when unbound). A `stable` signature no longer names a
+  `preview` type once the bridges below are gone. `StableSignatureArchitectureTest` enforces it.
+- **Graph: the published Community churn-to-data contract is `< 23x`, the bound `GraphChurnRatioTck` enforces (was `< 20x`, "met in the faster regime").** The Community Bolt path settles into one of two allocation regimes per JVM, 17.5–17.9x and 20.8x on `development/0.13.0`, so a single `< 20x` figure held in one regime and failed in the other; `graph.md` §2 now publishes the bound that covers both, with the observed range as its description. `GraphChurnRatioTck.documentedContract()` returns 23.0 for Community. The SQL/PGQ path has no churn binding, and `graph.md` no longer claims a JDBC figure. `EX-GRPH-5005` / `ExcessiveAllocationException` stay declared and are documented as reserved (nothing throws them). Documentation, TCK and Javadoc only; no signature changes.
+
+- **The identity a declared `@Schedule` job runs as is ruled (ADR-057 Amendment A1, docs and TCK only).**
+  The kernel issues no service principal at 1.0: a declared job is submitted with only
+  `SecurityProvider.systemStorageContext()` bound and runs with no `PrincipalContext`. A declaration on a
+  `TENANT` or `UNIVERSE` entity, or on an action that names roles or has an empty role set (which
+  requires an authenticated caller), is refused at build time by the tooling, so at 1.0 no declaration
+  passes and `@Schedule` stays reserved until a service principal exists. N replicas fire a declared
+  job N times. The either-context refusal rule is unchanged and the `storageContextOrSystem()` fallback of a principal-only submission is
+  documented in `docs/subsystems/scheduling.md`. `AbstractJobSchedulerTck` gains a case asserting that a
+  storage-only submission runs with no principal bound. No signature changes.
+
+- **`exeris-kernel-bom` manages Testcontainers 2.0.5, whose modules are named `testcontainers-*`.** A build that imports the BOM and depends on the 1.x names (`junit-jupiter`, `postgresql`, `kafka`, `neo4j`) no longer gets their version from it. The first imported BOM wins, so importing `exeris-kernel-bom` before an own 1.x BOM resolves core `testcontainers` 2.0.5 beside 1.x modules; rename to the 2.0 artifacts and the `org.testcontainers.<module>` classes.
+
+### Deprecated
+
+- **`findShortestPath(UUID, UUID)` is deprecated for removal before the graph SPI is promoted.** Use `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` instead.
+- **`GraphTraversal.includeStartNode()` and `includePayload()` are deprecated and have no effect.** No binding reads them.
+- **`KernelProviders.GRAPH_PROVIDER`, `GRAPH_ENGINE`, `graphEngine()`, `TIME_SOURCE` and
+  `timeSource()` are deprecated for removal in the first 1.0 release candidate.** Each field is the
+  very same `ScopedValue` instance the holder declares, so a binding made through either name is
+  visible through both and each accessor delegates; migrate by naming the holder instead.
+
+### Added
+
+- **`AbstractHttpResponseBodyEncoderTck` and `AbstractHttpResponseBodyEncoderRegistryTck` pin the server-side response body encoder contract (TCK, ADR-034).** The suites judge `supports`, the live non-empty body allocated through the context allocator, a `null` payload, release of every buffer on a failed encode, no retention of the returned buffer, the declared `content-type`, and the registry's `null`-not-fallback answer; bound at Community tier by `CommunityJsonResponseBodyEncoderTckTest` and `CommunityResponseBodyEncoderRegistryTckTest`. No SPI change.
+- **`EX-PERS-5009`, `PersistenceProviderException.rlsBypassRole`, `persistence.rlsAllowBypassRole` and the `eu.exeris.kernel.persistence.RlsBypassRole` JFR event (ADR-012 §4c.4).** The code and its factory are SPI (stable `spi.persistence` exceptions, additive); the event lives in Core so any binding can emit it. `AbstractRlsBypassRoleCheckTck` is the suite a binding that installs a row-level-security interceptor binds. A dedicated pool whose role bypasses is refused at its first request. `PersistenceEngine#registerInterceptor` documents the refusal.
+- **`transport.maxQueuedWriteBytes` bounds a stream's outbound queue (ADR-071, ADR-007).** The key fills `TransportConfig#maxQueuedWriteBytes()` at the transport subsystem and at the HTTP and WebSocket listeners. `-1` removes the bound; `0` and other negatives are refused at startup. `AbstractTransportStreamTck` gains `QueueWriteDoesNotWait`, which binds every transport, and `WriteBackpressure`, behind the hook `supportsWriteBackpressure()` (default `false`). A `write` that parks emits `TransportWriteParkEvent` (`eu.exeris.kernel.core.transport.WriteBackpressurePark`) once, before its first park.
+- **Stream routes are resolved and served over HTTP/2.** A request for a stream route that arrives over TLS
+  with ALPN `h2`, a prior-knowledge preface or an `h2c` upgrade now reaches its stream handler instead of the
+  respond-once handler. The head is a `HEADERS` frame, each event one or more `DATA` frames, a graceful close
+  an empty `DATA` frame with `END_STREAM`, and an authorization that expires mid-stream resets the stream with `RST_STREAM(CANCEL)`; `emit` parks on the
+  smaller of the stream's and the connection's flow-control window and on a per-stream bound of
+  `exeris.http.stream.creditWindowBytes` bytes queued to the transport. Each stream runs on a thread of its
+  own, authorized by the dispatch HTTP/1.1 uses, and holds a `SETTINGS_MAX_CONCURRENT_STREAMS` slot until its
+  handler returns; a peer `GOAWAY` or the end of the connection ends every stream. Core gains `StreamEgress`,
+  the protocol side of a held-open stream, which `HttpStreamEngine` runs over.
+- **The developer-licence workload-admission mechanism (ADR-089): `spi.contract.WorkloadAdmission`, its
+  `ContractKernelProviders.WORKLOAD_ADMISSION` slot, the Core limiter and Community enforcement. It is inert:
+  the contract gate binds `WorkloadAdmission.UNGATED` for every contract, so no kernel behaves differently
+  until a developer key signs the manifest of a kernel that declares a requirement.** Under an enforced gate a driver admits each inbound
+  connection at accept and closes a refused one before it writes a byte; asks the gate before each HTTP/1.1
+  message and each HTTP/2 stream, an HTTP/2 stream route included, is routed or forked, and answers a refused one `429` with `Retry-After: 1` (HTTP/2:
+  `HEADERS` with `END_STREAM`, not `RST_STREAM`); and stamps `Exeris-License: development` on every final
+  response and every `101`, dropping any application header of that name. `DeveloperWorkloadAdmission` is
+  the limiter: the generic cell rate algorithm with a one-second burst, and a bounded connection counter,
+  both lock-free and allocation-free. A driver reads the slot once in `start()`; a read on a connection
+  thread finds it unbound. `ContractBootstrapStep.run` now returns a `ContractDecision`, and
+  `KernelBootstrap` binds the contract and the gate together. **For anyone binding the TCK:**
+  `AbstractWorkloadAdmissionTck` (HTTP) and `AbstractTransportWorkloadAdmissionTck` are new abstract suites a
+  server-side HTTP or transport driver binds; the Enterprise engines bind them when they move to 0.13.
+- **A closed `TransportStream` says who closed it.** `read`, `write` and `queueWrite` on a closed stream throw
+  `TransportStreamClosedException`, an `IllegalStateException` carrying `EX-NET-4008` when the stream's remote
+  end was observed first (or the transport tore it down) and `EX-NET-4009` when it was closed through this
+  endpoint. Code that catches `IllegalStateException` keeps working. The Community TCP stream throws it at every
+  closed-stream site. **For anyone binding the TCK:** `AbstractTransportStreamTck` now asserts the type, and
+  `EX-NET-4009` after a local `close()` or `reset()`, so a binding that throws a bare `IllegalStateException`
+  fails those cases. The Enterprise QUIC stream binds the suite and needs the type when it moves to 0.13.
+- **`KernelBootstrap.shutdown()` and `Builder#registerShutdownHook(boolean)`; a standalone `boot()` stops the
+  kernel in order on `SIGTERM` (ADR-007 §5).** `shutdown()` is idempotent and returns after the ordered stop;
+  called while `boot()` is still initializing or starting, it records the request, `kernelMain` is not run and
+  `boot()` returns normally. `boot()` registers one JVM shutdown hook (thread `exeris-kernel-shutdown`) that runs
+  `shutdown()` and removes it before returning, unless the builder disables it.
+
+- **Multi-hop path traversal primitive.** `GraphPathSpec`/`GraphHop`, `traversePath`, `streamPathJson`, `buildPathQuery`; one request, terminal frontier, walk semantics, per-hop direction; Community runs it as one statement / one query.
+- **A choreography `Start` for an instance the engine already holds is pinned as a no-op, and the absorbed
+  delivery is observable.** A running, parked or completed instance is not run again and the supplied plan is
+  ignored; `AbstractFlowChoreographyTck` pins each state for every binding. Each absorbed `Start` emits the new
+  JFR event `eu.exeris.kernel.flow.ChoreographyStartIgnored` (`engineName`, `instanceIdMost`,
+  `instanceIdLeast`, `existingState` naming the `FlowState`: `RUNNING`, `PARKED`, `COMPLETED` or
+  `FAILED_ROLLEDBACK`, or `TERMINAL` when the finished instance's state is no longer cached). One limit is documented on `ChoreographyDecision.Start`: a non-terminal durable row is resumed rather than treated
+  as a duplicate, which raises no event. The no-op across a restart holds while the snapshot store keeps the terminal row.
+- **Core binds `OPENSSL_cleanse` and exposes it as `CoreOpenSslRuntime#cleanse(MemorySegment)`.** The
+  facade zeroes a native segment through the C routine, skipping null and zero-length segments and
+  refusing a heap segment. The
+  zeroization audit found no Java-owned segment that holds key material (OpenSSL owns and clears the
+  TLS secrets), so no call site invokes it yet; the `SensitiveBuffer` SPI remains deferred with FIPS
+  scope. `CoreOpenSslCleanseTest` runs against the pinned OpenSSL matrix.
+
+- **`EventEngineStats.publishFailedTotal()` counts asynchronous publish failures on a brokered bus (ADR-101
+  Ruling 2).** The new component is kept apart from `failedTotal`, which still counts handler errors only. The
+  seven-argument constructor remains as a bridge that reports zero, so existing callers compile unchanged.
+  The change is recorded in `docs/stability-matrix.md`.
+
+- **`HttpExchange` reports the client's transport address.** `remoteAddress()` and `remotePort()` return
+  the immediate transport peer of the connection that carries the exchange, which is the proxy when one
+  sits in front; the kernel reads no forwarded header. `null` and `-1` mean no network transport backs
+  the exchange. `HttpStreamExchange` carries the same pair. Community binds both on HTTP/1.1, TLS and
+  HTTP/2 exchanges, pinned by `AbstractHttpServerPeerAddressTck`. The Enterprise tier does not override
+  them yet, so its exchanges report `null` and `-1`.
+
+- **Tenant isolation for events (ADR-101, Ruling 1).** `EventDescriptor` carries an `isolationOrdinal`
+  (`0` = unscoped). `EventBus.subscribeScoped(eventType, handler)` delivers only the events published under
+  the subscriber's bound isolation key. `EventEngine.isolationRegistry()` returns an `IsolationKeyRegistry`
+  (`IsolationKeySpec`), and `EX-EVENT-6012` reports a key conflict. The Kafka binding carries the ordinal in
+  the record header `exeris-isolation-ordinal` on every producer path and reads it on the consumer loop. The
+  Community JDBC outbox and event log gain `isolation_ordinal` (migration `V0.13.0__add_event_isolation_ordinal.sql`).
+  `EventDescriptor`'s seven-argument constructor and `of` remain, and produce unscoped descriptors. The
+  `AbstractEventBusTck`, `AbstractEventRegistryTck`, `AbstractKafkaEventEngineTck` and `EventBusZeroAllocTck`
+  suites carry the cases. See `docs/subsystems/events.md` "Isolation (ADR-101)".
+- **GraalVM native-image is supported as an opt-in build.** The Core, Community and Kafka jars ship
+  reachability metadata (the SPI's file is empty) under `META-INF/native-image/eu.exeris/<artifactId>/`, and Community ships the image
+  build arguments it needs (`--enable-monitoring=jfr`, two `--add-opens`, `-H:+SharedArenaSupport`), so an
+  application builds an image with no configuration of its own for the kernel. GraalVM 25 or newer, OpenSSL 3
+  on the host. HotSpot/C2 stays the default and the only runtime with asserted performance targets. Each
+  module's metadata is checked against its declaration sites by a unit test. ADR-103.
+
+- **`RequiresRoleProcessor` emits native-image reachability metadata for the `RoleCheckRegistry` it
+  generates.** Next to the class it writes `reachability-metadata.json`, by default under
+  `META-INF/native-image/eu.exeris.kernel.security.generated/role-check-registry/`, overridable with the
+  processor option `exeris.requiresrole.nativeImageMetadataDir` (which must start with
+  `META-INF/native-image/`). It registers the type and the five accessors `GeneratedRoleRegistryLoader`
+  binds; without it a native image loads the fail-closed empty registry and every `@RequiresRole` denies
+  (ADR-103).
+- **Scoped issuer keys and the developer licence (ADR-088, ADR-089).** Each pinned key carries a scope. `prod`:
+  all six environments, no maximum validity, no workload ceiling, commercial artifacts. `dev`: `development` only,
+  30 days from `issuer.issuedAt` to `validUntil` plus the grace period, at most 50 requests per second and 10
+  connections with no growth allowance, an absent envelope refused, `issuedAt` required, no `PERPETUAL_INTERNAL`,
+  commercial artifacts. `ent`: as `prod`, and enterprise-private artifacts too. A scope breach is `HARD`, and no
+  enforcement rule softens it: `EX-LIC-0009` (environment, the declared one included), `EX-LIC-0010` (validity),
+  `EX-LIC-0011` (envelope), `EX-LIC-0012` (a requirement of a class the key may not entitle) and `EX-LIC-0013` (a
+  key with a ceiling signed a `capability` or `environment` rule below `HARD`). A key with no ceiling cannot sign
+  `workloadEnvelope: HARD` (`EX-LIC-0001`). The kernel verifies a manifest under a developer key and holds its
+  envelope at `HARD` through `DeveloperWorkloadAdmission`, only when a requirement is declared; a Community-only
+  classpath is never gated. New: `EntitlementClass`, `IssuerKeyScope`, `TrustedIssuerKey`. `AbstractLicenseManifestCryptoTck`
+  adds Tests 5 to 8 and the gate cases. **For anyone binding the TCK:** its `verifyManifest` hook takes a `TckKeyScope`
+  and a new abstract `decide` hook runs the gate's decision; `AbstractEntitlementRequirementTck` asserts the class.
+- **The boot verifies a signed license manifest and enforces its entitlements (ADR-088, ADR-089,
+  #608).** Phase 0 of `KernelBootstrap.boot()` reads `license-manifest.json` (or
+  `license.manifest.path`), checks it against ADR-088's v1 schema, canonicalizes it per RFC 8785 and
+  verifies its Ed25519 signature against the embedded `TrustedIssuerKeyStore`, before the
+  orchestrator runs. Without a manifest the kernel boots under the Community fallback, and refuses
+  the boot (`EX-LIC-0005`), in every environment, when an `EntitlementRequirement` is on the
+  classpath. The result is the `ExecutionContract` in
+  `spi.contract` (preview); `SOFT` and `AUDIT` violations are reported once each, and every gate
+  decision is recorded as `ContractResolvedEvent`. Covered by `AbstractExecutionContractTck`,
+  `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck`. Not yet: metering,
+  offline revocation and the cost
+  measurement against ADR-089's 5 ms (#605).
+- **`KernelProviders.TRANSACTIONAL_EXECUTOR` publishes the kernel's `TransactionalExecutor`.** The
+  Community persistence subsystem binds a `TransactionOrchestrator` over the shared engine next to
+  `PERSISTENCE_ENGINE`, for the same scope, so a caller reads `KernelProviders.transactionalExecutor()`
+  instead of constructing one. Its retry policy comes from `persistence.transaction.retry.maxAttempts`
+  (default `1`, no retry) and `persistence.transaction.retry.baseDelayMs` (default `50`), resolved by
+  `TransactionRetryPolicy.fromConfig`; a `maxAttempts` below `1` fails the boot. Enterprise binds
+  the slot in its own persistence subsystem separately.
+
+- **The Community OIDC validator accepts EdDSA (Ed25519) tokens, with the algorithm pinned per key (ADR-040 A1).** A JWKS entry of type `OKP` on curve `Ed25519` is installed beside the RSA entries and verifies tokens whose header names `EdDSA` (or `Ed25519`); an RSA entry still verifies only RS256. The key decides the algorithm: a header that names another algorithm than its key's is denied with `EX-SEC-2002` before any signature is checked, whichever key the `kid` selects. Ed25519 is verified by the JDK's default provider, so no dependency is added. A JWKS that already publishes an Ed25519 key, which the validator ignored, now has it honoured, and an issuer that signs access tokens with Ed25519 needs no change to its tokens. `ES*`, `PS*` and `Ed448` stay unsupported, and the set is not configurable.
+
+### Added — verification
+
+- **The shared-scope matrix is bound on `uuid` keys.** `CommunityPersistenceSharedScopeUuidIT` runs
+  `AbstractSharedScopeAccessMatrixTck` against live PostgreSQL with `uuid` owner and scope columns, bound
+  through `bindUuid`. The `uuid` form of the reference policy is published beside the `TEXT` one: the
+  tag check has no `COALESCE` (`NULL` is the only private tag) and the tenant arm is the unguarded cast.
+  The `TEXT` tag check cannot be installed on such a column; `CREATE POLICY` refuses it with `22P02`.
+- **The three HTTP/2 header limits are a TCK contract.** `AbstractHttp2HeaderLimitTck` judges
+  `http.maxHeaderBlockSize`, `http.maxHeaderListSize` and `http.maxStringLiteralSize` on the wire: a
+  request at each limit is served, one octet over is refused without reaching the handler, and the
+  server advertises `http.maxHeaderListSize` as `SETTINGS_MAX_HEADER_LIST_SIZE`. A refusal of an
+  oversized field section or literal is a `431` on the stream, an `RST_STREAM` with an error code or a
+  `GOAWAY` with an error code, and a refusal that keeps the connection keeps the HPACK dynamic table in
+  step: a request that references entries the refused block added is served with them. A block that
+  does not decode is `GOAWAY(COMPRESSION_ERROR)`. Community binds it with
+  `CommunityHttp2HeaderLimitTckTest`.
+- **The native symbols a binding needs are a TCK contract.** `AbstractAbiSymbolResolutionTck` takes a
+  manifest derived from the descriptor tables the loaders bind from, never hand-listed, and fails when a
+  `REQUIRED` symbol does not resolve in the host library (every miss named in one failure), when an
+  alternatives group has no resolvable member, and, on a run pinned to one OpenSSL major, when an
+  `OPTIONAL` symbol is missing. `OpenSslDowncall`, `SyscallDowncall` and `CommunityForeignCall` now state
+  each row's library, platform and resolution; `CoreOpenSslLoader` binds every OpenSSL row from those attributes, and `SyscallErrno` takes its errno candidates from the `errno` group (the version probes and the syscall loader keep their own dispatch, with the attributes pinned by tests).
+  Core binds the suite for OpenSSL and for the socket syscalls, Community for `SSL_set_fd`.
+- **The TLS matrix refuses a class that executed fewer tests than its floor.** The report check that
+  only refused a skip or an empty class is `.github/scripts/tls-matrix-floor.sh`, reading
+  `.github/tls-matrix-floors.txt`: a minimum executed count per class (tests minus skipped), zero-skip
+  where a skip is a gap, and a total. The OpenSSL-gated Community classes that no matrix step selected
+  are now selected and floored, and the Core TCK bindings that skip by design have a floor instead of an
+  exemption.
+
+- **The key's algorithm, not the header's, is a TCK contract.** `AbstractSecurityProviderTck.PerKeyAlgorithmPinContract` accepts an EdDSA token under its Ed25519 key's `kid` and denies an EdDSA token under an RSA key's `kid`, an RS256 token under an Ed25519 key's `kid`, an Ed25519-signed token whose header names RS256, and an RSA-signed token under an algorithm its key is not pinned to (RS512). The five hooks default to existing fixtures, so a binding that verifies no EdDSA token stays green; Community binds all five.
+
+### Fixed
+
+- **Community memory-pressure admission engages when a budget is configured.** Each server-mode carrier samples the allocator at start and every second; before, nothing refreshed the level, so it stayed NORMAL. `memory.offHeapBudgetBytes` gives the Community allocator a budget its stats report; unset keeps the previous behaviour. The Community provider accepts a positive `totalOffHeapBytes` as a pressure budget, not a cap, instead of refusing it. The arbiter's 30 s startup grace follows the bound `TimeSource`.
+
+- **HPACK sizes table entries and the field section by the octets on the wire.** The decoder measured an entry, and the field section, by re-encoding the decoded String as UTF-8. An obs-text octet that is not valid UTF-8 became U+FFFD and counted three octets where the client counted one. The server then evicted entries the client still held, and a later request referencing one failed as a COMPRESSION_ERROR, or a field section within http.maxHeaderListSize was refused. Sizes now come from the octets read. New AbstractHttp2HeaderLimitTck group ObsTextOctets.
+
+- **`spi-api-diff --history` labels each transition with the stability conf at its old ref, not the working tree's (tooling).** Regenerating the release history after a surface is promoted no longer reports that surface's earlier `preview` breaks as `stable` breaks; a single `--old/--new` run keeps judging by the current conf. `--self-test` pins the choice for each mode against a throwaway repository, and CI runs it.
+
+- **A Community stream's `write` no longer grows its outbound queue without limit against a peer that stops reading (#556).** The backpressure `TransportStream#write` documented was never honoured: the remainder the socket refused was copied into the queue however slow the peer. The queue now holds at most the bound, and the writer parks until the peer has taken half of it or the stream ends.
+- **An SSE event larger than `http.stream.creditWindowBytes` no longer parks `emit` forever on HTTP/1.1; it is admitted once nothing is outstanding.** `AbstractHttpStreamExchangeTck` gains the case.
+- **A WebSocket `send` against a peer that stopped reading no longer stalls that connection's pongs and close echo.** The egress wrote every frame with `write` under its lock, so a data write parked at the outbound bound held the lock the frame loop needs to answer a ping or a close until the idle sweep closed the stream. Every frame now goes through `queueWrite` in its own pooled buffer; data frames wait for credit (the bytes the transport has not yet released, against `transport.maxQueuedWriteBytes`) without the lock, and control frames never wait.
+- **A completed flow is not run again, and does not come back as parked, after a terminal catalog evicts it or the engine restarts.**
+  With a snapshot store bound, completion replaces the instance's row with a `COMPLETED` snapshot whatever
+  `terminalCatalogMaxSize` says. A resubmit or a choreography `Start` after an eviction or a restart is
+  absorbed as terminal, even with a plan for another definition, `lookupParked` returns empty, and a wake is
+  refused with `NOT_PARKED`. Before this fix the default unbounded catalog deleted the row on completion, so a
+  `Start` redelivered after a restart ran the saga again, and in bounded mode a flow that never parked ran
+  again from its first step and one that had parked came back as `PARKED`. The engine no longer calls
+  `FlowSnapshotStore.delete`; storage grows by one row per finished instance until the binder deletes it, and
+  deleting one lets that id run again. `FlowSnapshotStore` states that a store accepts and returns terminal
+  snapshots, which `AbstractDistributedFlowSnapshotStoreTck` now checks, and `AbstractSagaRecoveryTck` gains the
+  `createBoundedEngine(int)` obligation, whose default throws so that no binding skips it. `AbstractSagaRecoveryTck`
+  gains `CompletedInstanceAcrossRestart`, and `RestartUnderLoad` expects the `COMPLETED` row.
+
+- **A write after a TLS peer's `close_notify` no longer fails as `TlsHandshakeException` (`EX-NET-2001`) and is no longer logged as `Community HTTP stream handling failed`; a write stalled across `close_notify` ends the stream through the closed signal instead of an abortive dispatch-fault teardown (#686, #714).** The Community engine does not wrap after the peer's `close_notify`, so the stalled bytes are dropped with their loans released and the writer's next call reports `EX-NET-4008`. A session the peer ended right after the handshake is no longer mistaken for a handshake still in progress. TLS 1.3 half-close is not supported. The first failed socket call of a JVM reads its own errno: the first errno read of a JVM returned `ENOENT`, because initialising the reader overwrote the errno of the call, so the first `EAGAIN` on a send or a receive was not retryable and aborted, with `EX-NET-4002`, a connection that was only under backpressure. The readers are now initialised when `SyscallHandles` is constructed. Errno is still read in a second downcall, so activity of the JVM between the two can overwrite it.
+- **A thread blocked in `read` on a Community TCP stream is woken by every transition that ends the stream.**
+  The wake was tied to winning the first `close()` or `reset(long)`, a close whose teardown was deferred
+  behind queued writes removed the reader's registration, and the read loop ignored a requested close, so a
+  reader could park again with nothing left to wake it. Every terminal transition now wakes the reader, a
+  writer and a registration waiter; a repeated `close()` or `reset(long)`, a send failure that aborts the
+  stream and the final teardown included, and a reader still completing the TLS handshake stops on a
+  requested close. A send failure finishes the teardown once its thread has released the outbound slot, and the slot gate no longer lets a nested cleanup release a slot its caller holds.
+  Bytes a peer sent before it ended the stream stay readable after a send-failure abort that follows
+  its end; a local `close()` or `reset(long)` still discards them.
+  `AbstractTransportStreamTck` gains the cases that pin the reader's wake on the stream's own `close()` and on the
+  peer's `reset(long)`.
+- **The Central bundle is clean on Maven 3.10, and the release dry run builds it.** `central-publishing-maven-plugin` moves to 0.12.0, which deletes the `maven-metadata-local.xml`, `_remote.repositories` and `.locks` files Maven 3.10 writes into the staging repository and 0.11.0 left in the bundle, where Central refuses it. `release.yml`'s dry run now runs `deploy -DskipUpload=true`, and `tools/central-bundle-gate/central-bundle-gate.sh` (with `--self-test`) fails a bundle holding any entry outside `<group>/<artifact>/<version>/`, any file in a version directory not named `<artifact>-<version>…` (which catches `maven-metadata-*`, `_remote.repositories` and `.locks`), or a version directory without its `.pom`.
+- **A TLS write that meets a full send buffer on a Community TCP stream stalls instead of resetting the
+  connection.** The engine reported `SSL_ERROR_WANT_WRITE` as `NEED_WRAP`, and the drain treated every status
+  but `OK` as fatal, so a response larger than the kernel send buffer to a slow reader ended in an abort. The
+  head write now stays queued with write interest armed and is retried with the same buffer address and
+  length, which OpenSSL requires without partial-write mode; a write that waits for the peer (`NEED_UNWRAP`)
+  stalls without write interest and is flushed after the next ingress batch, whichever thread holds the
+  outbound slot when the batch arrives. A fatal wrap status aborts the stream under the outbound slot and
+  wakes its waiters: the failure is thrown to the writer when its own thread runs the drain, and otherwise
+  the stream ends and the writer's next call reports the closed signal. It used to re-enter `close()` under
+  the slot and lose the queued write silently.
+- **An HTTP/2 request body larger than 64 KiB completes.** The Community session returns stream and
+  connection credit as it consumes DATA, never beyond `http.maxRequestBodyBytes`, enforces its receive
+  windows (`FLOW_CONTROL_ERROR`), and refuses with `REFUSED_STREAM` a stream whose body would take the
+  bodies buffered on one connection past `http.maxRequestBodyBytes`.
+- **HTTP/2 respond-once responses honour the peer's connection and stream flow-control windows.** The
+  session applies `WINDOW_UPDATE` and `SETTINGS_INITIAL_WINDOW_SIZE`; a body the windows cannot carry
+  yet finishes on a task that waits for credit while the frame loop keeps reading, and every write to
+  the connection goes through one writer. A response larger than 65 535 bytes to a client that keeps
+  the default window is no longer sent past it.
+- **An `h2c` upgrade consumes the client connection preface and answers the upgrade request on stream 1; a
+  compliant client (`curl --http2`, `nghttp -u`) no longer receives `GOAWAY(PROTOCOL_ERROR)`.**
+- **Inbound HTTP/2 frames are validated against the server's own `SETTINGS_MAX_FRAME_SIZE`; a peer's value no
+  longer raises or lowers the inbound limit, an oversized frame is `GOAWAY(FRAME_SIZE_ERROR)`, and an
+  out-of-range value is `GOAWAY(PROTOCOL_ERROR)`.**
+- **`findShortestPath(UUID, UUID)` no longer reports not-found for a pair it never searched; it refuses (see Changed).**
+- **The SQL/PGQ graph backend's `deleteNode` removes the node's connected edges (#468).** One statement
+  deletes, from every registered edge table whose descriptor names the label on the source or target
+  side, the rows touching the node, then the node row; matches the Cypher backend's `DETACH DELETE`;
+  an edge table not registered through `registerEdges` is not cascaded. A registered edge table that
+  names the label but whose table name is not a valid SQL identifier fails the call with
+  `GraphQueryException` before any statement runs; one that does not exist in the current scope fails
+  the statement with the persistence engine's translated error. Nothing is deleted in either case.
+- **A `SIGTERM` to a standalone kernel no longer exits without draining or stopping.** The JVM shutdown hook
+  runs the ordered stop: readiness turns `503`, the transport drains its in-flight requests, and subsystems stop in
+  reverse start order with memory last.
+- **The Community server sends its whole certificate chain, not its leaf alone (#532).** The server loaded its
+  certificate file with `SSL_CTX_use_certificate_file`, which keeps only the first certificate, so a client that
+  trusts the root alone could not verify a chained server. It now loads the file with
+  `SSL_CTX_use_certificate_chain_file`, which sends every certificate after the leaf. The new handle is
+  `CoreSslHandles.CtxHandles#invokeCtxUseCertChainFile`.
+- **ALPN selection honours `http.maxVersion` (#533).** The HTTPS listener selected `h2` whenever a client offered
+  it and ignored its own configuration. The listener's ALPN list now comes from `HttpConfig#maxVersion`: a listener
+  capped at HTTP/1.1 offers and selects `http/1.1` only, and an offer of `h2` alone to it is answered with no ALPN
+  protocol. The h2c and prior-knowledge paths and ALPN share one predicate, `HttpVersion#supportsMultiplexing`.
+- **A WSS listener never selects `h2`.** The WebSocket engine built its TCP listener with the default
+  ALPN list, so a client offering `h2` was answered `h2` on a connection that can only serve the
+  HTTP/1.1 upgrade. Its list is now `http/1.1` alone, and the Community ALPN selector selects only a
+  protocol the listener's list names, so a list naming `h2` without `http/1.1` no longer falls back to
+  `http/1.1`.
+- **A failed release no longer hides a failed client-engine binding (#558).**
+  `CommunityKernelCryptoProvider#createClientTlsEngine` threw the release failure when the peer binding had failed
+  and the release also failed, so the caller lost the binding failure. The release failure is now attached to the
+  binding failure as a suppressed exception, and the binding failure is the one thrown.
+- **An `Error` thrown by a subsystem goes through the failure policy instead of escaping
+  `KernelBootstrap` raw (#619).** `SubsystemOrchestrator` caught only `RuntimeException` around
+  `initialize()` and `start()`, so a `NoClassDefFoundError`, `ExceptionInInitializerError`,
+  `ServiceConfigurationError` or any other `Error` skipped the failure policy, the `FAILED` health state and
+  the `SubsystemInitialized(success=false)` event, and reached the caller of `boot()` unwrapped; under
+  `DEGRADE` an optional subsystem failing that way aborted the whole boot. Such an `Error` is now wrapped
+  in `SubsystemException` (`EX-BOOT-0002`) like any other unchecked failure, so an optional subsystem
+  under `DEGRADE` is dropped and every other case fails as `KernelBootstrap.BootstrapException` with the
+  `Error` as root cause. An `Error` from provider discovery fails the boot as `BootstrapException`; one
+  from `stop()` is logged and skipped like an exception. A `VirtualMachineError` still propagates
+  unchanged. The `Subsystem` Javadoc states the rule. New TCK `AbstractSubsystemErrorRoutingTck`, bound
+  in Core by `CoreSubsystemErrorRoutingTckTest`.
+- **An oversized HTTP/2 field section is refused with `431`, and a malformed HPACK block closes the
+  connection with `GOAWAY(COMPRESSION_ERROR)`.** A field section over `http.maxHeaderListSize`, or a
+  literal over `http.maxStringLiteralSize`, stopped the HPACK decoder part-way: fields after the
+  overflow that use incremental indexing never entered the server's dynamic table, so a later request
+  on the connection that referenced them decoded to other fields than the client sent, and the stream
+  was answered `400`. The decoder now reads such a block to its end, applying every insertion and
+  table-size update and discarding the fields, and the Community server answers the stream
+  `431 Request Header Fields Too Large` (RFC 9113 §8.2.3, RFC 6585 §5). A block that fails to decode
+  any other way is `GOAWAY(COMPRESSION_ERROR)` (RFC 9113 §4.3); it was a `400` on a connection left
+  open. `http.maxHeaderBlockSize` stays `GOAWAY(PROTOCOL_ERROR)`.
+
+### Fixed — verification
+
+- **The live graph contract TCK runs against PostgreSQL and Neo4j.** Connected-pair shortest path
+  and delete cascade are asserted against both backends (`AbstractGraphSessionLiveContractTck`,
+  `CommunityGraphSessionPostgresContractTckIT`, `CommunityGraphSessionNeo4jContractTckIT`);
+  `ExecutionGraphZeroAllocTck` measures a three-argument search over a seeded connected pair, and the
+  Community zero-alloc binding is an integration test.
+  **For anyone binding the TCK:** the zero-alloc TCK now needs a live backend, and `bootstrapSubsystem`
+  throws `IllegalStateException` unless the engine persists the seeded edges and the three-argument
+  search finds the 2-hop path.
+- **`central-verify` verifies release candidates and skips tags that are not releases.** A GitHub
+  release for `vMAJOR.MINOR.PATCH-RCn` is verified against Central like a final release (ADR-065
+  amendment A1); a release for any other tag ends the run with a notice instead of failing it. The
+  tag classification lives in the script (`--classify-tag`), which the workflow calls. The default
+  "latest tag" stays the highest final release. With `--self-test`, the negative controls run against
+  a fixed reference release and `--wait-minutes` bounds only the wait for the target version, starting
+  after them. An empty served checksum file is a failure line for that file instead of a traceback,
+  with a negative control of its own.
+- **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on
+  3.2.5.** Both are pinned once, in the root POM; the class sets were compared per execution and per
+  CI tag selection. The tests use Testcontainers 2.0.5, which does not depend on `junit:junit`, so no
+  module has JUnit 4 on its test classpath and none declares the Vintage engine; with `junit:junit`
+  present and no declared engine, Surefire 3.6 applies `groups`/`excludedGroups` as JUnit 4 categories,
+  so every tagged selection runs nothing and the default execution runs every excluded tag (#577).
+- **The `*Research` allocation harnesses are excluded by a tag, not only by their names.** The five
+  in Core and Community carry `@Tag("research")` and run only through the `research` profile
+  (`mvn -pl exeris-kernel-core,exeris-kernel-community -Presearch test-compile surefire:test`);
+  Sonar's S2699 and S3577 are suppressed for them alone (#564).
+- **The provider-precedence contract runs the kernel's selection.** `highestPriorityWins()` in the
+  graph, persistence, HTTP and security provider TCKs compared a maximum computed in the test with the
+  provider the test had created, which holds for any implementation. It now stages a rival one priority
+  step above and one below the provider under test, in both discovery orders, and requires the binding's
+  selection to return the highest by identity. The telemetry TCK drops the equivalent test: the kernel
+  selects no `TelemetryProvider`. **For anyone binding the TCK:** the four provider TCKs need the
+  template method `selectAmong(List)`, which delegates to your kernel's selection routine
+  (`BootstrapProviderSelector.selectHighestPriority` in Core and Community); its default throws, so an
+  unbound provider TCK fails instead of passing. The Enterprise `PersistenceProvider` and `HttpProvider`
+  TCK bindings must implement it when they move to 0.13, and `EnterpriseHttpSubsystem`, which selects
+  inline, must first route its selection through `BootstrapProviderSelector.loadHighestPriority`:
+  until then a binding that delegates to `selectHighestPriority` proves a routine that kernel does not
+  run. The Enterprise telemetry binding loses `highestPriorityWins` with no replacement.
+- **`AbstractFailurePolicyTck` observes the boot itself.** The three `boolean` hooks, each of which a
+  hardcoded `true` satisfied, are replaced by `bootCapturing(subsystems, degrade, kernelMain)`; the TCK
+  supplies counting subsystems and judges the boot by what they saw, and adds the cases that a mandatory
+  and a FOUNDATION failure still abort under `DEGRADE`. **For anyone binding the TCK:** implement
+  `bootCapturing` as in `AbstractSubsystemErrorRoutingTck`.
+- **`AbstractGracefulShutdownTck` is bound in Core and can no longer pass without observing a stop.**
+  `CoreGracefulShutdownTckTest` boots six stub subsystems through the real bootstrap and checks the
+  order and the drain of the shipped stop path. The TCK fails when the handle carries fewer than two
+  tracked engines, when an engine is bound to another order list, or when engines are not closed within
+  10 s of the trigger. **For anyone binding the TCK:** supply at least two `TrackedEngine`s bound to the
+  handle's order list.
+
 ## [0.12.0] — 2026-09-30
 
 ### Breaking

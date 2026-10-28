@@ -24,8 +24,28 @@ last-verified: 2026-09-05
   [`commit-conventions.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/commit-conventions.md)
   and [`pr-conventions.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/pr-conventions.md).
 - **Releases.** A milestone integrates into `main` through a single `release(x.y.z)` pull request.
-  `main` carries release versions, `development/*` carry `-SNAPSHOT`s; both publish to GitHub
-  Packages.
+  `main` carries release versions, `development/*` carry `-SNAPSHOT`s. GitHub Packages receives a
+  release version from `main` only, after the release merge, and a development line's
+  `-SNAPSHOT`; a development line that carries the plain release version publishes nothing,
+  because a release version there is immutable and its first upload is the one every consumer gets.
+- **Release candidates and the 1.0 line.** After 0.13.0 the next development line is
+  `development/1.0.0` at `1.0.0-SNAPSHOT`, not `development/0.14.0`; the base-branch resolver above
+  returns it unchanged because `sort -V` orders it after `development/0.13.0`. A release candidate
+  is the tag `vMAJOR.MINOR.PATCH-RC<n>` (upper-case `RC`, decimal `n`), and the release workflow
+  accepts that shape and `vMAJOR.MINOR.PATCH` only (`tools/release-tag/release-tag.sh`).
+  - *Where RC tags are cut.* On `main`, on the commit of a `release(1.0.0-RCn)` pull request that
+    integrates `development/1.0.0` with the poms at `1.0.0-RCn`; the workflow refuses a tag whose
+    commit is not on `main` or whose pom version differs from the tag. `development/1.0.0` stays at
+    `1.0.0-SNAPSHOT`. A candidate is uploaded to Central with `autoPublish=false` like a release, and
+    cannot be withdrawn once published: a defect found in `RCn` is fixed in `RC(n+1)`, never by
+    re-tagging.
+  - *What an RC freezes.* Stable SPI surfaces only: `spi-api-diff --fail-on-stable` against the last
+    final release tag (a candidate is never the baseline). Preview and experimental surfaces may
+    still change and are named in the next candidate's release notes. Behavioural compatibility is
+    outside the gate.
+  - *How fixes land during RC.* On `development/1.0.0` through ordinary pull requests, and onto
+    `main` in the next candidate's `release(1.0.0-RC(n+1))` pull request. The 1.0 line is not done
+    until `v1.0.0`, so the rule against reusing an integrated branch does not apply to it.
 - **ADR and RFC numbers are a GLOBAL namespace across the Exeris ecosystem.** Reserve the number in
   the registry **before** writing content — use the `exeris-adr-register` skill. The ADR-026
   collision in PR #129 is the cautionary tale. Filenames are kebab-case `ADR-0NN-short-title.md`;

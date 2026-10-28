@@ -127,7 +127,7 @@ final class NativeTcpClientTls implements AutoCloseable {
         return new NativeTcpClientTls(Posture.VERIFIED,
                 Objects.requireNonNull(provider, "provider must not be null"),
                 Objects.requireNonNull(trust, "trust must not be null"),
-                CryptoProviderConfig.tcpClient(),
+                NativeTcpTlsFloor.apply(CryptoProviderConfig.tcpClient()),
                 trustOrigin);
     }
 

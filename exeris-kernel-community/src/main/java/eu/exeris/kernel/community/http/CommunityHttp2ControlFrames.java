@@ -11,17 +11,17 @@ import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
-import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.lang.foreign.MemorySegment;
 
 /**
  * Package-private writers for HTTP/2 control frames issued by
  * {@link CommunityHttp2SessionProcessor}: SETTINGS, SETTINGS-ACK,
- * PING-ACK, RST_STREAM (REFUSED / CANCEL), and GOAWAY.
+ * PING-ACK, WINDOW_UPDATE, RST_STREAM (REFUSED / CANCEL), and GOAWAY.
  *
  * <p>Each writer follows the same shape — borrow a small network slab, encode
- * the frame via {@link Http2FrameEncoder}, write it to the transport.
+ * the frame via {@link Http2FrameEncoder}, write it through the connection's
+ * {@link Http2ConnectionWriter}.
  */
 final class CommunityHttp2ControlFrames {
 
@@ -34,7 +34,7 @@ final class CommunityHttp2ControlFrames {
     }
 
     /* default */ static void sendPingAck(MemoryAllocator allocator,
-                                          TransportStream stream,
+                                          Http2ConnectionWriter writer,
                                           LoanedBuffer aggregate,
                                           long payloadOffset) {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
@@ -53,7 +53,7 @@ final class CommunityHttp2ControlFrames {
                     H2_PING_PAYLOAD_BYTES);
             long written = Http2FrameParser.FRAME_HEADER_SIZE + (long) H2_PING_PAYLOAD_BYTES;
             outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 
@@ -70,61 +70,89 @@ final class CommunityHttp2ControlFrames {
      * asymmetrically, because raising it would be believed and never honoured while lowering it
      * would merely be conservative. Raising it is the only reason to touch the key.
      */
-    /* default */ static void sendServerSettings(MemoryAllocator allocator, TransportStream stream,
+    /* default */ static void sendServerSettings(MemoryAllocator allocator, Http2ConnectionWriter writer,
                                                  int maxHeaderListSize) {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
             long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, false,
                     Http2Settings.ID_MAX_HEADER_LIST_SIZE, maxHeaderListSize);
             outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 
-    /* default */ static void sendSettingsAck(MemoryAllocator allocator, TransportStream stream) {
+    /**
+     * Returns receive credit to the peer in one write: a WINDOW_UPDATE for the stream and one for the
+     * connection, coalesced so that a frame that consumed both costs one queued buffer. An increment of
+     * zero omits that frame.
+     */
+    /* default */ static void sendWindowUpdates(MemoryAllocator allocator,
+                                                Http2ConnectionWriter writer,
+                                                int streamId,
+                                                int streamIncrement,
+                                                int connectionIncrement) {
+        if (streamIncrement <= 0 && connectionIncrement <= 0) {
+            return;
+        }
+        try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
+            long written = 0;
+            if (streamIncrement > 0) {
+                written += Http2FrameEncoder.writeWindowUpdate(
+                        outbound.segment(), written, streamId, streamIncrement);
+            }
+            if (connectionIncrement > 0) {
+                written += Http2FrameEncoder.writeWindowUpdate(
+                        outbound.segment(), written, 0, connectionIncrement);
+            }
+            outbound.setSize(written);
+            writer.writeFrame(outbound, (int) written);
+        }
+    }
+
+    /* default */ static void sendSettingsAck(MemoryAllocator allocator, Http2ConnectionWriter writer) {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
             long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, true);
             outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 
     /* default */ static void sendRstStreamRefused(MemoryAllocator allocator,
-                                                   TransportStream stream,
+                                                   Http2ConnectionWriter writer,
                                                    int streamId) {
-        sendRstStream(allocator, stream, streamId, Http2ErrorCode.REFUSED_STREAM);
+        sendRstStream(allocator, writer, streamId, Http2ErrorCode.REFUSED_STREAM);
     }
 
     /* default */ static void sendRstStreamCancel(MemoryAllocator allocator,
-                                                  TransportStream stream,
+                                                  Http2ConnectionWriter writer,
                                                   int streamId) {
-        sendRstStream(allocator, stream, streamId, Http2ErrorCode.CANCEL);
+        sendRstStream(allocator, writer, streamId, Http2ErrorCode.CANCEL);
     }
 
-    /* default */ static void sendGoAwayNoError(MemoryAllocator allocator, TransportStream stream) {
-        sendGoAway(allocator, stream, 0, Http2ErrorCode.NO_ERROR);
+    /* default */ static void sendGoAwayNoError(MemoryAllocator allocator, Http2ConnectionWriter writer) {
+        sendGoAway(allocator, writer, 0, Http2ErrorCode.NO_ERROR);
     }
 
     /* default */ static void sendGoAway(MemoryAllocator allocator,
-                                         TransportStream stream,
+                                         Http2ConnectionWriter writer,
                                          int lastStreamId,
                                          Http2ErrorCode errorCode) {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
             long written = Http2FrameEncoder.writeGoAway(
                     outbound.segment(), 0, lastStreamId, errorCode.code());
             outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 
-    private static void sendRstStream(MemoryAllocator allocator,
-                                      TransportStream stream,
+    /* default */ static void sendRstStream(MemoryAllocator allocator,
+                                      Http2ConnectionWriter writer,
                                       int streamId,
                                       Http2ErrorCode errorCode) {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
             long written = Http2FrameEncoder.writeRstStream(
                     outbound.segment(), 0, streamId, errorCode.code());
             outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
+            writer.writeFrame(outbound, (int) written);
         }
     }
 }

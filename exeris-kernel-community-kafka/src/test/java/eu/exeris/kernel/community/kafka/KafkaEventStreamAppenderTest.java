@@ -11,14 +11,17 @@ import eu.exeris.kernel.spi.events.EventStreamAppender;
 import eu.exeris.kernel.spi.events.StreamId;
 import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
 import eu.exeris.kernel.spi.exceptions.events.EventStreamAppendConflictException;
+import org.apache.kafka.clients.producer.MockProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.MemorySegment;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -80,6 +83,28 @@ class KafkaEventStreamAppenderTest {
         appender.append(stream, 0L, descriptor(stream), EventPayload.empty());
         assertThatExceptionOfType(EventStreamAppendConflictException.class)
                 .isThrownBy(() -> appender.append(stream, 0L, descriptor(stream), EventPayload.empty()));
+    }
+
+    @Test
+    @DisplayName("the log record carries the descriptor's isolation ordinal in its header")
+    void logRecordCarriesIsolationHeader() {
+        MockProducer<byte[], byte[]> producer =
+                new MockProducer<byte[], byte[]>(true, null, new ByteArraySerializer(), new ByteArraySerializer());
+        KafkaEventStreamAppender recording = new KafkaEventStreamAppender(
+                producer, KafkaEventConfig.defaults("localhost:9092", "unit"),
+                "unit-engine", (high, low) -> 0L);
+        StreamId stream = freshStream();
+        UUID eventId = UUID.randomUUID();
+        EventDescriptor scoped = EventDescriptor.of(
+                eventId.getMostSignificantBits(), eventId.getLeastSignificantBits(),
+                stream.streamIdHigh(), stream.streamIdLow(),
+                EVENT_TYPE_ORDINAL, EventDescriptor.FLAG_PERSISTENT, System.currentTimeMillis(), 101);
+
+        recording.append(stream, EventStreamAppender.ANY_VERSION, scoped, EventPayload.empty());
+
+        List<ProducerRecord<byte[], byte[]>> history = producer.history();
+        assertThat(history).hasSize(1);
+        assertThat(KafkaIsolationHeader.read(history.get(0).headers())).isEqualTo(101);
     }
 
     @Test

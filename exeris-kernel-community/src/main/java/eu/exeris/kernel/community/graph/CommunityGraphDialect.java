@@ -6,10 +6,12 @@ package eu.exeris.kernel.community.graph;
 
 import eu.exeris.kernel.spi.graph.GraphDialect;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphHop;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -33,10 +35,14 @@ final class CommunityGraphDialect implements GraphDialect {
         CYPHER
     }
 
+    /* default */ static final int MAX_PATH_LENGTH = 64;
+
     private static final String SQL_DIALECT_NAME = "SQL/PGQ";
     private static final String CYPHER_DIALECT_NAME = "Cypher";
     private static final Pattern SQL_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_]*$");
     private static final Pattern CYPHER_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
+    private static final int INITIAL_PATH_BUFFER_CAPACITY = 512;
+    private static final int SINGLE_STEP = 1;
     private final String graphName;
     private final Mode mode;
 
@@ -50,25 +56,33 @@ final class CommunityGraphDialect implements GraphDialect {
     }
 
     /**
-     * {@inheritDoc}
+     * Builds a query that executes an ordered sequence of hops with walk semantics.
      *
-     * @throws IllegalArgumentException if {@code edge}'s relevant identifier (relationship
-     *         type in Cypher mode, table name in SQL/PGQ mode) does not match
-     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     * <p>Separate {@code MATCH} clauses in Cypher decouple relationship uniqueness across steps,
+     * matching the walk semantics produced by SQL recursive CTEs, with {@code WITH DISTINCT}
+     * maintaining set semantics for each intermediate frontier.
+     *
+     * @param hops ordered hops, not empty
+     * @return dialect-specific query string
+     * @throws NullPointerException if {@code hops} is null
+     * @throws IllegalArgumentException if {@code hops} is empty, or the sum of {@code maxRepeat}
+     *         exceeds {@link #MAX_PATH_LENGTH}, or any identifier fails validation
      */
     @Override
-    public String buildMatchQuery(GraphEdgeDescriptor edge) {
-        if (mode == Mode.CYPHER) {
-            return """
-                    MATCH (source)-[:%s]->(target)
-                    WHERE source.id = $sourceId
-                    RETURN target.id AS target_id
-                    """.formatted(requireCypherIdentifier(edge.edgeType()));
+    public String buildPathQuery(List<GraphHop> hops) {
+        Objects.requireNonNull(hops, "hops must not be null");
+        if (hops.isEmpty()) {
+            throw new IllegalArgumentException("hops must not be empty");
         }
-        return """
-                SELECT target_id FROM %s
-                WHERE source_id = $1
-                """.formatted(requireSqlIdentifier(edge.tableName()));
+        long total = 0;
+        for (GraphHop h : hops) {
+            total += h.maxRepeat();
+        }
+        if (total > MAX_PATH_LENGTH) {
+            throw new IllegalArgumentException(
+                    "path length bound (sum of maxRepeat) exceeds the Community graph limit of " + MAX_PATH_LENGTH);
+        }
+        return mode == Mode.CYPHER ? buildCypherPathQuery(hops) : buildSqlPathQuery(hops);
     }
 
     /**
@@ -79,28 +93,20 @@ final class CommunityGraphDialect implements GraphDialect {
      *         {@code [A-Za-z][A-Za-z0-9_]*}
      */
     @Override
+    public String buildMatchQuery(GraphEdgeDescriptor edge) {
+        return buildPathQuery(List.of(GraphHop.of(edge)));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalArgumentException if {@code edge}'s relevant identifier (relationship
+     *         type in Cypher mode, table name in SQL/PGQ mode) does not match
+     *         {@code [A-Za-z][A-Za-z0-9_]*}, or if {@code minHops < 1} or {@code maxHops < minHops}
+     */
+    @Override
     public String buildMultiHopQuery(GraphEdgeDescriptor edge, int minHops, int maxHops) {
-        if (mode == Mode.CYPHER) {
-            return """
-                    MATCH p = (source)-[:%s*%d..%d]->(target)
-                    WHERE source.id = $sourceId
-                    RETURN DISTINCT target.id AS id
-                    """.formatted(requireCypherIdentifier(edge.edgeType()), minHops, maxHops);
-        }
-        String tableName = requireSqlIdentifier(edge.tableName());
-        return """
-                WITH RECURSIVE traversal AS (
-                    SELECT target_id, 1 AS depth
-                    FROM %s
-                    WHERE source_id = $1
-                    UNION ALL
-                    SELECT e.target_id, t.depth + 1
-                    FROM %s e
-                    INNER JOIN traversal t ON e.source_id = t.target_id
-                    WHERE t.depth < %d
-                )
-                SELECT DISTINCT target_id AS id FROM traversal WHERE depth >= %d
-                """.formatted(tableName, tableName, maxHops, minHops);
+        return buildPathQuery(List.of(new GraphHop(edge, minHops, maxHops)));
     }
 
     /**
@@ -285,6 +291,123 @@ final class CommunityGraphDialect implements GraphDialect {
      */
     /* default */ boolean isCypherMode() {
         return mode == Mode.CYPHER;
+    }
+
+    private static GraphEdgeDescriptor.Direction effective(GraphEdgeDescriptor edgeDescriptor) {
+        return edgeDescriptor.bidirectional() ? GraphEdgeDescriptor.Direction.BOTH : edgeDescriptor.direction();
+    }
+
+    private String buildSqlPathQuery(List<GraphHop> hops) {
+        StringBuilder queryBuilder = new StringBuilder(INITIAL_PATH_BUFFER_CAPACITY);
+        queryBuilder.append("WITH RECURSIVE\nf0 (id) AS (SELECT CAST($1 AS uuid))");
+        int hopIndex = 1;
+        for (GraphHop hop : hops) {
+            queryBuilder.append(",\n");
+            String tableName = requireSqlIdentifier(hop.edge().tableName());
+            GraphEdgeDescriptor.Direction dir = effective(hop.edge());
+            int prevHop = hopIndex - 1;
+            int minRepeat = hop.minRepeat();
+            int maxRepeat = hop.maxRepeat();
+
+            if (maxRepeat == SINGLE_STEP) {
+                queryBuilder.append('f').append(hopIndex).append(" (id) AS (SELECT DISTINCT ")
+                        .append(sqlNext("p", dir))
+                        .append(" AS id FROM f").append(prevHop).append(" p INNER JOIN ")
+                        .append(tableName).append(" e ON ")
+                        .append(sqlCond("p", dir))
+                        .append(')');
+            } else {
+                queryBuilder.append('h').append(hopIndex).append(" (id, depth) AS (SELECT p.id, 0 FROM f")
+                        .append(prevHop).append(" p UNION SELECT ")
+                        .append(sqlNext("h", dir))
+                        .append(", h.depth + 1 FROM h").append(hopIndex).append(" h INNER JOIN ")
+                        .append(tableName).append(" e ON ")
+                        .append(sqlCond("h", dir))
+                        .append(" WHERE h.depth < ").append(maxRepeat).append("),\nf")
+                        .append(hopIndex).append(" (id) AS (SELECT DISTINCT id FROM h")
+                        .append(hopIndex).append(" WHERE depth >= ").append(minRepeat).append(')');
+            }
+            hopIndex++;
+        }
+        queryBuilder.append("\nSELECT id FROM f").append(hops.size());
+        return queryBuilder.toString();
+    }
+
+    private static String sqlCond(String alias, GraphEdgeDescriptor.Direction dir) {
+        return switch (dir) {
+            case OUTGOING -> "e.source_id = " + alias + ".id";
+            case INCOMING -> "e.target_id = " + alias + ".id";
+            case BOTH -> "(e.source_id = " + alias + ".id OR e.target_id = " + alias + ".id)";
+        };
+    }
+
+    private static String sqlNext(String alias, GraphEdgeDescriptor.Direction dir) {
+        return switch (dir) {
+            case OUTGOING -> "e.target_id";
+            case INCOMING -> "e.source_id";
+            case BOTH -> "CASE WHEN e.source_id = " + alias + ".id THEN e.target_id ELSE e.source_id END";
+        };
+    }
+
+    private String buildCypherPathQuery(List<GraphHop> hops) {
+        int totalSteps = 0;
+        for (GraphHop h : hops) {
+            totalSteps += h.minRepeat();
+            if (h.maxRepeat() > h.minRepeat()) {
+                totalSteps += 1;
+            }
+        }
+        final int finalStep = totalSteps;
+        StringBuilder queryBuilder = new StringBuilder(INITIAL_PATH_BUFFER_CAPACITY);
+        queryBuilder.append("MATCH (source) WHERE source.id = $sourceId\nWITH DISTINCT source");
+
+        int stepIndex = 1;
+        for (GraphHop hop : hops) {
+            String edgeType = requireCypherIdentifier(hop.edge().edgeType());
+            GraphEdgeDescriptor.Direction dir = effective(hop.edge());
+            int minRepeat = hop.minRepeat();
+            int maxRepeat = hop.maxRepeat();
+
+            for (int r = 0; r < minRepeat; r++) {
+                String prevVar = cypherVar(stepIndex - 1, finalStep);
+                String currVar = cypherVar(stepIndex, finalStep);
+                String arrow = cypherArrow(edgeType, dir, null);
+                queryBuilder.append("\nMATCH (").append(prevVar).append(')')
+                        .append(arrow).append('(').append(currVar).append(")\nWITH DISTINCT ").append(currVar);
+                stepIndex++;
+            }
+
+            if (maxRepeat > minRepeat) {
+                int range = maxRepeat - minRepeat;
+                String prevVar = cypherVar(stepIndex - 1, finalStep);
+                String currVar = cypherVar(stepIndex, finalStep);
+                String arrow = cypherArrow(edgeType, dir, "*0.." + range);
+                queryBuilder.append("\nMATCH (").append(prevVar).append(')')
+                        .append(arrow).append('(').append(currVar).append(")\nWITH DISTINCT ").append(currVar);
+                stepIndex++;
+            }
+        }
+        queryBuilder.append("\nRETURN DISTINCT target.id AS id\n");
+        return queryBuilder.toString();
+    }
+
+    private static String cypherVar(int step, int totalSteps) {
+        if (step == 0) {
+            return "source";
+        }
+        if (step == totalSteps) {
+            return "target";
+        }
+        return "n" + step;
+    }
+
+    private static String cypherArrow(String edgeType, GraphEdgeDescriptor.Direction dir, String range) {
+        String rangePart = range != null ? range : "";
+        return switch (dir) {
+            case OUTGOING -> "-[:" + edgeType + rangePart + "]->";
+            case INCOMING -> "<-[:" + edgeType + rangePart + "]-";
+            case BOTH -> "-[:" + edgeType + rangePart + "]-";
+        };
     }
 
     private static boolean isCypherBackend(String backendType) {

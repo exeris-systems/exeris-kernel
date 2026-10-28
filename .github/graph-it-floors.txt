@@ -1,0 +1,15 @@
+# Executed-test floors for the live graph integration tests of the persistence-rls-gate job, read by
+# .github/scripts/tls-matrix-floor.sh.
+#
+# Row: <report-dir> <class> <min-executed> [zero-skip]
+# Each class is @Testcontainers(disabledWithoutDocker = true), so a runner without Docker skips it and
+# the job reports green. Every row is zero-skip: these classes have no case that skips by design.
+#
+# total is the floor on the sum of every row's executed tests.
+
+exeris-kernel-community/target/surefire-reports CommunityGraphSessionPostgresContractTckIT 17 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityGraphSessionNeo4jContractTckIT 17 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityExecutionGraphZeroAllocTckIT 1 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityGraphBackendParityIT 4 zero-skip
+exeris-kernel-community/target/surefire-reports CommunityGraphChurnRatioTckIT 1 zero-skip
+total 40

@@ -227,7 +227,12 @@ mvn clean install
 ```
 
 This is the **only** command that counts. `mvn clean compile` is not sufficient — it skips:
-- PMD static analysis (Priority 1-3 rules including banned `ThreadLocal` and `ExecutorService` detection)
+- PMD static analysis (Priority 1-3 rules, bound to `verify`)
+- The ArchUnit architecture guards, which ban `java.lang.ThreadLocal`, `Executors`, `CompletableFuture` and
+  `sun.misc.Unsafe` in the main classes of SPI, Core and Community, and in the test classes of Community and
+  `exeris-kernel-community-testkit`; other modules' test classes are checked by review alone
+  ([scoped bans](.agents/policies/scoped-bans.md)). The Checkstyle `[EXERIS L0]` regexes for the same types run
+  at `validate`, so `compile` does reach those, but over main sources only.
 - TCK execution in `LeakDetectionMode.PARANOID`
 - SPI isolation verification (ensures `exeris-kernel-spi` has no implementation-specific imports)
 - JFR-based zero-allocation validation on the `wrap()`/`unwrap()` hot path
@@ -323,9 +328,33 @@ MAVEN_GPG_PASSPHRASE=testpass mvn -P release clean verify -DskipTests
 tools/release-readiness/release-readiness.sh
 ```
 
-The gate asserts that every coordinate has a pom, jar, sources jar, javadoc jar and SBOM, and that
+The release workflow's dry run goes one step further and builds the bundle Central would receive,
+without sending it: `mvn -P release clean deploy -DskipTests -DskipUpload=true`. Then
+`tools/central-bundle-gate/central-bundle-gate.sh` reads `target/central-publishing/central-bundle.zip`
+and fails on any entry outside a coordinate's `<group>/<artifact>/<version>/` directory, any file in a
+version directory not named `<artifact>-<version>…` (which catches `maven-metadata-*`,
+`_remote.repositories` and `.locks`), and a version directory without its `.pom`; Central refuses the
+whole bundle for any of them. `--self-test` shows the gate
+refusing each kind of stray entry.
+
+The readiness gate asserts that every coordinate has a pom, jar, sources jar, javadoc jar and SBOM, and that
 each verifies against the key. It reports what it deliberately skipped rather than staying silent —
 `exeris-kernel-tck` is currently held back from Central, and the root POM records why.
+
+The readiness gate proves what the build signed. What Central then serves is checked by a separate
+tool that fetches a released version into an empty directory and verifies it with only the pinned
+project key in a throwaway keyring:
+
+```bash
+tools/central-verify/central-verify.sh --version 0.12.0 --self-test
+```
+
+`--self-test` first runs the negative controls: the verifier must pass an untouched artifact, then
+fail on a jar with one flipped byte, on an SBOM naming another version, on a pinned fingerprint that
+does not match the key file, and under a different valid key. The `central-verify` workflow runs
+the same command weekly, on a published GitHub release, and on demand. The signing key's
+fingerprint is pinned in the script; rotate it there and replace
+`tools/central-verify/exeris-release-key.asc` in the same change.
 
 Two things this profile does that the ordinary build does not, both of which have already bitten:
 
@@ -358,6 +387,40 @@ exists before it).
 > and lands in the commit as `100644`, so CI is the first thing to discover it with
 > `Permission denied` and exit 126. Check with `git ls-files -s tools/**/*.sh` — every gate there
 > should read `100755`.
+
+### Native image (opt-in, GraalVM 25)
+
+GraalVM native-image builds are opt-in and run outside the default build gates (ADR-103). No kernel
+build, test, or release step requires GraalVM; HotSpot/C2 remains the default runtime platform.
+
+**Toolchain prerequisites:**
+- GraalVM 25 or newer:
+  ```bash
+  sdk install java 25.0.2-graal
+  ```
+- Running Docker daemon (for Testcontainers backends).
+- OpenSSL 3 host library (`libssl.so.3` on Linux).
+
+**Building and verifying smoke images:**
+The smoke modules (`exeris-kernel-native-smoke` and `exeris-kernel-native-smoke-kafka`) live under the
+inactive-by-default `native` Maven profile and consume the reactor jars installed to `~/.m2`:
+
+```bash
+# Step 1: Install reactor jars to local Maven repository
+mvn clean install -DskipTests
+
+# Step 2: Compile native images and run verification harness
+JAVA_HOME=~/.sdkman/candidates/java/25.0.2-graal mvn -Pnative -pl exeris-kernel-native-smoke,exeris-kernel-native-smoke-kafka verify
+```
+
+**Testing red failure modes:**
+To verify that missing reachability metadata fails the smoke verification:
+
+```bash
+bash tools/native-smoke/strip-metadata.sh <artifactId>
+```
+
+`strip-metadata.sh` edits the jar in `~/.m2` in place; re-run `mvn install -DskipTests` to restore it.
 
 ---
 

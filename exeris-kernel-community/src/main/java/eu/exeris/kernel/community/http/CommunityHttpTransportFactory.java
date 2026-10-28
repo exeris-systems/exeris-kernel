@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
+import eu.exeris.kernel.community.transport.CommunityQueuedWriteBoundResolver;
 import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
@@ -12,6 +13,7 @@ import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMode;
+import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
@@ -19,6 +21,7 @@ import eu.exeris.kernel.spi.transport.TransportMode;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.util.List;
 
 /**
  * Package-private builder for the {@link TransportEngine} and {@link TransportConfig} that back a
@@ -26,6 +29,9 @@ import java.net.ServerSocket;
  * bound {@link ConfigProvider} into the transport subsystem's own configuration shape.
  */
 final class CommunityHttpTransportFactory {
+
+    private static final List<String> ALPN_HTTP_2_AND_1_1 = List.of("h2", "http/1.1");
+    private static final List<String> ALPN_HTTP_1_1 = List.of("http/1.1");
 
     private CommunityHttpTransportFactory() {
     }
@@ -101,12 +107,28 @@ final class CommunityHttpTransportFactory {
             ? KernelProviders.CURRENT_CONFIG.get()
             : null;
         TransportConfig transportConfig = buildTransportConfig(config, port, configProvider, role);
+        List<String> listenerAlpn = listenerAlpn(config.maxVersion());
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
-            return provider.createEngine(transportConfig, outboundTls);
+            return provider.createEngine(transportConfig, outboundTls, listenerAlpn);
         }
         return ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator)
-                .call(() -> provider.createEngine(transportConfig, outboundTls));
+                .call(() -> provider.createEngine(transportConfig, outboundTls, listenerAlpn));
+    }
+
+    /**
+     * The ALPN protocols an HTTP listener offers for an engine permitted to negotiate up to
+     * {@code maxVersion}: {@code h2} is offered only where HTTP/2 is a permitted version, and
+     * {@code http/1.1} always, since it is the fallback every listener serves.
+     *
+     * <p>The same predicate decides whether the HTTP/2 prior-knowledge and h2c paths are open, so the
+     * ALPN answer and those paths cannot disagree about HTTP/2.
+     *
+     * @param maxVersion the highest version the engine may negotiate
+     * @return the listener's ALPN list, in preference order
+     */
+    /* default */ static List<String> listenerAlpn(HttpVersion maxVersion) {
+        return maxVersion.supportsMultiplexing() ? ALPN_HTTP_2_AND_1_1 : ALPN_HTTP_1_1;
     }
 
     /**
@@ -159,7 +181,8 @@ final class CommunityHttpTransportFactory {
                 keyPath,
                 config.maxConnections(),
                 config.idleTimeoutMillis(),
-                CommunityAdmissionCeilingResolver.resolve(configProvider));
+                CommunityAdmissionCeilingResolver.resolve(configProvider),
+                CommunityQueuedWriteBoundResolver.resolve(configProvider));
     }
 
     private static String resolveTransportProperty(ConfigProvider configProvider,

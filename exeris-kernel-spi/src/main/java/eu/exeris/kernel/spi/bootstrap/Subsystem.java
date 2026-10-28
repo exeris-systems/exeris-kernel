@@ -41,7 +41,8 @@ import java.util.function.UnaryOperator;
  * <p>If {@link #isOptional()} returns {@code true} and the failure policy is
  * {@code DEGRADE}, a failing subsystem is skipped rather than aborting the kernel.
  * {@link BootstrapPhase#FOUNDATION} subsystems are always considered mandatory
- * regardless of this flag.
+ * regardless of this flag. A {@link VirtualMachineError} is not a subsystem failure
+ * and is never skipped.
  *
  * <p><b>Allocation:</b> allocates (in {@link #initialize()}, where the subsystem acquires
  * its own resources) — every method declared here is invoked once per kernel lifecycle,
@@ -131,9 +132,21 @@ public interface Subsystem {
      * method inside the kernel scope that binds
      * {@link eu.exeris.kernel.spi.context.KernelProviders#CURRENT_CONFIG}.
      *
+     * @apiNote When the initialization deadline passes, the orchestrator interrupts the booting
+     *          thread and fails the boot with {@code EX-BOOT-0003}, whether or not this method then
+     *          returns.
+     * @implSpec Respond to interruption: a method that ignores the interrupt still holds the boot
+     *           until it returns.
+     *           It must not call {@code System.exit} or {@link Runtime#exit}: it runs on the booting
+     *           thread, which the kernel's shutdown hook waits for.
      * @throws SubsystemException ({@code EX-BOOT-0002}) if initialization fails
-     *         unrecoverably; any other unchecked exception is wrapped in one by the
-     *         orchestrator, with {@link SubsystemException.Phase#INITIALIZE} as its phase
+     *         unrecoverably; any other unchecked exception — a {@link RuntimeException},
+     *         or an {@link Error} such as a {@link LinkageError} or
+     *         {@link java.util.ServiceConfigurationError} — is wrapped in one by the
+     *         orchestrator, with {@link SubsystemException.Phase#INITIALIZE} as its phase,
+     *         and is subject to the failure policy like any other failure. A
+     *         {@link VirtualMachineError} is never wrapped: it propagates unchanged and
+     *         aborts the boot under every failure policy.
      * @implSpec Implementations must be idempotent — the orchestrator calls this exactly once
      *           per kernel lifecycle, but a test harness or a re-entrant host need not —
      *           and must not begin accepting external requests or connections here; that is
@@ -150,12 +163,19 @@ public interface Subsystem {
      * those of the subsystems initialized before it — is visible from here.
      *
      * @throws SubsystemException ({@code EX-BOOT-0002}) if startup fails unrecoverably;
-     *         any other unchecked exception is wrapped in one by the orchestrator, with
-     *         {@link SubsystemException.Phase#START} as its phase
+     *         any other unchecked exception — a {@link RuntimeException}, or an
+     *         {@link Error} such as a {@link LinkageError} or
+     *         {@link java.util.ServiceConfigurationError} — is wrapped in one by the
+     *         orchestrator, with {@link SubsystemException.Phase#START} as its phase, and
+     *         is subject to the failure policy like any other failure. A
+     *         {@link VirtualMachineError} is never wrapped: it propagates unchanged and
+     *         aborts the boot under every failure policy.
      * @implSpec A subsystem that acquires anything the kernel must later release has to
      *           report {@code true} from {@link #isRunning()} once this method returns;
      *           the orchestrator skips {@link #stop()} for a subsystem that reports
      *           {@code false}.
+     *           It must not call {@code System.exit} or {@link Runtime#exit}: it runs on the booting
+     *           thread, which the kernel's shutdown hook waits for.
      */
     void start();
 
@@ -170,9 +190,19 @@ public interface Subsystem {
      *           resource unreleased because a preceding release failed: shutdown has no
      *           second attempt and no failure policy — a subsystem that throws here is the
      *           last one the kernel hears from about that resource.
-     * @implNote The Core orchestrator swallows any unchecked exception thrown here, logs it
-     *           at {@code WARNING}, and continues with the next subsystem; the subsystem is
-     *           then not marked {@code STOPPED}.
+     *           {@code stop()} may run on a thread that carries none of the kernel's
+     *           {@code ScopedValue} bindings — the JVM shutdown hook's thread or an embedding host's
+     *           lifecycle thread — so it acts on references captured in {@code initialize()} or
+     *           {@code start()} and does not read
+     *           {@link eu.exeris.kernel.spi.context.KernelProviders}; a thread it forks inherits no
+     *           bindings either. It must not call {@code System.exit}, {@link Runtime#exit} or
+     *           {@link Runtime#halt}, and must not wait without bound for a thread of its own: that
+     *           thread may be the one whose {@code System.exit} started the JVM's shutdown, and it
+     *           never returns.
+     * @implNote The Core orchestrator swallows any unchecked exception other than a
+     *           {@link VirtualMachineError} thrown here, logs it at {@code WARNING}, and
+     *           continues with the next subsystem; the subsystem is then not marked
+     *           {@code STOPPED}.
      */
     void stop();
 

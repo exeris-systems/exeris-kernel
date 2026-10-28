@@ -49,6 +49,7 @@ final class CommunityHttpExchange implements HttpExchange {
     private final boolean requestedKeepAlive;
     private final DrainCoordinator drainCoordinator;
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
+    private final boolean licenceMarker;
     private final AtomicBoolean responded = new AtomicBoolean(false);
 
     /* default */ CommunityHttpExchange(HttpRequest request,
@@ -56,6 +57,16 @@ final class CommunityHttpExchange implements HttpExchange {
                           MemoryAllocator allocator,
                           boolean keepAlive,
                           HttpResponseBodyEncoderRegistry encoderRegistry) {
+        this(request, stream, allocator, keepAlive, encoderRegistry, false);
+    }
+
+    /* default */ CommunityHttpExchange(HttpRequest request,
+                          TransportStream stream,
+                          MemoryAllocator allocator,
+                          boolean keepAlive,
+                          HttpResponseBodyEncoderRegistry encoderRegistry,
+                          boolean licenceMarker) {
+        this.licenceMarker = licenceMarker;
         this.request = Objects.requireNonNull(request, "request must not be null");
         this.stream = Objects.requireNonNull(stream, "stream must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
@@ -73,6 +84,18 @@ final class CommunityHttpExchange implements HttpExchange {
     @Override
     public HttpRequest request() {
         return request;
+    }
+
+    // Read from the connection on each call rather than captured at construction: the connection
+    // already holds the peer address as an immutable value, so the exchange adds no field for it.
+    @Override
+    public String remoteAddress() {
+        return stream.connection().remoteAddress();
+    }
+
+    @Override
+    public int remotePort() {
+        return stream.connection().remotePort();
     }
 
     @Override
@@ -132,7 +155,7 @@ final class CommunityHttpExchange implements HttpExchange {
                     response.status().code(),
                     response.status().reasonPhrase());
             position = CommunityHttpResponseHeaders.write(
-                    outbound.segment(), response.headers(), bodyBytes, position, keepAlive);
+                    outbound.segment(), response.headers(), bodyBytes, position, keepAlive, licenceMarker);
 
             if (bodyOwned != null && bodyBytes > 0) {
                 MemorySegment.copy(bodyOwned.segment(), 0, outbound.segment(), position, bodyBytes);

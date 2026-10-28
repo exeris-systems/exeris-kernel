@@ -80,7 +80,8 @@ class FlowWakeBeforeParkTest {
             FlowChoreographyBridge bridge = new FlowChoreographyBridge(
                     _ -> new ChoreographyDecision.Wake(
                             context.instanceIdMost(), context.instanceIdLeast()),
-                    engine.scheduler());
+                    engine.scheduler(),
+                    engine.runtime());
             bridge.handle(new EventDescriptor(1L, 2L, 3L, 4L, 0, 0, 0L), EventPayload.empty());
 
             releaseStep.countDown();

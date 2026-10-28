@@ -26,6 +26,13 @@ import java.util.concurrent.locks.LockSupport;
  *       iteration when {@link MemoryAllocator#performMaintenance()} runs.</li>
  * </ol>
  *
+ * <h2>Refresh-only variant</h2>
+ * <p>{@link #watermarkRefreshOnly(WatermarkManager, long)} builds a task that only refreshes the
+ * watermark: it never calls {@link MemoryAllocator#performMaintenance()} and emits no maintenance
+ * cycle event. Its owner is the transport, which keeps the level its admission arbiter reads
+ * current for as long as it serves; the full variant stays with whatever runs allocator
+ * maintenance. The refresh-only thread is named {@value #WATERMARK_REFRESH_THREAD_NAME}.
+ *
  * <h2>No {@code ScheduledExecutorService}</h2>
  * <p>Per the architectural ban on {@code ExecutorService} and {@code Executors}, timing
  * is implemented as a Virtual Thread loop using {@link LockSupport#parkNanos(long)}.
@@ -66,6 +73,13 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
      */
     public static final long DEFAULT_WATERMARK_INTERVAL_MS = 5_000L;
 
+    /**
+     * Name of the Virtual Thread run by the refresh-only variant.
+     */
+    public static final String WATERMARK_REFRESH_THREAD_NAME = "exeris-watermark-refresh";
+
+    private static final String MAINTENANCE_THREAD_NAME = "exeris-memory-maintenance";
+
     private static final VarHandle RUNNING;
     private static final VarHandle MAINTENANCE_THREAD;
 
@@ -83,6 +97,7 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
     /* default */ Thread maintenanceThread;
 
     private final MemoryAllocator allocator;
+    private final boolean allocatorMaintenance;
     private final WatermarkManager watermarkManager;
     private final long maintenanceIntervalMs;
     private final long watermarkIntervalMs;
@@ -134,9 +149,42 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
             throw new IllegalArgumentException("watermarkIntervalMs must be > 0");
         }
         this.allocator = allocator;
+        this.allocatorMaintenance = true;
         this.watermarkManager = watermarkManager;
         this.maintenanceIntervalMs = maintenanceIntervalMs;
         this.watermarkIntervalMs = watermarkIntervalMs;
+    }
+
+    private MemoryMaintenanceTask(WatermarkManager watermarkManager, long watermarkIntervalMs) {
+        this.allocator = null;
+        this.allocatorMaintenance = false;
+        this.watermarkManager = watermarkManager;
+        this.maintenanceIntervalMs = 0L;
+        this.watermarkIntervalMs = watermarkIntervalMs;
+    }
+
+    /**
+     * Creates a task that only refreshes the watermark, every {@code watermarkIntervalMs} ms.
+     *
+     * <p>The task never calls {@link MemoryAllocator#performMaintenance()}; see the class
+     * documentation for the variant and its owner. The first refresh happens one interval after
+     * {@link #start()}, so a caller that needs a sample at start refreshes the manager itself.
+     *
+     * @param watermarkManager    the watermark monitor to refresh; must not be {@code null}
+     * @param watermarkIntervalMs interval between refresh calls in ms; must be {@code > 0}
+     * @return a task, not yet started
+     * @throws IllegalArgumentException if {@code watermarkManager} is {@code null} or the
+     *         interval is not positive
+     */
+    public static MemoryMaintenanceTask watermarkRefreshOnly(WatermarkManager watermarkManager,
+                                                             long watermarkIntervalMs) {
+        if (watermarkManager == null) {
+            throw new IllegalArgumentException("watermarkManager must not be null");
+        }
+        if (watermarkIntervalMs <= 0) {
+            throw new IllegalArgumentException("watermarkIntervalMs must be > 0");
+        }
+        return new MemoryMaintenanceTask(watermarkManager, watermarkIntervalMs);
     }
 
     // =========================================================================
@@ -155,7 +203,7 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
             return;
         }
         Thread thread = Thread.ofVirtual()
-                .name("exeris-memory-maintenance")
+                .name(allocatorMaintenance ? MAINTENANCE_THREAD_NAME : WATERMARK_REFRESH_THREAD_NAME)
                 .unstarted(this::maintenanceLoop);
         MAINTENANCE_THREAD.setRelease(this, thread);
         thread.start();
@@ -207,7 +255,8 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
      * calls, as configured at construction.
      *
      * @return the maintenance interval in milliseconds; fixed for the lifetime of
-     *         this instance
+     *         this instance, and {@code 0} for the refresh-only variant, which performs no
+     *         maintenance
      */
     public long maintenanceIntervalMs() {
         return maintenanceIntervalMs;
@@ -249,7 +298,9 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
             while ((boolean) RUNNING.getAcquire(this)) {
                 long nowNs = System.nanoTime();
                 lastWatermarkNs = maybeRefreshWatermark(nowNs, lastWatermarkNs, watermarkNs);
-                lastMaintenanceNs = maybeRunMaintenance(nowNs, lastMaintenanceNs, maintenanceNs);
+                if (allocatorMaintenance) {
+                    lastMaintenanceNs = maybeRunMaintenance(nowNs, lastMaintenanceNs, maintenanceNs);
+                }
                 nowNs = System.nanoTime();
                 parkUntilNextDeadline(nowNs, lastWatermarkNs, lastMaintenanceNs, watermarkNs, maintenanceNs);
             }
@@ -280,9 +331,9 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
                                        long lastMaintenanceNs,
                                        long watermarkNs,
                                        long maintenanceNs) {
-        long nextDeadlineNs = Math.min(
-                lastWatermarkNs + watermarkNs,
-                lastMaintenanceNs + maintenanceNs);
+        long nextDeadlineNs = allocatorMaintenance
+                ? Math.min(lastWatermarkNs + watermarkNs, lastMaintenanceNs + maintenanceNs)
+                : lastWatermarkNs + watermarkNs;
         long parkNs = nextDeadlineNs - nowNs;
         if (parkNs > 0 && (boolean) RUNNING.getAcquire(this)) {
             LockSupport.parkNanos(parkNs);

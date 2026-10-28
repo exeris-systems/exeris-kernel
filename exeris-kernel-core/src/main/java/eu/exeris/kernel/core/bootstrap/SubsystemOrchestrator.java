@@ -14,10 +14,13 @@ import eu.exeris.kernel.spi.bootstrap.SubsystemProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.config.KernelProfile;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.SubsystemException;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
+import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemInitDeadlineException;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
 
@@ -72,7 +76,9 @@ import java.util.function.UnaryOperator;
  * <p>This class is single-use per kernel lifecycle. {@link AtomicBoolean} guards
  * protect lifecycle transitions without broad synchronized lifecycle guarding.
  * Narrow synchronized sections are used only for internal {@code orderedSubsystems}
- * list mutation/snapshots off the hot path.
+ * list mutation/snapshots off the hot path. {@link #shutdown()} is entered through a
+ * compare-and-set, so concurrent callers run the stop sequence once, and a latch holds the losers
+ * until the winner has finished.
  *
  * @since 0.5
  * @see SubsystemCircularDependencyException
@@ -87,13 +93,17 @@ import java.util.function.UnaryOperator;
 // Retained suppressions:
 // - TooManyMethods, CyclomaticComplexity: inherent to a lifecycle orchestrator coordinating
 //   discovery → sort → phased init → start → shutdown.
+// - GodClass: the same lifecycle read as coupling; the sorter and registry loader are already extracted.
 // - LawOfDemeter: chained calls on Subsystem / SubsystemException are intrinsic to the lifecycle.
 @SuppressWarnings({
     "PMD.TooManyMethods",
     "PMD.CyclomaticComplexity",
-    "PMD.LawOfDemeter"
+    "PMD.LawOfDemeter",
+    "PMD.GodClass"
 })
 public final class SubsystemOrchestrator {
+
+    /* default */ static final Duration DEFAULT_INITIALIZE_DEADLINE = Duration.ofSeconds(300);
 
     /**
      * Zero-dependency JDK logger (JEP 264).
@@ -158,6 +168,8 @@ public final class SubsystemOrchestrator {
     private final FailurePolicy     failurePolicy;
     private final BootstrapSelector selector;
     private final ClassLoader       classLoader;
+    /** Initialization deadline in nanoseconds; {@code 0} means no deadline is armed. */
+    private final long              initializeDeadlineNanos;
     private final KernelHealthMonitor healthMonitor = new KernelHealthMonitor();
     private final Object orderedSubsystemsLock = new Object();
 
@@ -191,6 +203,10 @@ public final class SubsystemOrchestrator {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean started     = new AtomicBoolean(false);
     private final AtomicBoolean terminated  = new AtomicBoolean(false);
+    private final CountDownLatch shutdownCompleted = new CountDownLatch(1);
+    /** The thread running the stop sequence; read to let a stop() that re-enters shutdown() return. */
+    private final java.util.concurrent.atomic.AtomicReference<Thread> stoppingThread =
+            new java.util.concurrent.atomic.AtomicReference<>();
     private volatile long bootStartNanos;
 
     // =========================================================================
@@ -203,6 +219,7 @@ public final class SubsystemOrchestrator {
         this.classLoader   = builder.classLoader != null
                 ? builder.classLoader
                 : Thread.currentThread().getContextClassLoader();
+        this.initializeDeadlineNanos = InitDeadlines.budgetNanos(builder.initializeDeadline);
     }
 
     // =========================================================================
@@ -247,17 +264,7 @@ public final class SubsystemOrchestrator {
 
         KernelProfile profile = config.kernelSettings().get().profile();
 
-        // 1. Build registry from all SubsystemProviders (priority-sorted)
-        Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
-        LOG.log(System.Logger.Level.INFO,
-                "{0} subsystem(s) in registry: {1}", registry.size(), registry.keySet());
-
-        // 2. Apply selector — compute transitive closure
-        List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
-        LOG.log(System.Logger.Level.INFO,
-                "Selector resolved {0} subsystem(s): {1}",
-                selected.size(),
-                selected.stream().map(Subsystem::name).collect(java.util.stream.Collectors.joining(", ")));
+        List<Subsystem> selected = discoverSelected(config);
 
         // 3. Topological sort — Kahn's BFS, throws on cycle
         sortAndAdoptTopologicalOrder(selected);
@@ -297,10 +304,28 @@ public final class SubsystemOrchestrator {
      *         registry, or the registry contains a duplicate subsystem name
      */
     public List<Subsystem> resolveTopology(ConfigProvider config) throws BootstrapException {
-        Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
-        List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
+        List<Subsystem> selected = discoverSelected(config);
         sortAndAdoptTopologicalOrder(selected);
         return List.copyOf(orderedSubsystems);
+    }
+
+    @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
+                                    // VirtualMachineError is rethrown by rethrowIfFatal
+    private List<Subsystem> discoverSelected(ConfigProvider config) throws BootstrapException {
+        try {
+            Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
+            LOG.log(System.Logger.Level.INFO,
+                    "{0} subsystem(s) in registry: {1}", registry.size(), registry.keySet());
+            List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
+            LOG.log(System.Logger.Level.INFO,
+                    "Selector resolved {0} subsystem(s): {1}",
+                    selected.size(),
+                    selected.stream().map(Subsystem::name).collect(java.util.stream.Collectors.joining(", ")));
+            return selected;
+        } catch (Error ex) { // NOPMD — discovery failure is converted to BootstrapException
+            rethrowIfFatal(ex);
+            throw new BootstrapException("Subsystem discovery failed: " + ex, ex);
+        }
     }
 
     /**
@@ -356,43 +381,81 @@ public final class SubsystemOrchestrator {
     /**
      * Graceful shutdown — calls {@code stop()} on each subsystem for which
      * {@link Subsystem#isRunning()} reports {@code true}, in strict reverse topological order.
-     * Never throws — a {@code stop()} that throws is caught and logged as WARNING.
+     * A {@code stop()} that throws is caught and logged as WARNING, and the shutdown continues
+     * with the next subsystem. The one exception is a {@link VirtualMachineError}, which
+     * propagates unchanged and ends the shutdown.
+     *
+     * <p>Idempotent. Concurrent callers run the sequence once and every caller returns after it
+     * completed; a call from the stopping thread itself (a {@code stop()} that calls back) returns at
+     * once. A call on an orchestrator that was never initialized is a no-op and leaves it reusable.
+     * Must not run concurrently with {@link #initialize(ConfigProvider)} or
+     * {@link #start(ConfigProvider)} — {@link KernelBootstrap} enforces that.
      */
+    @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
+                                    // VirtualMachineError is rethrown by rethrowIfFatal
     public void shutdown() {
-        if (terminated.get()) {
+        if (!terminated.get() && !initialized.get() && !started.get()) {
+            return; // never initialized: nothing to stop, stays reusable
+        }
+        if (!terminated.compareAndSet(false, true)) {
+            // identity is the question: a stop() on the stopping thread re-entering shutdown()
+            if (Thread.currentThread() == stoppingThread.get()) { // NOPMD CompareObjectsWithEquals
+                LOG.log(System.Logger.Level.WARNING,
+                        "shutdown() re-entered from the stopping thread — returning");
+            } else {
+                awaitShutdownCompleted(); // loser: return only after the winner finished
+            }
             return;
         }
-        if (!initialized.get() && !started.get()) {
-            return;
-        }
+        stoppingThread.set(Thread.currentThread());
+        try {
+            long shutdownStartNanos = System.nanoTime();
+            int count = orderedSubsystems.size();
+            healthMonitor.markKernelState(KernelHealthMonitor.KernelState.SHUTTING_DOWN);
+            LOG.log(System.Logger.Level.INFO, "Shutting down {0} subsystem(s)", count);
 
-        terminated.set(true);
-        long shutdownStartNanos = System.nanoTime();
-        int count = orderedSubsystems.size();
-        healthMonitor.markKernelState(KernelHealthMonitor.KernelState.SHUTTING_DOWN);
-        LOG.log(System.Logger.Level.INFO, "Shutting down {0} subsystem(s)", count);
-
-        for (Subsystem subsystem : orderedSubsystems.reversed()) {
-            if (subsystem.isRunning()) {
-                long stopStartNanos = System.nanoTime();
-                LOG.log(System.Logger.Level.INFO, "  Stopping [{0}]", subsystem.name());
-                try {
-                    subsystem.stop();
-                    BootstrapJfrEvents.emitStopped(subsystem.name(), stopStartNanos);
-                    healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.STOPPED);
-                } catch (RuntimeException ex) { // NOPMD — stop() must never throw; swallowed by design
-                    LOG.log(System.Logger.Level.WARNING,
-                            "  [{0}] stop() threw — ignoring: {1}",
-                            subsystem.name(), ex.getMessage());
+            for (Subsystem subsystem : orderedSubsystems.reversed()) {
+                if (subsystem.isRunning()) {
+                    long stopStartNanos = System.nanoTime();
+                    LOG.log(System.Logger.Level.INFO, "  Stopping [{0}]", subsystem.name());
+                    try {
+                        subsystem.stop();
+                        BootstrapJfrEvents.emitStopped(subsystem.name(), stopStartNanos);
+                        healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.STOPPED);
+                    } catch (RuntimeException | Error ex) { // NOPMD — stop() must never throw; swallowed by design
+                        rethrowIfFatal(ex);
+                        LOG.log(System.Logger.Level.WARNING,
+                                "  [{0}] stop() threw — ignoring: {1}",
+                                subsystem.name(), ex.getMessage());
+                    }
                 }
             }
-        }
 
-        started.set(false);
-        initialized.set(false);
-        BootstrapJfrEvents.emitShutdownComplete(shutdownStartNanos, count);
-        LOG.log(System.Logger.Level.INFO, "SHUTDOWN complete in {0} ms",
-                elapsedMs(shutdownStartNanos));
+            started.set(false);
+            initialized.set(false);
+            BootstrapJfrEvents.emitShutdownComplete(shutdownStartNanos, count);
+            LOG.log(System.Logger.Level.INFO, "SHUTDOWN complete in {0} ms",
+                    elapsedMs(shutdownStartNanos));
+        } finally {
+            stoppingThread.set(null); // no stopping thread once the stop ended
+            shutdownCompleted.countDown();
+        }
+    }
+
+    /** Waits for the winning shutdown to finish; uninterruptible, and restores the interrupt flag. */
+    private void awaitShutdownCompleted() {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                shutdownCompleted.await();
+                break;
+            } catch (InterruptedException _) { // NOSONAR — an uninterruptible wait restores the flag once it ends
+                interrupted = true;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     // =========================================================================
@@ -561,12 +624,14 @@ public final class SubsystemOrchestrator {
     // Subsystem lifecycle helpers
     // =========================================================================
 
+    @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
+                                    // VirtualMachineError is rethrown by rethrowIfFatal
     private void doInitialize(Subsystem subsystem, KernelProfile profile) throws BootstrapException {
         long initStartNanos = System.nanoTime();
         LOG.log(System.Logger.Level.INFO,
                 "  init [{0}] (phase={1})", subsystem.name(), subsystem.phase());
         try {
-            subsystem.initialize();
+            InitDeadlineWatch.initialize(subsystem, healthMonitor, initializeDeadlineNanos);
 
             // ── Compose provider enricher after successful init ───────────
             // Each subsystem's UnaryOperator<ScopedValue.Carrier> is composed onto
@@ -599,24 +664,37 @@ public final class SubsystemOrchestrator {
             BootstrapJfrEvents.emitInitialized(
                     subsystem.name(), initStartNanos, profile,
                     subsystem.phase().name(), true, "");
-        } catch (SubsystemException ex) {
+        } catch (SubsystemException | SubsystemInitDeadlineException ex) {
             healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
             BootstrapJfrEvents.emitInitialized(
                     subsystem.name(), initStartNanos, profile,
                     subsystem.phase().name(), false, ex.getMessage());
             handleFailure(subsystem, ex);
         } catch (RuntimeException ex) { // NOPMD — subsystem.initialize() may throw any unchecked
-            SubsystemException wrapped = new SubsystemException(
-                    subsystem.name(), SubsystemException.Phase.INITIALIZE,
-                    ex.getMessage(), ex);
-            healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
-            BootstrapJfrEvents.emitInitialized(
-                    subsystem.name(), initStartNanos, profile,
-                    subsystem.phase().name(), false, ex.getMessage());
-            handleFailure(subsystem, wrapped);
+            handleUncheckedInitializeFailure(subsystem, ex, ex.getMessage(), profile, initStartNanos);
+        } catch (Error ex) { // NOPMD — an Error from a subsystem is routed through the failure policy
+            rethrowIfFatal(ex);
+            handleUncheckedInitializeFailure(subsystem, ex, ex.toString(), profile, initStartNanos);
         }
     }
 
+    private void handleUncheckedInitializeFailure(Subsystem subsystem,
+                                                  Throwable cause,
+                                                  String detail,
+                                                  KernelProfile profile,
+                                                  long initStartNanos) throws BootstrapException {
+        SubsystemException wrapped = new SubsystemException(
+                subsystem.name(), SubsystemException.Phase.INITIALIZE,
+                detail, cause);
+        healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
+        BootstrapJfrEvents.emitInitialized(
+                subsystem.name(), initStartNanos, profile,
+                subsystem.phase().name(), false, detail);
+        handleFailure(subsystem, wrapped);
+    }
+
+    @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
+                                    // VirtualMachineError is rethrown by rethrowIfFatal
     private void doStart(Subsystem subsystem, BootstrapPhase phase, String profile)
             throws BootstrapException {
         long startNanos = System.nanoTime();
@@ -648,7 +726,8 @@ public final class SubsystemOrchestrator {
             if (subsystem.isRunning()) {
                 try {
                     CoreJfrEventCatalogue.warmHotPath(subsystem.name());
-                } catch (RuntimeException ex) { // NOPMD — a warm-up must not fail a started subsystem
+                } catch (RuntimeException | Error ex) { // NOPMD — a warm-up must not fail a started subsystem
+                    rethrowIfFatal(ex);
                     LOG.log(System.Logger.Level.WARNING,
                             "  [{0}] JFR event warm-up failed; the subsystem is running and its events will "
                                     + "initialise at their first emit: {1}",
@@ -663,11 +742,20 @@ public final class SubsystemOrchestrator {
             healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
             handleFailure(subsystem, ex);
         } catch (RuntimeException ex) { // NOPMD — subsystem.start() may throw any unchecked
-            healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
-            handleFailure(subsystem, new SubsystemException(
-                    subsystem.name(), SubsystemException.Phase.START,
-                    ex.getMessage(), ex));
+            handleUncheckedStartFailure(subsystem, ex, ex.getMessage());
+        } catch (Error ex) { // NOPMD — an Error from a subsystem is routed through the failure policy
+            rethrowIfFatal(ex);
+            handleUncheckedStartFailure(subsystem, ex, ex.toString());
         }
+    }
+
+    private void handleUncheckedStartFailure(Subsystem subsystem,
+                                             Throwable cause,
+                                             String detail) throws BootstrapException {
+        healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
+        handleFailure(subsystem, new SubsystemException(
+                subsystem.name(), SubsystemException.Phase.START,
+                detail, cause));
     }
 
     // =========================================================================
@@ -797,7 +885,7 @@ public final class SubsystemOrchestrator {
     // Failure policy enforcement
     // =========================================================================
 
-    private void handleFailure(Subsystem subsystem, SubsystemException failure)
+    private void handleFailure(Subsystem subsystem, ExerisKernelException failure)
             throws BootstrapException {
 
         // FOUNDATION subsystems are ALWAYS mandatory — DEGRADE cannot save them
@@ -869,6 +957,12 @@ public final class SubsystemOrchestrator {
         return (System.nanoTime() - nanoStart) / 1_000_000;
     }
 
+    private static void rethrowIfFatal(Throwable throwable) {
+        if (throwable instanceof VirtualMachineError fatal) {
+            throw fatal;
+        }
+    }
+
     // =========================================================================
     // Builder
     // =========================================================================
@@ -890,6 +984,7 @@ public final class SubsystemOrchestrator {
         private FailurePolicy     failurePolicy = FailurePolicy.FAIL_FAST;
         private BootstrapSelector selector      = BootstrapSelector.all();
         private ClassLoader       classLoader;
+        private Duration          initializeDeadline = DEFAULT_INITIALIZE_DEADLINE;
 
         /**
          * Creates a builder with every setting at its default.
@@ -934,6 +1029,25 @@ public final class SubsystemOrchestrator {
          */
         public Builder classLoader(ClassLoader loaderClass) {
             this.classLoader = loaderClass;
+            return this;
+        }
+
+        /**
+         * Sets how long one subsystem's {@code initialize()} may run before the orchestrator interrupts the
+         * booting thread and fails the boot with {@link SubsystemInitDeadlineException} (EX-BOOT-0003).
+         * Default: 300 seconds. {@link Duration#ZERO} disables the deadline.
+         *
+         * <p>Only {@code initialize()} is bounded; {@code start()} and {@code stop()} are not. An
+         * {@code initialize()} that ignores interruption still holds the boot until it returns, and the
+         * deadline then applies to that return.
+         *
+         * @param deadline the longest one {@code initialize()} may run; {@link Duration#ZERO} for none
+         * @return this builder
+         * @throws IllegalArgumentException if {@code deadline} is negative, or positive but shorter than
+         *                                   one millisecond
+         */
+        public Builder initializeDeadline(Duration deadline) {
+            this.initializeDeadline = InitDeadlines.requireValidDeadline(deadline);
             return this;
         }
 

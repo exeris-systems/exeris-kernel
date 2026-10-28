@@ -37,6 +37,15 @@ public final class StreamOpenedEvent extends Event {
     public long streamId;
 
     /**
+     * The protocol's id for the stream on its connection: the HTTP/2 stream id, {@code 0} for HTTP/1.1,
+     * where the transport stream is the whole connection. Together with {@code streamId} it tells two
+     * streams of one connection apart.
+     */
+    @Label("Protocol Stream ID")
+    @Description("The protocol's stream id on its connection; 0 for HTTP/1.1.")
+    public int protocolStreamId;
+
+    /**
      * {@code true} when the stream was opened with an auth-expiry deadline greater than zero and is
      * therefore subject to fail-closed enforcement on JWT expiry; {@code false} when no such deadline
      * was configured for the stream (ADR-043 obligation 6).
@@ -63,6 +72,17 @@ public final class StreamOpenedEvent extends Event {
      * @param hasAuthDeadline whether an auth-expiry deadline governs this stream
      */
     public static void emit(long streamId, boolean hasAuthDeadline) {
+        emit(streamId, 0, hasAuthDeadline);
+    }
+
+    /**
+     * Emits a stream-opened event for a stream of a multiplexed protocol.
+     *
+     * @param streamId         the transport stream identifier
+     * @param protocolStreamId the protocol's stream id on its connection, {@code 0} where there is none
+     * @param hasAuthDeadline  whether an auth-expiry deadline governs this stream
+     */
+    public static void emit(long streamId, int protocolStreamId, boolean hasAuthDeadline) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -71,6 +91,7 @@ public final class StreamOpenedEvent extends Event {
             return;
         }
         event.streamId = streamId;
+        event.protocolStreamId = protocolStreamId;
         event.hasAuthDeadline = hasAuthDeadline;
         event.commit();
     }

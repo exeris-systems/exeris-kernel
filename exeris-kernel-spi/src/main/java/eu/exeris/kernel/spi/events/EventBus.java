@@ -75,13 +75,21 @@ public interface EventBus {
      * Hands an event to the bus for fan-out and returns without waiting for any handler —
      * completion is not observable through this method.
      *
+     * <p>On a brokered bus a normal return means the binding's client has accepted the event for
+     * sending; it does not mean the broker has acknowledged it. A failure the client reports after
+     * this call has returned is never thrown to the caller: the binding records it instead, as a
+     * JFR event and in {@link EventEngineStats#publishFailedTotal()}. A caller that needs the
+     * broker's acknowledgement uses {@link #publishAndAwait}.
+     *
      * @param descriptor routing metadata (non-null)
      * @param payload    event payload (non-null; use {@link EventPayload#empty()} for no-data events)
      * @throws EventBusException {@code EX-EVENT-6002} when the backing queue is at capacity and
      *         the engine is configured to refuse rather than block
      *         ({@link EventEngineConfig#busPublishFailFast()}); {@code rawArgs} carry
      *         {@code [String eventType, long queueDepth, long queueCapacity]}.
-     *         {@code EX-EVENT-6009} when the bus does not accept the event for any other reason;
+     *         {@code EX-EVENT-6009} when the bus does not accept the event for any other reason,
+     *         including an isolation refusal described on {@link EventEngine#bus()}, and a
+     *         brokered binding that refuses the record before this method returns;
      *         {@code rawArgs} carry {@code [int eventTypeOrdinal, String reason]} and the upstream
      *         failure, when there is one, is the cause
      * @apiNote Ownership of {@code payload} passes to the bus on entry: do not close it after this
@@ -111,6 +119,29 @@ public interface EventBus {
      *           {@link EventRegistry} does not know, so register the type before subscribing.
      */
     SubscriptionToken subscribe(String eventType, EventHandler handler);
+
+    /**
+     * Registers a handler that receives only the publications made under the subscriber's own
+     * isolation key, and returns the handle that revokes it (ADR-101).
+     *
+     * <p>The subscriber's scope is the isolation key bound on the calling thread through
+     * {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} at the moment of this
+     * call. {@link #subscribe} is unchanged: it receives every event, scoped or not.
+     *
+     * @param eventType the event type name (e.g. {@code "UserCreated"})
+     * @param handler   the handler (non-null)
+     * @return an opaque {@link SubscriptionToken} for later unsubscription
+     * @throws EventBusException {@code EX-EVENT-6011} if no storage context is bound, the bound key
+     *         is empty, the bound key is not registered in {@link EventEngine#isolationRegistry()},
+     *         or the bus does not support scoped subscriptions; {@code rawArgs} carry
+     *         {@code [String eventType]}
+     * @implSpec The default refuses every call. A bus that cannot scope a subscriber must not
+     *           silently widen it to an unscoped subscription.
+     * @since 0.13
+     */
+    default SubscriptionToken subscribeScoped(String eventType, EventHandler handler) {
+        throw EventBusException.subscriptionRejected(eventType);
+    }
 
     /**
      * Revokes the subscription the token identifies, so no publication after this call reaches

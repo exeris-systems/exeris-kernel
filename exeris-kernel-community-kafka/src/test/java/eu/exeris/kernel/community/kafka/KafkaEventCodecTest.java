@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.kafka;
 
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,7 @@ class KafkaEventCodecTest {
 
             assertThat(frame).hasSize(KafkaEventCodec.HEADER_SIZE);
 
-            EventDescriptor decoded = KafkaEventCodec.decodeDescriptor(frame);
+            EventDescriptor decoded = KafkaEventCodec.decodeDescriptor(frame, 0);
             assertDescriptorsEqual(decoded, original);
             assertThat(KafkaEventCodec.decodePayloadBytes(frame)).isEmpty();
         }
@@ -64,7 +65,7 @@ class KafkaEventCodecTest {
 
             assertThat(frame).hasSize(KafkaEventCodec.HEADER_SIZE + payload.length);
 
-            EventDescriptor decoded = KafkaEventCodec.decodeDescriptor(frame);
+            EventDescriptor decoded = KafkaEventCodec.decodeDescriptor(frame, 0);
             assertDescriptorsEqual(decoded, original);
             assertThat(KafkaEventCodec.decodePayloadBytes(frame)).containsExactly(payload);
         }
@@ -78,7 +79,7 @@ class KafkaEventCodecTest {
         @DisplayName("frame shorter than HEADER_SIZE is rejected with IllegalArgumentException")
         void shortFrameRejected() {
             byte[] tooShort = new byte[KafkaEventCodec.HEADER_SIZE - 1];
-            assertThatThrownBy(() -> KafkaEventCodec.decodeDescriptor(tooShort))
+            assertThatThrownBy(() -> KafkaEventCodec.decodeDescriptor(tooShort, 0))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining(String.valueOf(KafkaEventCodec.HEADER_SIZE));
         }
@@ -86,8 +87,50 @@ class KafkaEventCodecTest {
         @Test
         @DisplayName("zero-length frame is rejected — no buffer underrun")
         void emptyFrameRejected() {
-            assertThatThrownBy(() -> KafkaEventCodec.decodeDescriptor(new byte[0]))
+            assertThatThrownBy(() -> KafkaEventCodec.decodeDescriptor(new byte[0], 0))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("isolation ordinal — carried by the header, never by the frame")
+    class IsolationOrdinal {
+
+        @Test
+        @DisplayName("the frame bytes do not depend on the isolation ordinal")
+        void frameIsIdenticalAcrossIsolationOrdinals() {
+            EventDescriptor unscoped = EventDescriptor.of(
+                    1L, 2L, 3L, 4L, 5, EventDescriptor.FLAG_PERSISTENT, 6L, 0);
+            EventDescriptor scoped = EventDescriptor.of(
+                    1L, 2L, 3L, 4L, 5, EventDescriptor.FLAG_PERSISTENT, 6L, 101);
+
+            assertThat(KafkaEventCodec.encode(scoped, EventPayload.empty()))
+                    .containsExactly(KafkaEventCodec.encode(unscoped, EventPayload.empty()));
+        }
+
+        @Test
+        @DisplayName("a record without the header decodes as the unscoped ordinal 0")
+        void recordWithoutHeaderDecodesUnscoped() {
+            byte[] frame = KafkaEventCodec.encode(sampleDescriptor(5, 0, 6L), EventPayload.empty());
+            ProducerRecord<byte[], byte[]> record = new ProducerRecord<>("topic", frame);
+
+            int ordinal = KafkaIsolationHeader.read(record.headers());
+
+            assertThat(ordinal).isZero();
+            assertThat(KafkaEventCodec.decodeDescriptor(frame, ordinal).isolationOrdinal()).isZero();
+        }
+
+        @Test
+        @DisplayName("header value 0x00000065 decodes as isolation ordinal 101")
+        void headerValueDecodesAsOrdinal() {
+            byte[] frame = KafkaEventCodec.encode(sampleDescriptor(5, 0, 6L), EventPayload.empty());
+            ProducerRecord<byte[], byte[]> record = new ProducerRecord<>("topic", frame);
+            record.headers().add(KafkaIsolationHeader.NAME, new byte[] {0x00, 0x00, 0x00, 0x65});
+
+            int ordinal = KafkaIsolationHeader.read(record.headers());
+
+            assertThat(ordinal).isEqualTo(101);
+            assertThat(KafkaEventCodec.decodeDescriptor(frame, ordinal).isolationOrdinal()).isEqualTo(101);
         }
     }
 

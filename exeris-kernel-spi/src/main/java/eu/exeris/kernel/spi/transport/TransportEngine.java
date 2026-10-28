@@ -38,6 +38,13 @@ package eu.exeris.kernel.spi.transport;
  * partitions) and releases them in {@link #close()}. Implementations MUST
  * make {@code close()} idempotent.
  *
+ * <h2>Developer-licence envelope</h2>
+ * <p>A server-mode engine reads
+ * {@link eu.exeris.kernel.spi.contract.ContractKernelProviders#workloadAdmission()} once in
+ * {@link #start()} and honours the connection obligations of
+ * {@link eu.exeris.kernel.spi.contract.WorkloadAdmission}: every inbound connection counts against the
+ * ceiling, a refused one is closed right after accept, and every admitted one is released exactly once.
+ *
  * @since 0.5
  * @see TransportProvider
  * @see TransportConnection

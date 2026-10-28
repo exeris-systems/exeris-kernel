@@ -20,9 +20,9 @@ import java.lang.foreign.MemorySegment;
  * connection's reading thread and not thread-safe, which is all it needs to be.
  *
  * <p>Off-heap for the reason stated on {@link CommunityWebSocketEgress}: {@code TransportStream}
- * documents both directions as operating on a {@link LoanedBuffer}'s segment, and the ingress side
- * is the same buffer the egress side is — one per connection, grown when a frame does not fit,
- * rather than one allocation per read.
+ * documents both directions as operating on a {@link LoanedBuffer}'s segment. The ingress side keeps
+ * one such buffer per connection, grown when a frame does not fit, rather than one allocation per
+ * read; the egress side cannot, because the transport owns each frame's buffer until it has sent it.
  *
  * <p><b>Allocation:</b> one off-heap buffer for the connection's life, grown (never shrunk) to fit
  * the largest frame seen so far; a {@link #fill()} that does not need to grow allocates nothing.

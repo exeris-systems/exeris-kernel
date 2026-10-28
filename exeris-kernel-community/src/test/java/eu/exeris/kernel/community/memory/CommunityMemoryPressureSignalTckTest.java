@@ -17,7 +17,7 @@ import org.junit.jupiter.api.DisplayName;
  * emitted by the Community allocator correctly reflect allocation state — the data
  * that {@code WatermarkManager} in Core relies on for load-shedding decisions.
  *
- * <p>Community operates with heap-backed arenas ({@code totalBytes == -1}),
+ * <p>This suite builds the allocator with no budget ({@code totalBytes == -1}),
  * so {@link #hasFixedBudget()} returns {@code false} and the budget-consistency
  * L3 tests are skipped as not applicable.
  *

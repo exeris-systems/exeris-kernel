@@ -95,31 +95,45 @@ newest-major-first OS candidate lists for `libssl`/`libcrypto` (`.so.4` before `
 equivalent DLL names on Windows), honours the `EXERIS_OPENSSL_SSL_PATH` /
 `EXERIS_OPENSSL_CRYPTO_PATH` / `EXERIS_OPENSSL_PATH` environment overrides first, and version-gates
 the result to `3 <= OPENSSL_version_major() <= 4` with a packed-version floor of `0x30000000`
-(OpenSSL 3.0.0). The resolved handles use the provider-aware `SSL_CTX_new_ex` constructor, not the
-legacy `SSL_CTX_new`, and every pointer-typed parameter is bound as a raw `JAVA_LONG` — not
-`ADDRESS` — so a downcall exchanges a bare `long`, never a `MemorySegment` wrapper:
+(OpenSSL 3.0.0), and rejects a `libssl`/`libcrypto` pair whose majors differ.
+
+All OpenSSL downcall descriptors used by Core are declared in `OpenSslDowncall`, which serves as the
+single place where an OpenSSL symbol and its function descriptor are added. Descriptors are evaluated
+once during enum class initialization after `Linker.nativeLinker()` is available,
+providing static layout definitions for `CoreOpenSslLoader` and native-image metadata generation.
+
+The resolved handles use the provider-aware `SSL_CTX_new_ex` constructor, not the legacy `SSL_CTX_new`.
+Except for callback and buffer parameters in `SSL_CTX_set_verify` and `SSL_CTX_set_alpn_protos` (as well
+as the return type of `OpenSSL_version`), which use `ADDRESS`, pointer-typed parameters are bound as raw
+`JAVA_LONG` — not `ADDRESS` — so a downcall exchanges a bare `long`, never a `MemorySegment` wrapper:
 
 ```java
 Linker linker = Linker.nativeLinker();
-SymbolLookup ssl = /* resolved candidate, e.g. libssl.so.4 or libssl.so.3 */;
+SymbolLookup lookup = /* resolved candidates, e.g. ssl.or(crypto) */;
 
-static final MethodHandle sslCtxNewEx =
-        linker.downcallHandle(ssl.find("SSL_CTX_new_ex").orElseThrow(),
-                FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
-
-static final MethodHandle sslWrite =
-        linker.downcallHandle(ssl.find("SSL_write").orElseThrow(),
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT));
-
-static final MethodHandle sslRead =
-        linker.downcallHandle(ssl.find("SSL_read").orElseThrow(),
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT));
+MethodHandle sslCtxNewEx = req(linker, lookup, OpenSslDowncall.SSL_CTX_NEW_EX);
+MethodHandle sslWrite = req(linker, lookup, OpenSslDowncall.SSL_WRITE);
+MethodHandle sslRead = req(linker, lookup, OpenSslDowncall.SSL_READ);
 ```
 
-All `MethodHandle` instances are `static final` — the JIT constant-folds them, eliminating
-virtual dispatch on the cipher hot-path. The `JAVA_LONG` layout choice (rather than `ADDRESS`) is
+All `MethodHandle` instances are bound once at load and held in final fields of `CoreSslHandles`, so
+the cipher hot path invokes them with `invokeExact` and performs no symbol lookup. The `JAVA_LONG` layout choice (rather than `ADDRESS`) is
 deliberate: it is what lets `wrap()`/`unwrap()` pass a raw address without the JVM constructing a
 `MemorySegment` for the call, matching the zero-wrapper-object claim in Overview above.
+
+### Protocol Floor
+
+Every Community `SSL_CTX`, server and client, carries a minimum protocol version taken from
+`CryptoProviderConfig#minimumTlsVersion`: `TLSv1.3` (the default and what the transport passes) or
+`TLSv1.2`, applied through `SSL_CTX_ctrl(SSL_CTRL_SET_MIN_PROTO_VERSION)` before anything else is
+set on the context. A peer that negotiates below the floor fails the handshake. Any other value, such
+as `TLSv1.1`, `TLSv1.4`, `1.3` or a differently cased name, makes `createTlsEngine` and
+`createClientTlsEngine` throw `CryptoBootstrapException` (`EX-NET-2002`) naming the value; nothing falls
+back to OpenSSL's own floor. The Community transport takes the floor from `crypto.tls.minVersion`
+(see [config.md](config.md)): absent or blank keeps `TLSv1.3`, so a Community listener refuses a
+client that speaks only TLS 1.2 and a Community client refuses such a server, unless the key is
+`TLSv1.2`. A value other than `TLSv1.2` or `TLSv1.3` fails the transport's construction
+(`EX-NET-4004`, cause `EX-NET-2002`) before any native allocation.
 
 ### Client Peer Verification
 
@@ -163,10 +177,9 @@ owner may instead require plaintext, or require verified TLS, which refuses the 
 cannot be armed rather than building it plaintext; the S3 blob client requires what its endpoint's
 scheme names. No setting keeps TLS and skips verification.
 
-**Server chains.** The Community server loads its certificate with `SSL_CTX_use_certificate_file`,
-which takes the first certificate of the file, so it presents its leaf and no intermediates. A client
-of a server whose certificate is chained holds those intermediates in its trust file, next to the
-root.
+**Server chains.** The Community server loads its certificate file with `SSL_CTX_use_certificate_chain_file`: the first certificate is the leaf, and every later certificate in the file is sent to the peer after it. A client verifies that chain against its own trust, so a client that trusts only the root accepts a chained server. An intermediate belongs in the client's trust file only where the server sends its leaf alone.
+
+**Server ALPN.** The Community server selects only a protocol `CryptoProviderConfig#alpnProtocols` names, `h2` before `http/1.1` when both are named. An offer with no protocol in common, including `http/1.1` alone to a list naming `h2` alone, completes the handshake with no ALPN protocol; a list naming neither registers no selection.
 
 **Symbols.** Bound by `CoreOpenSslLoader` into `CoreSslHandles.PeerVerificationHandles` and
 `TrustStoreHandles`; every one is present, outside any deprecation guard, from OpenSSL 3.0 through
@@ -375,6 +388,17 @@ Session End:
 **Rule:** Business logic code MUST NEVER hold a reference to a `NativeCipherContext` or any
 `MemorySegment` beyond the scope of a single `wrap()`/`unwrap()` call.
 
+### Key Material Zeroization
+
+Core binds `OPENSSL_cleanse` (`OpenSslDowncall#OPENSSL_CLEANSE`) and exposes it as
+`CoreOpenSslRuntime#cleanse(MemorySegment)`, which zeroes a native segment through the C routine
+rather than a Java fill. Every secret the TLS path holds is owned by OpenSSL, which clears it inside
+`SSL_free` and `SSL_CTX_free`, so no Java-owned segment holds key material and no call site invokes
+`cleanse` today. The Java-owned segments on the TLS path are the session budget placeholder and the
+SNI and address staging buffers, none of which is secret. The `SensitiveBuffer` SPI that would
+guarantee zeroization before arena release is deferred with FIPS scope (see ROADMAP, "Off-Heap Key
+Material Zeroization").
+
 ---
 
 ## SPI Contract (The Wall)
@@ -503,8 +527,6 @@ Where each surfaces:
 
 ## JFR Events
 
-> **Note:** The previous table in this section contained incorrect field names (e.g., `sessionId` does not exist; the actual field is `sslPtr`). The table below reflects actual implementation.
-
 The headings below name each group's JFR event-name prefix (the `@Name` annotation's leading
 segments), not the Java package the class file lives in — every Core class in both tables actually
 lives under `eu.exeris.kernel.core.crypto.*` (`.openssl` / `.tls` subpackages), and the Community
@@ -514,9 +536,9 @@ pair lives under `eu.exeris.kernel.community.crypto`.
 
 | Event Class                           | JFR Category                                              | When Emitted                              | Key Fields                        |
 |:--------------------------------------|:----------------------------------------------------------|:------------------------------------------|:----------------------------------|
-| `CryptoContextAllocEvent`             | `eu.exeris.kernel.core.crypto.ContextAlloc`                | `NativeCipherContext` creation            | `sslPtr`, `sslCtxPtr`             |
-| `NativeCipherContextFreeFailureEvent` | `eu.exeris.kernel.core.crypto.NativeCipherContextFreeFailure` | `SSL_free` failure                    | `sslPtr`, `exceptionClass`        |
-| `OpenSslLoadEvent`                    | `eu.exeris.kernel.core.crypto.OpenSslLoad`                 | `CoreOpenSslLoader.load()` success (once, cold bootstrap path) | `versionMajor`, `versionMinor`, `sslPath`, `cryptoPath` |
+| `CryptoContextAllocEvent`             | `eu.exeris.kernel.core.crypto.ContextAlloc`                | `NativeCipherContext` creation            | `sslPtr`, `sslCtxPtr`, `providerName`, `sizeBytes` |
+| `NativeCipherContextFreeFailureEvent` | `eu.exeris.kernel.core.crypto.NativeCipherContextFreeFailure` | `SSL_free` failure                    | `sslPtr`, `exceptionClass`, `exceptionMessage` |
+| `OpenSslLoadEvent`                    | `eu.exeris.kernel.core.crypto.OpenSslLoad`                 | `CoreOpenSslLoader.load()` success (once, cold bootstrap path) | `versionMajor`, `versionMinor`, `versionText`, `ctxApi`, `sslPath`, `cryptoPath` |
 
 **Core — `eu.exeris.kernel.tls` JFR namespace (`eu.exeris.kernel.core.crypto.tls`):**
 
@@ -643,10 +665,10 @@ skipped one.
 
 > **TCK gap:** No Community binding exists for `CryptoZeroAllocTck` or `CryptoCarrierPinningTck` —
 > both are bound only against `OffHeapTlsEngine` directly, in `exeris-kernel-core/src/test/`
-> (`CoreOffHeapTlsEngineZeroAllocTckTest`, `CoreOffHeapTlsEngineCarrierPinningTckTest`). `Community`
-> is bound only to `AbstractCryptoEngineTck`, via `CommunityKernelCryptoProviderTckTest`. As of
-> current state, Community-tier zero-allocation on the TLS hot path (per ADR-008) is documented but
-> not TCK-enforced at the Community binding level.
+> (`CoreOffHeapTlsEngineZeroAllocTckTest`, `CoreOffHeapTlsEngineCarrierPinningTckTest`).
+> `AbstractCryptoEngineTck` is bound twice, by `CoreOffHeapTlsEngineTckTest` (Core) and
+> `CommunityKernelCryptoProviderTckTest` (Community). Community-tier zero-allocation on the TLS hot
+> path (per ADR-008) is documented but not TCK-enforced at the Community binding level.
 
 ---
 
@@ -657,10 +679,10 @@ skipped one.
 
 ## Stability
 
-This subsystem's SPI surface (`eu.exeris.kernel.spi.crypto.*`) is classified **preview** in the
-[SPI Stability Matrix](../stability-matrix.md). The OpenSSL 3.0–4.x binding migration itself already
+This subsystem's SPI surface (`eu.exeris.kernel.spi.crypto.*`) is **stable** from 0.13.0 in the
+[SPI Stability Matrix](../stability-matrix.md) ([ADR-100](../adr/ADR-100-spi-surfaces-stable-at-1-0.md)). The OpenSSL 3.0–4.x binding migration itself already
 landed (v0.9 Sprint 4b, per ADR-008's repository-state note: `SSL_CTX_new_ex`, `.so.4` candidates,
-version band widened to major 3–4, floor kept at 3.0.0 for FIPS-validated 3.1.2 builds); the
-preview classification instead reflects that a FIPS provider workstream remains deferred and
-unscheduled, so the binding/ABI surface may still move if and when that workstream lands. See the
-matrix for the semver policy and TCK coverage status.
+version band widened to major 3–4, floor kept at 3.0.0 for FIPS-validated 3.1.2 builds). A FIPS
+provider workstream remains deferred and unscheduled; if it lands, FIPS support (and a `SensitiveBuffer`
+type) arrives as an addition to the surface. See the matrix for the semver policy and TCK coverage
+status.

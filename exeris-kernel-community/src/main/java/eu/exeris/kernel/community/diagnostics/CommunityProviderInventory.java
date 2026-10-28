@@ -4,17 +4,23 @@
  */
 package eu.exeris.kernel.community.diagnostics;
 
+import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.diagnostics.ProviderDescriptor;
 import eu.exeris.kernel.spi.diagnostics.ProvidersSnapshot;
 import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.flow.FlowProvider;
 import eu.exeris.kernel.spi.graph.GraphProvider;
+import eu.exeris.kernel.spi.http.HttpProvider;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.spi.scheduling.JobSchedulerProvider;
 import eu.exeris.kernel.spi.security.SecurityProvider;
+import eu.exeris.kernel.spi.security.identity.IdentityProvider;
+import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.transport.TransportProvider;
+import eu.exeris.kernel.spi.websocket.WebSocketProvider;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -56,6 +62,18 @@ final class CommunityProviderInventory {
                 GraphProvider::providerName, GraphProvider::priority);
         discover(providers, SecurityProvider.class, "security",
                 SecurityProvider::providerName, SecurityProvider::priority);
+        discover(providers, HttpProvider.class, "http",
+                HttpProvider::providerName, HttpProvider::priority);
+        discover(providers, WebSocketProvider.class, "websocket",
+                WebSocketProvider::providerName, WebSocketProvider::priority);
+        discover(providers, JobSchedulerProvider.class, "scheduling",
+                JobSchedulerProvider::providerName, JobSchedulerProvider::priority);
+        discover(providers, BlobStorageProvider.class, "storage",
+                BlobStorageProvider::providerName, BlobStorageProvider::priority);
+        discover(providers, ConfigProvider.class, "config",
+                ConfigProvider::providerName, ConfigProvider::priority);
+        discover(providers, IdentityProvider.class, "identity",
+                IdentityProvider::providerName, IdentityProvider::priority);
         return ProvidersSnapshot.capture(providers);
     }
 

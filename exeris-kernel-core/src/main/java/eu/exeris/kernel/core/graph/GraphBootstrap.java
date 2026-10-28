@@ -21,7 +21,7 @@ import java.util.Objects;
  * {@link GraphProvider}, delegating the underlying {@code ServiceLoader} lookup to
  * {@link BootstrapProviderSelector}. It selects the highest-priority provider, creates
  * the {@link GraphEngine}, emits a JFR bootstrap event, and returns the ready engine
- * for its caller to bind into {@code KernelProviders.GRAPH_ENGINE}.
+ * for its caller to bind into {@code GraphKernelProviders.GRAPH_ENGINE}.
  *
  * <h2>Priority Rule</h2>
  * <ul>
@@ -38,7 +38,7 @@ import java.util.Objects;
  * Community/Enterprise implementation class.
  *
  * @since 0.5
- * @see eu.exeris.kernel.spi.context.KernelProviders#GRAPH_ENGINE
+ * @see eu.exeris.kernel.spi.graph.GraphKernelProviders#GRAPH_ENGINE
  */
 public final class GraphBootstrap {
 

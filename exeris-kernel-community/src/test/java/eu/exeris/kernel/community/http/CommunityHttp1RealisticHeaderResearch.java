@@ -11,6 +11,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.MemorySegment;
@@ -34,6 +35,7 @@ import java.util.Arrays;
  * <p>Prints a table; asserts nothing.
  */
 @DisplayName("RESEARCH: realistic HTTP/1 header allocation")
+@Tag("research")
 class CommunityHttp1RealisticHeaderResearch {
 
     private static final ThreadMXBean THREADS = (ThreadMXBean) ManagementFactory.getThreadMXBean();

@@ -56,6 +56,11 @@ import java.util.Objects;
  * <p>The appender takes ownership of the supplied {@link EventPayload}: it copies the bytes and
  * closes the payload exactly once (success or failure).
  *
+ * <h2>Isolation Ordinal (ADR-101)</h2>
+ * <p>The row records {@link EventDescriptor#isolationOrdinal()} as the caller supplied it. The
+ * appender does not resolve or refuse it: stamping happens where a publication enters the bus, and
+ * the log persists what the descriptor already carries.
+ *
  * @since 0.10
  */
 public final class JdbcEventStreamAppender implements EventStreamAppender {
@@ -67,8 +72,9 @@ public final class JdbcEventStreamAppender implements EventStreamAppender {
     private static final String SQL_INSERT =
             "INSERT INTO exeris_event_log ("
                     + "stream_id_high, stream_id_low, committed_sequence, "
-                    + "event_id_high, event_id_low, event_type_ordinal, event_flags, occurred_at, payload) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "event_id_high, event_id_low, event_type_ordinal, event_flags, occurred_at, payload, "
+                    + "isolation_ordinal) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     // SQLSTATE class 23 = ANSI integrity-constraint violation (Postgres 23505, H2 23505). Used to
     // detect a concurrent-INSERT race on the composite PK under READ_COMMITTED (TOCTOU vs SELECT MAX).
@@ -192,6 +198,7 @@ public final class JdbcEventStreamAppender implements EventStreamAppender {
             stmt.bindInt(6, descriptor.flags());
             stmt.bindLong(7, descriptor.occurredAtEpochMs());
             stmt.bindBytes(8, bytes);
+            stmt.bindInt(9, descriptor.isolationOrdinal());
             stmt.executeUpdate();
         }
     }

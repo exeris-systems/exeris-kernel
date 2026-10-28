@@ -44,6 +44,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * index 1 → int     ordinal
  * </pre>
  *
+ * <h2>EventRegistryException rawArgs (EX-EVENT-6012 isolation key conflict)</h2>
+ * <pre>
+ * index 0 → String  isolationKey
+ * index 1 → int     ordinal
+ * </pre>
+ *
  * @since 0.5.0
  */
 @DisplayName("L0: Event Exception rawArgs Binary Layouts")
@@ -198,6 +204,23 @@ class EventExceptionLayoutTest {
         @DisplayName("getCause() is null — duplicateConflict has no cause")
         void noCause() {
             assertThat(EventRegistryException.duplicateConflict("T", 1).getCause()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("EventRegistryException.isolationKeyConflict (EX-EVENT-6012)")
+    class IsolationKeyConflict {
+
+        @Test
+        @DisplayName("rawArgs[0]=isolationKey (String), [1]=ordinal (int); no cause")
+        void rawArgsLayout() {
+            EventRegistryException ex = EventRegistryException.isolationKeyConflict("tenant-a", 101);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6012);
+            Object[] raw = ex.rawArgs();
+            assertThat(raw).hasSize(2);
+            assertThat(raw[0]).isEqualTo("tenant-a");
+            assertThat(raw[1]).isEqualTo(101);
+            assertThat(ex.getCause()).isNull();
         }
     }
 

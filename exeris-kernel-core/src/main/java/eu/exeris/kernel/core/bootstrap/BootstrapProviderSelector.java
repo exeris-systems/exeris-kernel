@@ -5,10 +5,12 @@
 package eu.exeris.kernel.core.bootstrap;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 
 /**
  * Internal core utility for deterministic ServiceLoader-based provider selection.
@@ -73,6 +75,23 @@ public final class BootstrapProviderSelector {
                         .map(ServiceLoader.Provider::get),
                 comparator,
                 availabilityFilter);
+    }
+
+    /**
+     * Selects the highest-priority provider among {@code candidates}; ties break by implementation class
+     * name. This is the selection {@link #loadHighestPriority(Class, Comparator)} applies to what
+     * {@link ServiceLoader} discovers, exposed for callers that hold the candidates already.
+     *
+     * @param candidates providers to choose between; must not be {@code null}
+     * @param priority   reads a provider's priority; must not be {@code null}
+     * @param <T>        provider type
+     * @return the selected provider, or empty when {@code candidates} is empty
+     */
+    public static <T> Optional<T> selectHighestPriority(List<T> candidates,
+                                                        ToIntFunction<? super T> priority) {
+        Objects.requireNonNull(candidates, "candidates must not be null");
+        Objects.requireNonNull(priority, "priority must not be null");
+        return selectFrom(candidates.stream(), Comparator.comparingInt(priority), any -> true);
     }
 
     /**

@@ -8,6 +8,12 @@
     <module name="FileLength">
         <property name="max" value="1500"/>
     </module>
+    <!-- KernelErrorCodes is the stable error-code registry: one constant with its documented rawArgs layout
+         per code, and splitting it would move public constants of a stable package. -->
+    <module name="SuppressionSingleFilter">
+        <property name="files" value="KernelErrorCodes\.java$"/>
+        <property name="checks" value="FileLength"/>
+    </module>
 
     <module name="LineLength">
         <property name="max" value="120"/>

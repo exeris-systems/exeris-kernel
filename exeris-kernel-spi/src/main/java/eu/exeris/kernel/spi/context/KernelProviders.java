@@ -19,17 +19,20 @@ import eu.exeris.kernel.spi.flow.FlowProvider;
 import eu.exeris.kernel.spi.flow.IdempotencyGuard;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.kernel.spi.graph.GraphKernelProviders;
 import eu.exeris.kernel.spi.graph.GraphProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
 import eu.exeris.kernel.spi.storage.blob.BlobStore;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
@@ -245,6 +248,28 @@ public final class KernelProviders {
      * @since 0.5
      */
     public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link TransactionalExecutor}, built over {@link #PERSISTENCE_ENGINE}.
+     *
+     * <p>Bound by the same bootstrap step, for the same lifetime and on the same threads as
+     * {@link #PERSISTENCE_ENGINE}: whenever the engine is bound, so is this executor, and when
+     * persistence is not configured both stay unbound. A caller that needs a transaction boundary
+     * reads this slot instead of constructing its own executor over the engine.
+     *
+     * <p>The retry policy for serialization failures and deadlocks is bootstrap configuration:
+     * {@code persistence.transaction.retry.maxAttempts} (default {@code 1}, no retry) and
+     * {@code persistence.transaction.retry.baseDelayMs} (the first back-off delay, default
+     * {@code 50}), shared by every caller of this slot.
+     *
+     * {@snippet lang="java" :
+     * KernelProviders.transactionalExecutor().executeManaged(conn ->
+     *     conn.prepare("INSERT INTO events (id) VALUES ($1)").bindString(0, id).executeUpdate());
+     * }
+     *
+     * @since 0.13
+     */
+    public static final ScopedValue<TransactionalExecutor> TRANSACTIONAL_EXECUTOR = ScopedValue.newInstance();
 
     // =========================================================================
     // Events Slots (L3 Logic Engines)
@@ -471,26 +496,34 @@ public final class KernelProviders {
      * The active {@link GraphProvider} factory (bound once during bootstrap).
      *
      * @apiNote Read this slot only from bootstrap code that has to introspect the provider; a
-     *          graph call site reads {@link #GRAPH_ENGINE} instead.
+     *          graph call site reads {@link GraphKernelProviders#GRAPH_ENGINE} instead.
      * @since 0.5
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link GraphKernelProviders#GRAPH_PROVIDER}, which declares this very {@link ScopedValue} instance.
+     *             A binding made through either name is visible through both.
      */
-    public static final ScopedValue<GraphProvider> GRAPH_PROVIDER = ScopedValue.newInstance();
+    @Deprecated(forRemoval = true, since = "0.13")
+    public static final ScopedValue<GraphProvider> GRAPH_PROVIDER = GraphKernelProviders.GRAPH_PROVIDER;
 
     /**
-     * The kernel-wide {@link GraphEngine} (created from {@link #GRAPH_PROVIDER}).
+     * The kernel-wide {@link GraphEngine} (created from {@link GraphKernelProviders#GRAPH_PROVIDER}).
      *
      * <p>This is the primary slot for all graph operations. Bound once during bootstrap for the
      * kernel's lifetime; the class documentation says which threads see it.
      *
      * {@snippet lang="java" :
-     * try (GraphSession session = KernelProviders.graphEngine().openSession()) {
+     * try (GraphSession session = GraphKernelProviders.graphEngine().openSession()) {
      *     List<UUID> nodes = session.traverseBreadthFirst(traversal);
      * }
      * }
      *
      * @since 0.5
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link GraphKernelProviders#GRAPH_ENGINE}, which declares this very {@link ScopedValue} instance.
+     *             A binding made through either name is visible through both.
      */
-    public static final ScopedValue<GraphEngine> GRAPH_ENGINE = ScopedValue.newInstance();
+    @Deprecated(forRemoval = true, since = "0.13")
+    public static final ScopedValue<GraphEngine> GRAPH_ENGINE = GraphKernelProviders.GRAPH_ENGINE;
 
     // =========================================================================
     // Security / Context Slots (L1 Citadel)
@@ -564,12 +597,16 @@ public final class KernelProviders {
      *
      * <p>Bound once at bootstrap.
      *
-     * @apiNote Read it through {@link #timeSource()} rather than directly: an unbound kernel must
+     * @apiNote Read it through {@link TimeKernelProviders#timeSource()} rather than directly: an unbound kernel must
      *          still tell the time, and a call site that forgets its own {@code orElse} looks
      *          migrated while remaining undrivable.
      * @since 0.12
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link TimeKernelProviders#TIME_SOURCE}, which declares this very {@link ScopedValue} instance.
+     *             A binding made through either name is visible through both.
      */
-    public static final ScopedValue<TimeSource> TIME_SOURCE = ScopedValue.newInstance();
+    @Deprecated(forRemoval = true, since = "0.13")
+    public static final ScopedValue<TimeSource> TIME_SOURCE = TimeKernelProviders.TIME_SOURCE;
 
     /**
      * The authenticated {@link PrincipalContext} for the current request scope.
@@ -669,6 +706,18 @@ public final class KernelProviders {
     }
 
     /**
+     * Returns the active {@link TransactionalExecutor} from the current scope.
+     *
+     * @return transactional executor bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if persistence was not bootstrapped
+     * @since 0.13
+     */
+    public static TransactionalExecutor transactionalExecutor() {
+        return TRANSACTIONAL_EXECUTOR.get();
+    }
+
+    /**
      * Returns the active {@link TransportEngine} from the current scope.
      *
      * @return transport engine bound by the kernel bootstrapper
@@ -685,9 +734,12 @@ public final class KernelProviders {
      * @return graph engine bound by the kernel bootstrapper
      * @throws java.util.NoSuchElementException if called outside the kernel scope
      *         or if graph was not bootstrapped
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link GraphKernelProviders#graphEngine()}.
      */
+    @Deprecated(forRemoval = true, since = "0.13")
     public static GraphEngine graphEngine() {
-        return GRAPH_ENGINE.get();
+        return GraphKernelProviders.graphEngine();
     }
 
     /**
@@ -854,9 +906,12 @@ public final class KernelProviders {
      *
      * @return the bound source, or {@link TimeSource#SYSTEM}; never {@code null}
      * @since 0.12
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link TimeKernelProviders#timeSource()}, which behaves identically.
      */
+    @Deprecated(forRemoval = true, since = "0.13")
     public static TimeSource timeSource() {
-        return TIME_SOURCE.orElse(TimeSource.SYSTEM);
+        return TimeKernelProviders.timeSource();
     }
 
     /**

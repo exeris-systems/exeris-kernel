@@ -8,6 +8,7 @@ import eu.exeris.kernel.core.graph.GraphBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.graph.GraphKernelProviders;
 import eu.exeris.kernel.spi.graph.GraphConfig;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphProvider;
@@ -80,8 +81,8 @@ final class CommunityGraphSubsystem extends AbstractCommunitySubsystem {
             return defaultProviderBindings();
         }
         return CommunityCarrierBindings.operator(
-                CommunityCarrierBindings.binding(KernelProviders.GRAPH_PROVIDER, graphProvider),
-                CommunityCarrierBindings.binding(KernelProviders.GRAPH_ENGINE, graphEngine)
+                CommunityCarrierBindings.binding(GraphKernelProviders.GRAPH_PROVIDER, graphProvider),
+                CommunityCarrierBindings.binding(GraphKernelProviders.GRAPH_ENGINE, graphEngine)
         );
     }
 

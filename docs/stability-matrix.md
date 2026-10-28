@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-25
+last-verified: 2026-10-28
 ---
 
 # Exeris Kernel — SPI Stability Matrix
@@ -67,12 +67,12 @@ this is informational and **not** a dependency of the open-core surface.
 | SPI package | Level | Since | Anchor ADR | TCK coverage | Enterprise overlay |
 |---|---|---|---|---|---|
 | `…spi.diagnostics` | **stable** | 0.9.0 | ADR-033 | `AbstractKernelDiagnosticsTck` (+ JSON schema fixture) | `KernelDiagnosticsProvider` priority=100 (follow-up) |
-| `…spi.persistence` | **stable** | 0.5.0 | ADR-022, ADR-080 [^rowcursor] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, +7 | yes (slab/FFM tier) |
-| `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +4 | v0.11 record-component note below |
+| `…spi.persistence` | **stable** | 0.5.0 | ADR-012, ADR-022, ADR-080 [^rowcursor] [^scopetag] [^tenantless] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, `AbstractRlsBypassRoleCheckTck`, +7 | yes (slab/FFM tier) |
+| `…spi.flow` | **stable** | 0.5.0 | ADR-013 [^flowterminal] | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +4 | v0.11 record-component note below |
 
-> **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). Because 0.11 is unreleased, the intermediate twelve- and thirteen-parameter descriptors never shipped, so no further bridge is owed — one overload covers the whole milestone.
+> **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). The intermediate twelve- and thirteen-parameter descriptors never shipped in a release, so no further bridge is owed — one overload covers the whole step from 0.10.0.
 >
-> `FlowMigrationState` also gains a component in A5 and deliberately gets **no** overload: the record is `@since 0.11` and unreleased, so nothing compiled against a released artifact constructs it, and a bridge defaulting the identities to absent would hand a migration transform the one input the new guard exists to refuse.
+> `FlowMigrationState` also gains a component in A5 and deliberately gets **no** overload: the record is `@since 0.11` and carried that component in its first release, so nothing compiled against a released artifact constructs it without that component, and a bridge defaulting the identities to absent would hand a migration transform the one input the new guard exists to refuse.
 >
 > What the overload cannot restore, stated rather than glossed: adding a component changes the record's **component list**. Record deconstruction patterns and reflection over `RecordComponent[]` observe a different shape, and no overload can hide that — it is irreducible for a record.
 >
@@ -82,23 +82,51 @@ this is informational and **not** a dependency of the open-core surface.
 > 
 > **`spi.flow` in v0.12 — `FlowDefinitionBuilder.version(int)`.** Same shape, same reason: a `default` method rather than an abstract one, so out-of-tree builders keep both linking and compiling. The default *throws* instead of returning a value, which is the deliberate difference from `registerMigration`'s and `FlowExecutionPlan.definitionVersion()`'s: a builder that silently ignored a requested version would produce a v1 definition claiming to be v3 — the exact confusion ADR-064 exists to prevent. Additive in both senses the gate asks, so it passes clean; the note is here because the *behaviour* of the default is the contract, and no diff reports that.
 | `…spi.memory` | **stable** | 0.5.0 | — (foundational) | `AbstractMemoryAllocatorTck`, `…LoanedBufferTck`, `…MemoryGovernorTck`, +5 | yes (slab pools) |
-| `…spi.transport` | **stable** | 0.5.0 | — (foundational) | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
-| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) [^eventbuscode] | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
+| `…spi.transport` | **stable** | 0.5.0 | ADR-007 | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
+
+> **`spi.transport` in v0.13 — the stream write contract and a `TransportConfig` component.** `TransportStream` states three implementor obligations that `AbstractTransportStreamTck` pins: every transition that ends a stream wakes the threads blocked in `read` or `write`; `queueWrite` never waits for the peer (the one wait it may make is for the connection to be established, `EX-NET-4003`) and releases a loan once its bytes have left the stream's queue or the stream ends, not before; `write` blocks at `TransportConfig#maxQueuedWriteBytes()` and never on an event-loop thread. A transport whose `queueWrite` sends synchronously no longer conforms. `TransportConfig` gains the component `maxQueuedWriteBytes` (ADR-071), which moves the canonical constructor from nine parameters to ten. The 0.12 nine-argument descriptor is **restored as an overload**, and it and the eight-argument bridge apply the 256 KiB default, so code compiled against 0.12 still constructs the record and is bounded. A record deconstruction pattern or reflection over the component list sees a different shape and no bridge can hide that; **no automated gate reports it**, which is why the note is here. The changes are behaviour and an additive overload, so the gate passes clean.
+| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) [^eventbuscode] [^eventisolationcode] | `AbstractDisclosureModeTck` (+ `ExerisKernelExceptionGlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
 | `…spi.telemetry` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractTelemetryProviderTck`, `…SinkTck`, `…RingBufferTck`, `…JfrTelemetrySinkTck` | yes (binary glass-box sink) |
-| `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, +4 | — |
+| `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, `…SubsystemErrorRoutingTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
-| `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
-| `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
-| `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
-| `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
-| `…spi.crypto`⁴ | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
-| `…spi.scheduling` | **preview** | 0.11.0 | ADR-057 | `AbstractJobSchedulerTck` | — |
-| `…spi.storage.blob` | **preview** | 0.11.0 | ADR-056 | `AbstractBlobStorageTck` | — |
+| `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck` (Tests 1–8: the key scope and the gate in every environment), `…EntitlementRequirementTck` (entitlement class); `WorkloadAdmission` by `AbstractWorkloadAdmissionTck` (HTTP) and `AbstractTransportWorkloadAdmissionTck`, bound in Community | — |
+| `…spi.events` | **stable** | 0.5.0 | ADR-101 [^eventbusawait] [^eventisolation] [^eventbuspublish] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
+| `…spi.graph` | **preview** | 0.5.0 | ADR-102 [^graphpath] [^graphscope] | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +4 | — |
+| `…spi.security` | **stable** | 0.5.0 | ADR-012, ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
+| `…spi.security.identity` | **stable** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
+| `…spi.crypto`⁴ | **stable** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
+| `…spi.scheduling` | **stable** | 0.11.0 | ADR-057 | `AbstractJobSchedulerTck` | — |
+| `…spi.storage.blob` | **stable** | 0.11.0 | ADR-056 | `AbstractBlobStorageTck` | — |
 | `…spi.time` | **preview** | 0.12.0 | ADR-082 | — (no provider contract; `TimeSource` is bound, not discovered) | — |
 | `…spi.websocket`³ | **preview** | 0.12.0 | ADR-084 | `AbstractWebSocketExchangeTck`, `…WebSocketProviderTck` | — |
-| `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
+| `…spi.http` | **stable** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
+
+"Since" is the version that first shipped the surface. `…spi.http`, `…spi.security` (with
+`…security.identity`), `…spi.events`, `…spi.crypto`, `…spi.scheduling` and `…spi.storage.blob` are
+`stable` from 0.13.0 ([ADR-100](./adr/ADR-100-spi-surfaces-stable-at-1-0.md)); the other `stable` rows
+carry that label from their first release. `…spi.contract`, `…spi.graph`, `…spi.time` and
+`…spi.websocket` stay `preview`.
+
+**Consumers waiting on promotion.** The consumers that build on a `preview` surface, so that the label
+is read against who it affects (ADR-100 §4):
+
+| `preview` surface | Consumers waiting on its promotion |
+|---|---|
+| `…spi.contract` | none recorded |
+| `…spi.graph` | the HLA capability `contact-graph` |
+| `…spi.time` | none recorded |
+| `…spi.websocket` | Platform LSP and Studio (see ³) |
+
+**Slot holders.** A `stable` signature names no `preview` type (ADR-100 §3). The `ScopedValue` slots
+of the `preview` surfaces therefore live in the package that owns their type:
+`…spi.contract.ContractKernelProviders` (`EXECUTION_CONTRACT`, `WORKLOAD_ADMISSION`), `…spi.graph.GraphKernelProviders`
+(`GRAPH_PROVIDER`, `GRAPH_ENGINE`) and `…spi.time.TimeKernelProviders` (`TIME_SOURCE`). The graph and
+time members released in 0.5 and 0.12 stay on `KernelProviders` as `@Deprecated(forRemoval = true)`
+bridges that are the holders' own `ScopedValue` instances, and are removed in the first 1.0 release
+candidate. `StableSignatureArchitectureTest` fails a `stable` class whose public or protected
+signature names a `preview` or `experimental` type.
 
 ² `exceptions`: ADR-083 (0.12.0) added `FaultOrigin` and a non-final `ExerisKernelException.faultOrigin()`
 to this `stable` surface. Both are **additive**: the method carries a default, so every existing
@@ -131,27 +159,6 @@ as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.
 **additive** and classified `preview` — enforced by `ImmutableConfigProcessor` (compile-time) and
 `DynamicConfigFileWatcher` (runtime `EX-CFG-1004` refusal), pending a dedicated `AbstractConfigProviderTck` binding.
 
-### v0.12 re-assessment: `…spi.scheduling` and `…spi.storage.blob`
-
-Both were re-read at the v0.12 cut, because both gained bootstrap wiring during the milestone and the
-question was whether that graduates them. **It does not, and the reason matters more than the answer:**
-this table's `preview` definition turns on *"a known, scheduled change still in flight"*, not on how
-completely a surface is wired. Bootstrap wiring is delivery, not contract movement.
-
-What the re-assessment did find is that neither surface has such a change named anywhere:
-
-| | anchor ADR | executable TCK | scheduled contract change on record |
-|---|---|---|---|
-| `…spi.scheduling` | ADR-057 | `AbstractJobSchedulerTck`, 20 cases across 4 groups | none named |
-| `…spi.storage.blob` | ADR-056 | `AbstractBlobStorageTck` | none named — provider selection closed in v0.12 |
-
-Under this table's own definition of `stable` — an accepted ADR **and** an executable TCK — both
-therefore qualify on the stated criteria while carrying the `preview` label. That is a discrepancy
-between the criteria and the labels, and it is deliberately **left standing here rather than resolved
-by editing a cell.** Promotion is semver-binding, so it belongs to the decision that owns the
-question: [`RFC-2026-09-02`](rfc/RFC-2026-09-02-preview-spi-promotion.md). Recorded at the cut so the
-next reader inherits the finding instead of rediscovering it.
-
 ### `…spi.http` per-surface breakdown
 
 > **ADR-074 added a component to two `stable` records without breaking either, and it was measured
@@ -167,44 +174,33 @@ next reader inherits the finding instead of rediscovering it.
 > unchanged and fails at its first unaddressed send; the v0.12.0 release notes' upgrade step names
 > the fix (an `HttpConfig` constructor taking `defaultAuthority`, or `withAuthority` per request).
 
-Because this package is `mixed`, the breakdown is **exhaustive**: every class in
-`eu.exeris.kernel.spi.http` appears in exactly one row. A class named in no row would be neither
-gated nor reported by the compatibility gate, so completeness here is enforced, not aspirational —
-`spi-api-diff.sh --verify-surfaces` checks per fully-qualified class name.
+The package is `stable` as a whole; the breakdown below is informational detail on the anchor ADR and
+the TCK that pins each surface.
 
 | HTTP surface | Level | Since | Anchor ADR | TCK |
 |---|---|---|---|---|
 | `HttpClientEngine`, `HttpServerEngine`, `HttpProvider`, `HttpExchange`, `HttpHandler` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpClientEngineTck`, `…HttpServerEngineTck`, `…HttpProviderTck`, `…HttpExchangeTck`, `…HttpHandlerTck` |
+| ↳ `HttpExchange.remoteAddress()` / `remotePort()` — immediate transport peer, no forwarded-header interpretation | **stable** | 0.13.0 | ADR-009 | `AbstractHttpServerPeerAddressTck`, bound by `CommunityHttpServerPeerAddressTckTest`; `HttpRouterTest` |
 | Request/response carriers: `HttpRequest`, `HttpResponse`, `HttpTypedResponse`, `HttpStatus`, `HttpMethod`, `HttpVersion`, `HttpHeader` | **stable** | 0.5.0 | ADR-009 | exercised through the engine/exchange/handler TCKs above |
 | ↳ `HttpRequest.authority()` / `HttpConfig.defaultAuthority()` / `HttpClientEngine.defaultAuthority()` | **stable** | 0.12.0 | ADR-074 | `AbstractHttpClientEngineTck$PeerAddressing` (also bound to the engine a booted kernel binds, by `DeferredHttpClientEngineTckTest`), `AbstractHttpProviderLoopbackTck`, `KernelWebClientRetryTest#enricherObservesTheResolvedAuthority`, `CommunityHttpBootstrapIntegrationTest#bootedClientEnricherSeesConfiguredDefaultAuthority` (the engine a booted kernel binds) |
 | ↳ `HttpClientEngine.send(HttpRequest)` server verification over TLS (`@implSpec`, javadoc only): the chain against the engine's trust and the subject alternative names against the effective authority's host — DNS against DNS entries, sent as SNI; an IP literal against IP entries, no SNI; never the common name — failing with `TlsHandshakeException` (`EX-NET-2001`) before any request byte is sent. **Behavioural change**: the Community engine verified nothing before 0.12.0 | **stable** | 0.12.0 | ADR-074 (A1) | `AbstractHttpClientTlsPeerVerificationTck`, a suite apart from `AbstractHttpClientEngineTck`, bound by `CommunityHttpClientTlsPeerVerificationTckTest`; also `CommunityTlsPeerVerificationTest`, `CommunityHttpDualSelfDialTest`. The Enterprise engine is outside it and binds no suite |
 | ↳ `HttpClientEngine.send(HttpRequest)` request-body ownership: the caller of `send` keeps ownership of the request body and releases it after `send` returns or throws; the engine reads it during `send` and neither closes nor retains it | **stable** | 0.12.0 | ADR-034 (A1) | `AbstractHttpClientEngineTck$RequestBodyOwnership`, `AbstractHttpProviderLoopbackTck` |
 | `HttpConfigValidation` | _internal_ | 0.12.0 | ADR-074 | — (package-private; `HttpConfig`'s own construction-time validation, extracted rather than published) |
-| Engine wiring: `HttpConfig`, `HttpMode`, `HttpKernelProviders` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpProviderTck`, `…HttpProviderLoopbackTck` |
+| Engine wiring: `HttpConfig`, `HttpMode`, `HttpKernelProviders` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpProviderTck`, `…HttpProviderLoopbackTck`; the three HTTP/2 header limits (`maxHeaderBlockSize`, `maxHeaderListSize`, `maxStringLiteralSize`, ADR-071) by `AbstractHttp2HeaderLimitTck` |
 | `HttpClientRequestEnricher` | **stable** | 0.8.0 | ADR-032 | `AbstractHttpClientRequestEnricherTck` |
-| Body codecs: `HttpRequestBodyEncoder`, `HttpRequestBodyDecoder`, `HttpResponseBodyEncoder`, `HttpResponseBodyDecoder`, `HttpRequestBodyEncoderRegistry`, `HttpRequestBodyDecoderRegistry`, `HttpResponseBodyEncoderRegistry`, `HttpResponseBodyDecoderRegistry`, `HttpRequestEncodingContext`, `HttpRequestDecodingContext`, `HttpResponseEncodingContext`, `HttpResponseDecodingContext`, `HttpEncodedBody` | **preview** | 0.8.0 | ADR-034 / ADR-036 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck` |
-| Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` | **preview** | 0.10.0 | ADR-045 | `AbstractHttpRetryPolicyTck` |
-| Route authorization: `HttpRoutePolicy`, `RouteRequirement` | **preview** | 0.11.0 | ADR-061, ADR-077 | `AbstractHttpRoutePolicyTck` |
-| `HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent` (SSE server-push) | **preview** | 0.10.0 | ADR-043 | `AbstractHttpStreamExchangeTck` |
-| Stream-route resolution: `StreamRouteResolver`, `StreamMatch` | **preview** | 0.12.0 | ADR-043 (A1) | `AbstractStreamRouteResolverTck` |
+| Body codecs: `HttpRequestBodyEncoder`, `HttpRequestBodyDecoder`, `HttpResponseBodyEncoder`, `HttpResponseBodyDecoder`, `HttpRequestBodyEncoderRegistry`, `HttpRequestBodyDecoderRegistry`, `HttpResponseBodyEncoderRegistry`, `HttpResponseBodyDecoderRegistry`, `HttpRequestEncodingContext`, `HttpRequestDecodingContext`, `HttpResponseEncodingContext`, `HttpResponseDecodingContext`, `HttpEncodedBody` | **stable** | 0.8.0 | ADR-034 / ADR-036 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck`, `…ResponseBodyEncoderTck`, `…ResponseBodyEncoderRegistryTck` (the unsupported-type cases run on no binding: Community supports every non-null type; TCK debt [#743](https://github.com/exeris-systems/exeris-kernel/issues/743)) |
+| Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` | **stable** | 0.10.0 | ADR-045 | `AbstractHttpRetryPolicyTck` |
+| Route authorization: `HttpRoutePolicy`, `RouteRequirement` | **stable** | 0.11.0 | ADR-061, ADR-077 | `AbstractHttpRoutePolicyTck` |
+| `HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent` (SSE server-push) | **stable** | 0.10.0 | ADR-043 | `AbstractHttpStreamExchangeTck` |
+| ↳ `HttpStreamExchange.remoteAddress()` / `remotePort()` — the same peer contract as `HttpExchange`'s pair | **stable** | 0.13.0 | ADR-043 | `HttpStreamEnginePeerTest` (Core), `PathParamStreamExchangeTest`; not in `AbstractHttpServerPeerAddressTck` — TCK debt [#746](https://github.com/exeris-systems/exeris-kernel/issues/746) |
+| Stream-route resolution: `StreamRouteResolver`, `StreamMatch` | **stable** | 0.12.0 | ADR-043 (A1) | `AbstractStreamRouteResolverTck` |
 
-> One asymmetry is deliberate and worth stating, because it looks like an error: `HttpProvider` is
-> `stable` while the four codec `…Registry` types it returns are `preview`. Every such method is a
-> `default` returning `empty()` / `Optional.empty()`, so the codec seam is opt-in and a provider
-> implementor inherits no obligation from it — the settled part of `HttpProvider` is unaffected by
-> the quadrant still moving. If the registries' shape changes, the gate reports it without failing
-> the build, which is the intended reading of `preview` and not a hole in `stable`.
-
-> The body-codec quadrant has an **accepted ADR (ADR-034)** and executable TCKs, so it is past
-> `experimental` — but the server-side generator that consumes the request decoder lands in a
-> later cycle, so the contract is held at `preview` until that loop closes.
-
-> The streaming surface is wired end-to-end and TCK-pinned, but changes are still in flight rather
-> than merely possible: the wire framing is HTTP/1.1 close-delimited today (per-event chunked framing
-> and an HTTP/2 `DATA` path are follow-ups), the JWT-expiry deadline is built and TCK-pinned but not
-> yet passed by production dispatch, and 0.11 added `pathParams()` to the interface. `preview` is the
-> honest label until those close — see [`subsystems/http.md`](./subsystems/http.md) for the per-item
-> delivery status.
+> The streaming surface is wired end-to-end and TCK-pinned. On HTTP/2 each event is one or more `DATA`
+> frames, an expired deadline ends the stream with `RST_STREAM(CANCEL)`, and `emit` parks on the flow-control
+> window and the stream's credit. Two behaviours remain follow-ups and change no signature (ADR-043): the
+> HTTP/1.1 wire framing is close-delimited, with per-event chunked framing still to come, and production
+> dispatch passes no JWT-expiry deadline, so a stream route is not cut at the credential's expiry. See
+> [`subsystems/http.md`](./subsystems/http.md) for the per-item delivery status.
 
 `util` is excluded from the consumer matrix: `eu.exeris.kernel.spi.util` currently contains only
 `SpiDiagnostics`, an internal helper — not a consumer-facing SPI surface.
@@ -224,6 +220,13 @@ elsewhere; `CHANGELOG.md` links here for the authoritative version.
   changes are permitted while the label is `preview`; they will be called out in release notes.
 - **experimental** — **No guarantees in any version.** A breaking change can land in any release,
   including a patch. The Javadoc carries an explicit "use-at-own-risk" disclaimer.
+
+- **The BOM's test libraries are outside the compatibility surface.** `exeris-kernel-bom` manages
+  the versions of the libraries the kernel's own tests use (Testcontainers, JUnit, Mockito, AssertJ,
+  JMH, ArchUnit) as a convenience for the build. Those entries follow the kernel's tests and may
+  change version or artifact name in any release; a consumer that depends on them pins its own
+  versions. The compatibility surface of the BOM is the kernel's own artifacts and the runtime
+  dependencies they need.
 
 ### Pre-1.0 / TRL-3 framing
 
@@ -274,6 +277,19 @@ maturity change here.
     returned a value. Other engines are unaffected: the guarantee is scoped to the server the set was
     measured on.
 
+[^scopetag]: **Behavioural note, 0.13 (ADR-012 §4c.2).** `AbstractSharedScopeAccessMatrixTck` gains
+    nine cells that pin the shared-scope tag of a written row and the template method
+    `retagScope(StorageContext, String, String)`, whose default throws. An out-of-tree binding
+    implements it and installs a `WITH CHECK` that admits only a tenant-private tag or the published
+    scope. No SPI class changes.
+
+[^tenantless]: **Behavioural note, 0.13 (ADR-012 §4c.3).** `AbstractSharedScopeAccessMatrixTck` gains
+    four cells asserting that a read and a write from a tenant-less context fail with
+    `PersistenceProviderException` (`EX-PERS-5003`), each next to a control under a tenant, and the
+    template method `tenantlessOwner()`, whose default throws. `PersistenceIsolationLeakTck` gains the
+    same two refusals. An out-of-tree binding installs a policy whose tenant arm raises on an absent
+    key. No SPI class changes.
+
 [^eventbuscode]: **Behavioural note, 0.12.** `EventBusException`'s two message constructors,
     `EventBusException(String)` and `EventBusException(String, Throwable)`, set `EX-EVENT-6001`
     instead of `EX-EVENT-6002`, and still leave `rawArgs` empty. `EX-EVENT-6002` is the queue
@@ -298,3 +314,66 @@ maturity change here.
     method is the change, and no diff reports that. `AbstractEventBusTck` skips its five
     in-process cases on a brokered bus, through an assumption on `isBrokered()`, and adds one case
     every bus runs.
+
+[^eventisolation]: **Behavioural note, 0.13 (ADR-101).** A publish is stamped with the isolation ordinal
+    of the publisher's bound `StorageContext`, so a publish under a bound but unregistered isolation key
+    is refused with `EX-EVENT-6009` (reason `"unregistered-isolation-key"`). Before 0.13 the same publish
+    was accepted. Callers that publish under a tenant context must register each tenant key with
+    `EventEngine.isolationRegistry()` first. The API-diff gate reports the additions; this note is here
+    because the refusal is a behavioural change that no diff reports. `EventBus.subscribe` is unchanged
+    and still receives every event. `EventDescriptor` gains an eighth record component,
+    `isolationOrdinal`; its seven-argument constructor and `of` are retained. A record deconstruction
+    pattern or reflection over the component list sees a different shape, and no automated gate
+    reports it.
+
+[^eventisolationcode]: **Additive, 0.13 (ADR-101).** `EX-EVENT-6012` (isolation key registry conflict,
+    rawArgs `[String isolationKey, int ordinal]`) is new. `EX-EVENT-6009` gains the reasons
+    `"unregistered-isolation-key"` and `"isolation-mismatch"`, and `EX-EVENT-6011` also covers a refused
+    scoped subscription, with its existing `[eventType]` layout unchanged.
+
+[^eventbuspublish]: **Behavioural note, 0.13 (ADR-101 Ruling 2).** On a brokered bus `EventBus.publish`
+    returns once the binding's client has accepted the event, not once the broker has acknowledged
+    it, and a failure the client reports after that return is never thrown to the caller. The Community Kafka
+    bus records it as a `KafkaPublishFailedEvent` with `publishMode` `"publishAsync"` and counts it
+    in `EventEngineStats.publishFailedTotal()`, a counter separate from `failedTotal`, which counts
+    handler errors. `EventEngineStats` gains that component, and its seven-argument constructor is
+    kept as a bridge that reports zero. The component sits at position 2, not at the end, so a record
+    deconstruction pattern or reflection over the component list sees a different shape and the index of
+    every later component shifts; no automated gate reports that. The API-diff gate reports the new component and constructor;
+    the note is here because the narrowed promise of `publish` on a brokered bus is the change, and no
+    diff reports that.
+
+[^flowterminal]: **Behavioural note, 0.13 (ADR-013).** With a snapshot store bound, in either
+    terminal-catalog mode, the engine calls `FlowSnapshotStore.save` with a `COMPLETED` snapshot when an
+    instance completes, in place of leaving a stale `PARKED` row or no row; the engine no longer calls
+    `FlowSnapshotStore.delete`. A store must accept and return a snapshot in any `FlowState`; one that
+    keeps only `PARKED` rows, or filters `load` by state, loses the idempotency fence. The kernel
+    reclaims no terminal row, so binders own retention, and deleting a row lets its id run again.
+    Javadoc on `FlowSnapshotStore`, `FlowSnapshot`, `ChoreographyDecision.Start` and `FlowEngineConfig`
+    no longer describes a save on eviction or a saga TTL retention, neither of which exists.
+    `AbstractDistributedFlowSnapshotStoreTck` checks the store half. An out-of-tree
+    `AbstractSagaRecoveryTck` binding must override the new `createBoundedEngine(int)`, whose default
+    throws so the bounded cases fail rather than skip, and must satisfy
+    `CompletedInstanceAcrossRestart`; `RestartUnderLoad` expects the `COMPLETED` row. No signature
+    changes, so the API-diff gate reports nothing; the note is here because the stricter reading of
+    `save`/`load` is a change in behaviour that no diff reports.
+
+[^graphpath]: **Contract widening and source-incompatible change, 0.13 (ADR-102).** `GraphHop`,
+    `GraphPathSpec`, `GraphSession.traversePath`/`streamPathJson` and `GraphDialect.buildPathQuery` are
+    added as abstract members; `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` loses its default and
+    becomes abstract; `findShortestPath(UUID, UUID)` becomes a refusing default, deprecated for removal;
+    `GraphTraversal.includeStartNode`/`includePayload` are deprecated and have no effect. Every traversal
+    now honours the descriptor's direction. An out-of-tree implementer must implement the new members.
+    The surface stays `preview`; the anchor column names ADR-102 once all of its obligations have landed.
+
+[^graphscope]: **Tenant scoping behaviour, 0.13 (ADR-102 Obligation 9).** Traversals under an ambient
+    `StorageContext` that the binding cannot scope are refused before database I/O with
+    `GraphQueryException` (`EX-GRPH-5002`, `queryType = "ISOLATION_SCOPE"`). Community SQL/PGQ serves
+    `SEPARATED_SCHEMA` and `DEDICATED` and refuses `SHARED` tenant contexts; Community Cypher refuses
+    every tenant context. SQL/PGQ also refuses a tenant context when no `PersistenceEngine` is bound in the
+    calling scope, because the request-session fallback opens an unscoped connection. System-scope callers
+    (`ImmutableStorageContext.GLOBAL`) are served on all backends. Under `SEPARATED_SCHEMA` the `search_path`
+    is `<schema>, public`, so a graph table missing from the tenant schema resolves to the system graph:
+    scoping holds only when every registered node and edge table exists in the tenant schema, and
+    `registerNodes`/`registerEdges` create tables only in the scope they run under.
+    The SPI compatibility gate reports no signature change.

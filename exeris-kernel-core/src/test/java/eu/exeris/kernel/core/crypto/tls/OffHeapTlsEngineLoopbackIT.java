@@ -9,6 +9,7 @@ import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoaderTestHelper;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
+import eu.exeris.kernel.core.transport.syscall.SyscallErrno;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
@@ -363,6 +364,59 @@ class OffHeapTlsEngineLoopbackIT {
                                 .as("No ALPN configured — negotiatedProtocol() must be null")
                                 .isNull();
                     });
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a write after the peer reset the connection fails fatally and records the send's errno")
+    void writeAfterThePeersResetRecordsTheSendErrno(@TempDir Path tempDir) throws Exception {
+        CertPair cert = generateSelfSignedCert(tempDir);
+        assumeTrue(cert != null, "openssl CLI not available — skipping loopback IT");
+
+        try (SslCtxHandle serverCtx = buildServerCtx(cert.certPath(), cert.keyPath());
+             SslCtxHandle clientCtx = buildClientCtx();
+             ServerSocketChannel serverSock = ServerSocketChannel.open();
+             SocketChannel clientSock       = SocketChannel.open()) {
+
+            serverSock.bind(new InetSocketAddress("127.0.0.1", 0));
+            clientSock.connect(new InetSocketAddress("127.0.0.1",
+                    ((InetSocketAddress) serverSock.getLocalAddress()).getPort()));
+
+            try (SocketChannel acceptedSock = serverSock.accept()) {
+                int serverFd = extractFd(acceptedSock);
+                int clientFd = extractFd(clientSock);
+                assumeTrue(serverFd > 0 && clientFd > 0, "Could not extract socket FDs — skipping loopback IT");
+
+                try (OffHeapTlsEngine serverEngine = new OffHeapTlsEngine(handles, serverCtx.ptr(), true, ALLOC);
+                     OffHeapTlsEngine clientEngine = new OffHeapTlsEngine(handles, clientCtx.ptr(), false, ALLOC);
+                     LoanedBuffer serverOut = ALLOC.allocate(AllocationHint.MEDIUM);
+                     LoanedBuffer clientOut = ALLOC.allocate(AllocationHint.MEDIUM);
+                     LoanedBuffer plaintext = ALLOC.allocate(AllocationHint.MICRO);
+                     LoanedBuffer ciphertext = ALLOC.allocate(AllocationHint.MEDIUM)) {
+
+                    ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOC).run(() -> {
+                        communityBind(serverEngine, serverFd);
+                        communityBind(clientEngine, clientFd);
+                        driveHandshake(serverEngine, serverOut, clientEngine, clientOut);
+                    });
+                    plaintext.segment().set(java.lang.foreign.ValueLayout.JAVA_BYTE, 0, (byte) 'x');
+                    plaintext.setSize(1);
+
+                    // The client's socket is reset under its TLS layer: no close_notify, only a reset.
+                    clientSock.setOption(java.net.StandardSocketOptions.SO_LINGER, 0);
+                    clientSock.close();
+
+                    TlsStatus status = TlsStatus.OK;
+                    for (int attempt = 0; attempt < 1000 && status == TlsStatus.OK; attempt++) {
+                        status = serverEngine.wrap(plaintext, ciphertext);
+                    }
+
+                    assertThat(status).as("the write to a reset peer is fatal").isEqualTo(TlsStatus.CLOSED);
+                    assertThat(SyscallErrno.isPeerReset(serverEngine.lastWriteErrno()))
+                            .as("errno of the failed send: %d", serverEngine.lastWriteErrno())
+                            .isTrue();
                 }
             }
         }

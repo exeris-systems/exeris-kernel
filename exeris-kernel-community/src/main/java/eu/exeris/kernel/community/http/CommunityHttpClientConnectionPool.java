@@ -4,7 +4,7 @@
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.transport.TransportConnection;
@@ -59,7 +59,7 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
 
     /* default */ CommunityHttpClientConnectionPool(HttpConfig config, TimeSource timeSource) {
         Objects.requireNonNull(config, "config must not be null");
-        this.timeSource = timeSource != null ? timeSource : KernelProviders.timeSource();
+        this.timeSource = timeSource != null ? timeSource : TimeKernelProviders.timeSource();
         this.maxTotalConnections = Math.max(config.maxConnections(), 1);
         this.maxIdlePerPeer = Math.clamp(config.maxConnections(), 1, 64);
         long timeoutMillis = config.idleTimeoutMillis();

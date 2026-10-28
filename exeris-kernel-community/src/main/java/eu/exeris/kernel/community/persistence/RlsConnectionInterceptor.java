@@ -52,8 +52,9 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
  *
  * CREATE POLICY tenant_isolation ON table_name
- *   USING (tenant_id = current_setting('exeris.tenant_id', true))
- *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true));
+ *   USING (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id')))
+ *   WITH CHECK (tenant_id = (SELECT public.exeris_required_setting('exeris.tenant_id'))
+ *               AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
  *
  * CREATE POLICY shared_scope_read ON table_name FOR SELECT
  *   USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''));
@@ -69,28 +70,71 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * {@code DELETE} see the owner policy alone. {@code NULLIF} makes a cleared scope ({@code ''}) match no
  * row, including rows whose own tag is empty.
  *
+ * <p><b>On a {@code uuid} tag column the check is written without {@code COALESCE}.</b> The column cannot
+ * hold {@code ''}, so {@code NULL} is the only tenant-private tag and the check is
+ * {@code shared_scope IS NULL OR shared_scope = <published scope>::uuid}, the published scope being
+ * {@code NULLIF(current_setting('exeris.shared_scope', true), '')}.
+ * The read arm casts the same way, {@code ::uuid} after the {@code NULLIF}, and the tenant arm is the
+ * unguarded {@code current_setting('exeris.tenant_id', true)::uuid}, which raises on {@code ''}. The
+ * {@code TEXT} clause {@code COALESCE(shared_scope, '') IN ('', ...)} cannot be installed on such a column:
+ * the empty literal is cast to {@code uuid} when the policy is created, and PostgreSQL refuses the
+ * statement. The text of both forms is in {@code docs/subsystems/persistence.md}.
+ *
  * <p><b>{@code FORCE} is not optional, and leaving it out fails open.</b> PostgreSQL exempts a table's
  * owner from that table's own policies unless the table is forced. A deployment whose application
  * connects as the role owning its tables — the default in every quick-start — therefore gets a policy
  * that is enabled, listed in {@code pg_policies}, and never applied: no error, no warning, other
- * tenants' rows in every read. The three integration tests that hold this contract
+ * tenants' rows in every read. The four integration tests that hold this contract
  * ({@code CommunityPersistenceTenantIsolationIT}, {@code CommunityPersistenceSharedScopeIT},
- * {@code CommunityPersistenceIsolationLeakTckIT}) all issue both statements <em>and</em> connect as a
- * non-owner role, so what they verify is the property a forced table has.
+ * {@code CommunityPersistenceSharedScopeUuidIT}, {@code CommunityPersistenceIsolationLeakTckIT}) all
+ * issue both statements <em>and</em> connect as a non-owner role, so what they verify is the property a
+ * forced table has.
  *
- * <p><b>The comparison above is text-to-text, and that assumption is load-bearing.</b>
- * {@code current_setting} returns {@code text} and the tested schema declares {@code tenant_id TEXT},
- * so an unset key arrives as {@code ''}, matches no row, and fails closed. A deployment whose
- * {@code tenant_id} column is {@code uuid} must cast — and the cast turns that same {@code ''} into
- * {@code invalid input syntax for type uuid: ""} on every query against every scoped table, because
- * {@link #publishSessionKeys} publishes the key unconditionally (as {@code ''} when the context
- * declares no tenant) and a session-scoped setting survives connection reuse. Such a policy needs the
- * empty-string guard on the tenant arm too, the way the shared-scope arm already carries it:
- * {@code tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid}.
+ * <p><b>An absent tenant raises.</b> The interceptor publishes {@code exeris.tenant_id} as {@code ''}
+ * for a context that declares no tenant and refuses nothing at the persistence boundary: tenant-less
+ * contexts are a supported input, and most of them touch no scoped table. What {@code ''} yields is the
+ * policy's decision, and the reference policy decides that a statement against a scoped table fails.
+ * On a {@code TEXT} tenant column the deployment installs {@code exeris_required_setting}, which names
+ * the missing key in its message and fails with SQLSTATE {@code 42501}, reported as
+ * {@code EX-PERS-5003}:
  *
- * <p>The owner policy is the tenant-private policy, unchanged: owner-scoped write is what it already
- * expresses, so widening reads adds a policy rather than relaxing one. A tenant can read its
- * partition-mates' rows and still only ever insert, update or delete its own.
+ * {@snippet lang="sql" :
+ * CREATE FUNCTION public.exeris_required_setting(key text) RETURNS text
+ *   LANGUAGE plpgsql STABLE AS $$
+ * DECLARE v text := current_setting(key, true);
+ * BEGIN
+ *   IF v IS NULL OR v = '' THEN
+ *     RAISE EXCEPTION 'session key % is not published', key USING ERRCODE = 'insufficient_privilege';
+ *   END IF;
+ *   RETURN v;
+ * END $$;
+ * }
+ *
+ * <p>The kernel does not install it. The policy names it with its schema because a session's
+ * {@code search_path} can put a schema the tenant role writes to ahead of {@code public}; an unqualified
+ * name would then resolve to whatever function of that name the role created there. The uncorrelated
+ * {@code (SELECT ...)} lets the planner evaluate the function once per statement rather than once per
+ * row; its cost is not measured. Without the function, a plain
+ * {@code tenant_id = current_setting('exeris.tenant_id', true)} is not conforming: it returns an empty
+ * result for a read, and its {@code WITH CHECK} admits a row whose {@code tenant_id} is {@code ''}, which
+ * every later tenant-less request reads back. A deployment whose {@code tenant_id} column is {@code uuid}
+ * writes the unguarded cast {@code tenant_id = current_setting('exeris.tenant_id', true)::uuid}, which
+ * raises {@code invalid input syntax for type uuid: ""} on the empty key; guarding the cast with
+ * {@code NULLIF} turns that error back into an empty result and is not conforming. The shared-scope arm
+ * is the opposite case: an absent scope is the legitimate tenant-private request, so
+ * {@code NULLIF(current_setting('exeris.shared_scope', true), '')} matches nothing and does not raise.
+ *
+ * <p>The owner policy pins the tag as well as the owner. A tenant can read its partition-mates' rows and
+ * still only ever insert, update or delete its own, and what it writes is either tenant-private
+ * ({@code ''}, or {@code NULL} where the column allows it) or tagged with the scope its request
+ * published. The widening comes only from the verified token: a row's own column never grants
+ * visibility that no token carried. {@code WITH CHECK} sees only the new row, so:
+ * <ul>
+ *   <li>an owner whose request lacks scope {@code S} cannot keep {@code S} on a row across an update;
+ *       it re-tags the row to {@code ''} or to the scope it holds;</li>
+ *   <li>un-sharing a row to {@code ''} is admitted from such a request, because narrowing one's own
+ *       row widens nothing.</li>
+ * </ul>
  *
  * <h2>The Agnostic Data Principle</h2>
  * <p>This interceptor is <b>identity-blind</b> — it never imports

@@ -6,8 +6,8 @@
 #
 # The suite's header states two numbers — how many cases assert a refusal to escalate, and how many
 # of those are one half of a pair — and rule 14 makes the suite the thing that establishes
-# behaviour. Both numbers were wrong within a day of being written, twice, in the pull request that
-# introduced them: a case was added and the sentence describing the set was not.
+# behaviour. A count written in prose goes stale the moment a case is added without the sentence
+# that describes the set.
 #
 # Getting them wrong is not cosmetic. The stated balance is the argument that the suite is not
 # skewed toward positives, which is the failure mode its own header names — a suite of only

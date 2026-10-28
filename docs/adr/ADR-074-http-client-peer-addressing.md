@@ -11,10 +11,10 @@ slug: adr/ADR-074
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED — REVISED 2026-09-27**                                                         |
+| **Status**      | **ACCEPTED — REVISED 2026-10-20**                                                         |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-08-26                                                                                |
-| **Revised**     | 2026-09-27 — [Amendments](#amendments)                                                    |
+| **Revised**     | 2026-09-27, 2026-10-20 — [Amendments](#amendments)                                        |
 | **Scope**       | `kernel/http`                                                                             |
 | **Owning Repo** | `exeris-kernel`                                                                           |
 | **Driven By**   | [RFC-2026-06-29](../rfc/RFC-2026-06-29-webclient-service-addressing.md) Open Question 1; 1.0 scope per its split disposition |
@@ -280,7 +280,9 @@ rule 7). This section indexes them.
   - **Not decided here.** No CRL or OCSP checking, and no trust reload without a restart. The
     Community server sends its leaf certificate only, not its intermediates, so an Exeris client
     talking to an Exeris server whose certificate is chained needs those intermediates in its
-    `trustFile`. The Enterprise client is outside this amendment: bringing the Enterprise HTTP
+    `trustFile`. *(Amendment A3, 2026-10-20: the Community server now sends its whole chain — see
+    [Amendments](#amendments).)* The Enterprise client is outside this amendment: bringing the
+    Enterprise HTTP
     clients and transport up to A1 and A2 is pending in the Enterprise tier.
 - **2026-09-27 — what the spike found, and what existing deployments observe.** Checked against
   v0.11.0 while writing the 0.12 upgrade notes:
@@ -329,3 +331,8 @@ rule 7). This section indexes them.
     and `remotePort()`, both `Host` cases must redden. They can only on a transport whose dialled end
     reports the address it reached rather than the name it was dialled by, which is why
     `AbstractTransportConnectionTck` checks that end.
+- **2026-10-20 — A3: the Community server sends its whole certificate chain.** The limitation in the
+  "Not decided here" paragraph of A1 is lifted. The server loads its certificate file with
+  `SSL_CTX_use_certificate_chain_file`, so every certificate the file holds after the leaf is sent to
+  the peer, and a client that trusts the root alone verifies a chained server. The Enterprise client
+  remains outside this amendment, as A1 states.

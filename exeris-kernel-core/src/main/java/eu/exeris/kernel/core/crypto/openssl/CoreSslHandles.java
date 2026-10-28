@@ -134,6 +134,8 @@ public final class CoreSslHandles {
      * @param sslCtxFree               bound to {@code SSL_CTX_free}; {@code (long ctxPtr) -> void}
      * @param sslCtxUseCertificateFile bound to {@code SSL_CTX_use_certificate_file};
      *                                 {@code (long ctxPtr, long pathAddr, int fileType) -> int}
+     * @param sslCtxUseCertificateChainFile bound to {@code SSL_CTX_use_certificate_chain_file};
+     *                                 {@code (long ctxPtr, long pathAddr) -> int}
      * @param sslCtxUsePrivateKeyFile  bound to {@code SSL_CTX_use_PrivateKey_file};
      *                                 {@code (long ctxPtr, long pathAddr, int fileType) -> int}
      * @param sslCtxCheckPrivateKey    bound to {@code SSL_CTX_check_private_key};
@@ -146,19 +148,26 @@ public final class CoreSslHandles {
      * @param sslCtxSetAlpnSelectCb    bound to {@code SSL_CTX_set_alpn_select_cb} if the symbol is present
      *                                 in the loaded OpenSSL build, else {@code null};
      *                                 {@code (long ctxPtr, long callbackPtr, long argPtr) -> void}
+     * @param sslCtxCtrl               bound to {@code SSL_CTX_ctrl}, cast to
+     *                                 {@code (long ctxPtr, int cmd, long larg, long parg) -> long}; the
+     *                                 C {@code long} positions follow the platform
      * @since 0.5
      */
+    // one guarded FFM invoke per bound symbol: the sum grows with the surface
+    @SuppressWarnings("PMD.CyclomaticComplexity")
     public record CtxHandles(
             MethodHandle sslServerMethod,
             MethodHandle sslClientMethod,
             MethodHandle sslCtxNewEx,
             MethodHandle sslCtxFree,
             MethodHandle sslCtxUseCertificateFile,
+            MethodHandle sslCtxUseCertificateChainFile,
             MethodHandle sslCtxUsePrivateKeyFile,
             MethodHandle sslCtxCheckPrivateKey,
             MethodHandle sslCtxSetVerify,
             MethodHandle sslCtxSetAlpnProtos,
-            MethodHandle sslCtxSetAlpnSelectCb) {
+            MethodHandle sslCtxSetAlpnSelectCb,
+            MethodHandle sslCtxCtrl) {
 
         /**
          * {@code TLS_server_method()} → native method pointer for {@code SSL_CTX_new_ex}.
@@ -247,6 +256,26 @@ public final class CoreSslHandles {
         }
 
         /**
+         * {@code SSL_CTX_use_certificate_chain_file} → 1 on success.
+         *
+         * <p>The first certificate in the PEM file is the leaf and every later one is a chain member,
+         * which the context sends to its peer. A file holding one certificate behaves as
+         * {@link #invokeCtxUseCertFile} does with {@code SSL_FILETYPE_PEM}.
+         *
+         * @param ctxPtr   the {@code SSL_CTX*} pointer
+         * @param pathAddr address of the NUL-terminated certificate chain file path
+         * @return {@code 1} on success, {@code 0} otherwise
+         */
+        public int invokeCtxUseCertChainFile(long ctxPtr, long pathAddr) {
+            try {
+                return (int) sslCtxUseCertificateChainFile.invokeExact(ctxPtr, pathAddr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_CTX_use_certificate_chain_file failed", t);
+            }
+        }
+
+        /**
          * {@code SSL_CTX_use_PrivateKey_file} → 1 on success.
          *
          * @param ctxPtr   the {@code SSL_CTX*} pointer
@@ -275,6 +304,26 @@ public final class CoreSslHandles {
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
                 FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_check_private_key failed", t);
+            }
+        }
+
+        /**
+         * {@code SSL_CTX_set_min_proto_version(ctxPtr, version)}, which OpenSSL defines as
+         * {@code SSL_CTX_ctrl(ctx, SSL_CTRL_SET_MIN_PROTO_VERSION, version, NULL)}; the macro is
+         * not an exported symbol.
+         *
+         * @param ctxPtr  the {@code SSL_CTX*} pointer
+         * @param version a protocol version constant (see {@link CoreOpenSslLoader#TLS1_3_VERSION})
+         * @return {@code 1} if the context now refuses every older protocol, {@code 0} otherwise
+         * @throws TlsException ({@code EX-NET-2001}) wrapping any throwable raised by the FFM call
+         */
+        public long invokeCtxSetMinProtoVersion(long ctxPtr, int version) {
+            try {
+                return (long) sslCtxCtrl.invokeExact(
+                        ctxPtr, CoreOpenSslLoader.SSL_CTRL_SET_MIN_PROTO_VERSION, (long) version, 0L);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_CTX_ctrl failed", t);
             }
         }
 

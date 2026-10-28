@@ -28,7 +28,8 @@ import java.nio.ByteOrder;
  * 32       4B   eventTypeOrdinal (LE)
  * 36       4B   flags            (LE)
  * 40       8B   occurredAtEpochMs (LE)
- * 48      16B   _padding (cache-line fill)
+ * 48       4B   isolationOrdinal (LE; 0 = unscoped)
+ * 52      12B   _padding (cache-line fill)
  * ──────────────────────────────────────
  * TOTAL: 64 bytes
  * </pre>
@@ -63,7 +64,8 @@ public final class EventDescriptorCodec {
             ValueLayout.JAVA_INT.withOrder(ByteOrder.LITTLE_ENDIAN).withName("eventTypeOrdinal"),
             ValueLayout.JAVA_INT.withOrder(ByteOrder.LITTLE_ENDIAN).withName("flags"),
             ValueLayout.JAVA_LONG.withOrder(ByteOrder.LITTLE_ENDIAN).withName("occurredAtEpochMs"),
-            MemoryLayout.paddingLayout(16)
+            ValueLayout.JAVA_INT.withOrder(ByteOrder.LITTLE_ENDIAN).withName("isolationOrdinal"),
+            MemoryLayout.paddingLayout(12)
     );
 
     // ── VarHandles — static finals, zero hot-path overhead ───────────────────
@@ -82,6 +84,8 @@ public final class EventDescriptorCodec {
             LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("flags"));
     private static final VarHandle VH_OCCURRED_AT =
             LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("occurredAtEpochMs"));
+    private static final VarHandle VH_ISOLATION_ORDINAL =
+            LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("isolationOrdinal"));
 
     private EventDescriptorCodec() {}
 
@@ -104,6 +108,7 @@ public final class EventDescriptorCodec {
         VH_EVENT_TYPE_ORDINAL.set(segment, offset, descriptor.eventTypeOrdinal());
         VH_FLAGS.set(segment, offset, descriptor.flags());
         VH_OCCURRED_AT.set(segment, offset, descriptor.occurredAtEpochMs());
+        VH_ISOLATION_ORDINAL.set(segment, offset, descriptor.isolationOrdinal());
     }
 
     /**
@@ -125,7 +130,8 @@ public final class EventDescriptorCodec {
                 (long) VH_STREAM_ID_LOW.get(segment, offset),
                 (int)  VH_EVENT_TYPE_ORDINAL.get(segment, offset),
                 (int)  VH_FLAGS.get(segment, offset),
-                (long) VH_OCCURRED_AT.get(segment, offset)
+                (long) VH_OCCURRED_AT.get(segment, offset),
+                (int)  VH_ISOLATION_ORDINAL.get(segment, offset)
         );
     }
 

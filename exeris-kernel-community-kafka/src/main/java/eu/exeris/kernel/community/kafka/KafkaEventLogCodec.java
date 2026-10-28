@@ -123,7 +123,14 @@ final class KafkaEventLogCodec {
         return (long) VH_STREAM_ID_LOW.get(MemorySegment.ofArray(frame), 0L);
     }
 
-    /* default */ static EventDescriptor decodeDescriptor(byte[] frame) {
+    /**
+     * Decodes the descriptor portion of an event-log frame. The isolation ordinal is not part of the
+     * frame, so the caller supplies it, read from the record's header by {@link KafkaIsolationHeader}.
+     *
+     * @param frame            the record value (non-null)
+     * @param isolationOrdinal the isolation ordinal carried by the record's header, or {@code 0}
+     */
+    /* default */ static EventDescriptor decodeDescriptor(byte[] frame, int isolationOrdinal) {
         requireHeader(frame);
         MemorySegment src = MemorySegment.ofArray(frame);
         return new EventDescriptor(
@@ -133,7 +140,8 @@ final class KafkaEventLogCodec {
                 (long) VH_STREAM_ID_LOW.get(src,      0L),
                 (int)  VH_EVENT_TYPE_ORDINAL.get(src, 0L),
                 (int)  VH_FLAGS.get(src,              0L),
-                (long) VH_OCCURRED_AT.get(src,        0L));
+                (long) VH_OCCURRED_AT.get(src,        0L),
+                isolationOrdinal);
     }
 
     /** Returns the payload tail as a zero-copy {@link MemorySegment} slice over {@code frame}. */

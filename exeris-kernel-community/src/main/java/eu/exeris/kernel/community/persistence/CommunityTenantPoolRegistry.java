@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
 
@@ -34,6 +35,7 @@ import java.util.function.IntSupplier;
 final class CommunityTenantPoolRegistry {
 
     private static final long MIN_RECLAIM_CADENCE_MS = 250L;
+    // Not a key: it clamps persistence.idleTimeoutMs / 4, an input already configured; a second knob could disagree.
     private static final long MAX_RECLAIM_CADENCE_MS = 5_000L;
 
     private final String providerId;
@@ -42,6 +44,9 @@ final class CommunityTenantPoolRegistry {
     private final HikariDataSource sharedPool;
     private final ConcurrentMap<String, TenantPoolState> tenantPools = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, HikariDataSource> dedicatedPools = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, RlsRoleCheck.RoleAttributes> refusedDedicated = new ConcurrentHashMap<>();
+    private final BooleanSupplier roleCheckArmed;
+    private final boolean allowBypassRole;
     private final long tenantIdleTtlNanos;
     private final long tenantReclaimCadenceNanos;
     private final AtomicLong nextTenantReclaimAtNanos;
@@ -49,8 +54,12 @@ final class CommunityTenantPoolRegistry {
     /* default */ CommunityTenantPoolRegistry(String providerId,
                                 PersistenceConfig config,
                                 Object lifecycleLock,
-                                HikariDataSource sharedPool) {
+                                HikariDataSource sharedPool,
+                                BooleanSupplier roleCheckArmed,
+                                boolean allowBypassRole) {
         this.providerId = providerId;
+        this.roleCheckArmed = roleCheckArmed;
+        this.allowBypassRole = allowBypassRole;
         this.config = config;
         this.lifecycleLock = lifecycleLock;
         this.sharedPool = sharedPool;
@@ -198,19 +207,52 @@ final class CommunityTenantPoolRegistry {
         poolsToClose.forEach(HikariDataSource::close);
     }
 
+    /**
+     * Returns the dedicated pool for {@code dataSourceKey}, building it on first use.
+     *
+     * <p>When the engine's row-level-security role check is armed, a candidate pool is probed before
+     * it is published, so a pool whose role bypasses row-level security is never reachable by a
+     * request. Dedicated pools are built lazily, possibly with their own credentials, so the refusal
+     * happens at the first request routed to the pool and is remembered: a later request gets the
+     * same refusal without opening another connection. A probe failure is not remembered, since it
+     * may be transient. Tenant pools are deliberately not probed: they share the shared pool's
+     * credentials, so the shared probe covers them; a tenant pool that ever gets its own credentials
+     * must be probed here as well.
+     */
+    @SuppressWarnings("PMD.UseTryWithResources")
     private HikariDataSource getOrBuildDedicatedPool(String dataSourceKey) {
         HikariDataSource existing = dedicatedPools.get(dataSourceKey);
         if (existing != null) {
             return existing;
         }
+        RlsRoleCheck.RoleAttributes refused = refusedDedicated.get(dataSourceKey);
+        if (refused != null) {
+            throw RlsRoleCheck.refusal(refused, providerId);
+        }
         PersistenceConfig dedicatedConfig = config.dedicatedDataSources().get(dataSourceKey);
         HikariDataSource candidate = CommunityHikariSupport.buildPool(dedicatedConfig, null);
-        HikariDataSource prior = dedicatedPools.putIfAbsent(dataSourceKey, candidate);
-        if (prior != null) {
-            candidate.close();
-            return prior;
+        boolean installed = false;
+        try {
+            Optional<RlsRoleCheck.RoleAttributes> bypass = roleCheckArmed.getAsBoolean()
+                    ? RlsRoleCheck.probePool(candidate, providerId, dedicatedConfig.connectionUrl())
+                            .filter(RlsRoleCheck.RoleAttributes::bypasses)
+                    : Optional.empty();
+            if (bypass.isPresent() && !allowBypassRole) {
+                refusedDedicated.putIfAbsent(dataSourceKey, bypass.get());
+                throw RlsRoleCheck.refusal(bypass.get(), providerId);
+            }
+            HikariDataSource prior = dedicatedPools.putIfAbsent(dataSourceKey, candidate);
+            if (prior != null) {
+                return prior;
+            }
+            installed = true;
+            bypass.ifPresent(attributes -> RlsRoleCheck.reportDowngrade(attributes, providerId));
+            return candidate;
+        } finally {
+            if (!installed) {
+                candidate.close();
+            }
         }
-        return candidate;
     }
 
     @SuppressWarnings("PMD.CloseResource")

@@ -15,11 +15,12 @@ Hot-path performance-lawyer for runtime efficiency and memory lifecycle discipli
 ## Primary Responsibilities
 - Detect allocation regressions and heap↔off-heap copy churn on hot paths.
 - Validate ownership/lifecycle of native memory (explicit owner, deterministic release).
-- Flag risky primitives in runtime hot paths (`ThreadLocal`, unstructured async, ad-hoc Arena misuse, legacy IO/buffer APIs where zero-copy path is expected).
+- Flag risky primitives in runtime hot paths (unstructured async, ad-hoc Arena misuse, legacy IO/buffer APIs where zero-copy path is expected).
+- Flag `ThreadLocal` wherever it appears, test code included — ADR-007 bans it without a scope; the replacement is `ScopedValue`.
 - Verify lifecycle/failure observability expectations are met with JFR-first mindset where contracts require it.
 
 ## Scope Discipline
-Apply strictness to production runtime/hot paths. Treat test/tooling/fixtures separately unless they contaminate runtime behavior.
+Apply strictness to production runtime/hot paths. Treat test/tooling/fixtures separately unless they contaminate runtime behavior — except for a ban an ADR states without a scope, which applies to them too.
 
 Hot path usually includes:
 - transport ingress/egress,

@@ -191,3 +191,10 @@ provider TCK never binds a `TimeSource`, so it exercised the unbound fallback an
 green whether or not the change worked. That gap is closed by a test binding a parked source in
 **both** directions — a wall-clock-valid token refused, and a wall-clock-expired token accepted —
 because either direction alone passes against a validator that answers the same way every time.
+
+## Amendment A2 (2026-10-21) — the time slot lives on `TimeKernelProviders`
+
+Amended by ADR-100 §3. The slot and its accessor live on `spi.time.TimeKernelProviders`. The
+`KernelProviders.TIME_SOURCE` and `KernelProviders.timeSource()` names used in §2, §3 and
+Consequences are deprecated bridges to the same `ScopedValue`, removed in the first 1.0 release
+candidate. The decision is unchanged.
