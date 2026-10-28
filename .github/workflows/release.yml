@@ -64,9 +64,12 @@ jobs:
 
       - name: Refuse a ref that cannot build a release
         # This step exists because of where the workflow FILE has to live, not because of anything a
-        # caller is likely to type. `workflow_dispatch` registers only a workflow present on the
-        # DEFAULT branch, so this file lands on `main` ahead of the release that needs it, and a ref
-        # dispatched from there can lack both the `release` profile and the gate scripts.
+        # caller is likely to type. `workflow_dispatch` only registers a workflow that is present on
+        # the DEFAULT branch: while this file existed on the development line alone, GitHub had no
+        # record of it — `GET /actions/workflows` listed six workflows and not this one — so no ref
+        # could dispatch it, including the no-upload dry run the header offers as "useful from any
+        # branch". The file therefore lands on `main` ahead of the release that needs it, and `main`
+        # at that point carries neither the `release` profile nor the gate scripts.
         #
         # A dispatch from such a ref does not fail cleanly on its own. Maven treats `-P release` for
         # an absent profile as a WARNING and builds on, so the run produces unsigned artifacts and
