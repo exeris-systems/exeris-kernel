@@ -3457,7 +3457,7 @@ fails, and fixed to `false` both positive cases fail.
 
 **Owner:** Core / Bootstrap, Crypto, Contract subsystems.
 
-**Status: IN PROGRESS (v0.13).** Kernel side implemented in exeris-systems/exeris-kernel#608, with scoped issuer keys, the entitlement classes and the developer-licence envelope added since; the items under "Open within this item" remain.
+**Status (v0.13): PARTIALLY DELIVERED.** The verification and enforcement of the contract are delivered: Phase 0 of `KernelBootstrap.boot()` through `ContractBootstrapStep` (exeris-systems/exeris-kernel#608), with scoped issuer keys, the entitlement classes and the developer-licence envelope enforced by `DeveloperWorkloadAdmission`, covered by `AbstractExecutionContractTck`, `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck`. Metering beyond the developer licence, offline revocation, the `-Pproduction` capability check and the measurement of the gate's cost are not delivered; they are the items under "Open within this item".
 
 **Resolution:**
 - Define `ExecutionContract`, `WorkloadEnvelope`, `EnforcementLevel`, `ExecutionEnvironment` and the `EntitlementRequirement` SPI in `exeris-kernel-spi` (`eu.exeris.kernel.spi.contract`).
@@ -3558,6 +3558,9 @@ JFR event class in the kernel for the warm-up catalogues; the inventory is what 
 the two paths visible as a contract question rather than an implementation detail. No RFC exists in
 `docs/rfc/`.
 
+**Status (v0.13): NOT STARTED — deferred.** `docs/rfc/` still carries no telemetry-contract document, and
+`TelemetrySink` is unchanged, so the RFC and everything it gates move past 0.13.
+
 ---
 
 ### Tooling Asks Carried to v0.13 — Persistence Role Check, Flow Routing, Choreography Start, Security Rulings (surfaced 2026-09-26)
@@ -3593,9 +3596,22 @@ plan compilation, as `flow.md` §"A step's next step is fixed when the plan is c
 
 **Merge Gate:** each issue's acceptance criteria.
 
-**Status (v0.13): RULED IN PART, NOT IMPLEMENTED.** ADR-012's amendment of 2026-10-07 (accepted 2026-10-08)
-rules #585, #611 (item 4 of #580) and #581; the ruling proposed for #583 is a comment on that issue.
-Neither #581 nor #583 is implemented, and #582's RFC is not written. The measurements are in #581–#585.
+**Status (v0.13): PARTIALLY DELIVERED.** ADR-012's amendment of 2026-10-07 (accepted 2026-10-08)
+rules #585, #611 (item 4 of #580) and #581.
+- **#581 DELIVERED.** `RlsConnectionInterceptor` registration probes the role and throws `EX-PERS-5009`
+  (`PersistenceProviderException.rlsBypassRole`, `RlsRoleCheck`); `persistence.rlsAllowBypassRole=true` is the
+  consent; `AbstractRlsBypassRoleCheckTck` is the suite.
+- **#611 (item 4 of #580) DELIVERED.** The reference policy pins the shared-scope tag on write;
+  `AbstractSharedScopeAccessMatrixTck` gains `retagScope` and the tag cells, bound by
+  `CommunityPersistenceSharedScopeIT` and `CommunityPersistenceSharedScopeUuidIT`.
+- **#583 DELIVERED.** A choreography `Start` for an instance the engine already holds is a no-op pinned by
+  `AbstractFlowChoreographyTck`, and each absorbed delivery emits `ChoreographyStartIgnoredEvent`.
+- **#585 RULED, NOT IMPLEMENTED.** The ruling is in ADR-012's amendment; no principal session key and no
+  field-level encryption ship.
+- **#582 NOT STARTED.** `docs/rfc/` carries no flow-routing RFC; the step graph is still fixed at plan
+  compilation.
+
+The measurements are in #581–#585.
 
 ---
 
@@ -4127,6 +4143,9 @@ SDK annotation whose declared semantics the runtime silently ignores is a docume
 `FlowDefinition`, `FlowStepDescriptor`, `RuntimeFlowInstance.currentStep` and `FlowSnapshot` were all
 read before this entry was written, and nothing in SPI or Core names parallelism.
 
+**Status (v0.13): NOT STARTED — RFC deferred.** `docs/rfc/` carries no parallel-steps document, and
+`FlowDefinition` and `FlowStepDescriptor` still model an ordered linear list.
+
 ---
 
 ### Flow: No Way to Await a Flow (surfaced by dogfooding, 2026-07-31)
@@ -4144,6 +4163,9 @@ This is a genuine product-SPI gap rather than a stylistic one. Request/response 
 **1.0 disposition:** post-1.0. 1.0 ships without a completion surface; the RFC above decides its shape afterwards, and that shape has to add to the stable flow surface rather than change it.
 
 **Status (v0.12): NOT STARTED — and no longer blocked.** The sequencing condition above is discharged: the flow-versioning and continuity work it waited on shipped in v0.11 (ADR-062, ADR-064 with amendments A4/A5), so this is ripe rather than deferred. What has not happened is the decision — `docs/rfc/` carries no flow-await document, and `FlowScheduler.schedule` still returns `void`, so there is no completion surface for anything to await on. Carried to v0.13 as a decision-only slice: the RFC is one PR and it gates every shape an implementation could take.
+
+**Status (v0.13): NOT STARTED — deferred.** `docs/rfc/` still carries no flow-await document, and
+`FlowScheduler.schedule` still returns `void`.
 
 ---
 
