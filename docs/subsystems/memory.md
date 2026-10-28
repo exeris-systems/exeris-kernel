@@ -247,16 +247,25 @@ never cached, so it allocates one on every call, whenever `FlightRecorder` is in
 (`KERNEL_LOGIC` context is stricter: it already reaches `SHED_LOAD` at `CRITICAL`, trading background
 work — projections, sagas, graph queries — for transport throughput under pressure.)
 
-**Configuration:** none of the watermark thresholds or the poll interval is configurable.
+**Configuration:** none of the watermark thresholds or the refresh interval is configurable.
 `WatermarkManager` thresholds are the `WatermarkLevel` enum constants (70/85/95% of the off-heap budget),
-and `WatermarkManager.refresh()` is what moves the level. `MemoryMaintenanceTask` calls it every
-`DEFAULT_WATERMARK_INTERVAL_MS` (5,000 ms), but no kernel code constructs or starts that task, and
-nothing else calls `refresh()`: the `WatermarkManager` that `NativeTcpCarrier.initPaqs()` builds for the
-Community transport stays at `NORMAL`, so the shedding levels above are not reached in a default boot.
+and `WatermarkManager.refresh()` is what moves the level (who calls it, and when the level can leave
+`NORMAL`, is below). The Community budget is `memory.offHeapBudgetBytes`; the refresh interval is 1 s.
 No code reads `network.paqs.*Threshold`, `memory.watermarkPollIntervalMs` or
 `telemetry.allocationSampleRate`. Community allocation JFR sampling reads the config key
 `memory.jfr.sampleEvery`, falling back to the system property `-Dexeris.community.memory.jfr.sampleEvery`;
 it is an integer stride (default 64), not a rate fraction (`CommunityMemoryJfrSampling`).
+
+**Who refreshes the level, and when it can leave `NORMAL`.** `currentLevel()` is a cached read, so
+something has to call `refresh()`. Each server-mode Community carrier samples its allocator once at
+`start()` and then every 1 s on a virtual thread (`MemoryMaintenanceTask.watermarkRefreshOnly`), and
+stops that thread in `stop()`; a client-mode carrier starts none. The level leaves `NORMAL` only when
+the allocator reports a budget, and the Community allocator reports one only when
+`memory.offHeapBudgetBytes` is set. That budget is the utilisation denominator, not an allocation
+cap: `allocatedBytes` counts live leases (not pooled segments or the arena footprint), allocation is
+never refused for exceeding the budget, and above it utilisation reads 1.0. The arbiter answers
+`ALLOW` for 30 s after each carrier start, timed by the `TimeSource` bound at that start. On
+Community every stream carries `NORMAL` priority, so `WARNING` (70%) already sheds every stream.
 
 ---
 
@@ -267,7 +276,7 @@ it is an integer stride (default 64), not a rate fraction (`CommunityMemoryJfrSa
   `MemoryEnvironmentProbed` JFR event. Not currently wired to bootstrap: no caller in
   `KernelBootstrap`, `SubsystemOrchestrator`, or `CommunityMemorySubsystem` invokes it in this
   repository — its only caller is its own unit test, so it does not run during a kernel boot today.
-- **`MemoryMaintenanceTask`** — Virtual Thread maintenance loop: calls `performMaintenance()` every 10 s, `WatermarkManager.refresh()` every 5 s. No kernel code starts it in this repository; its callers are tests
+- **`MemoryMaintenanceTask`** — Virtual Thread maintenance loop: calls `performMaintenance()` every 10 s, `WatermarkManager.refresh()` every 5 s. The full variant is started by no kernel code; the refresh-only variant (`watermarkRefreshOnly`, no `performMaintenance()`) is started by the Community carrier.
 
 ---
 

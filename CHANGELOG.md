@@ -351,6 +351,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **Community memory-pressure admission engages when a budget is configured.** Each server-mode carrier samples the allocator at start and every second; before, nothing refreshed the level, so it stayed NORMAL. `memory.offHeapBudgetBytes` gives the Community allocator a budget its stats report; unset keeps the previous behaviour. The Community provider accepts a positive `totalOffHeapBytes` as a pressure budget, not a cap, instead of refusing it. The arbiter's 30 s startup grace follows the bound `TimeSource`.
+
 - **HPACK sizes table entries and the field section by the octets on the wire.** The decoder measured an entry, and the field section, by re-encoding the decoded String as UTF-8. An obs-text octet that is not valid UTF-8 became U+FFFD and counted three octets where the client counted one. The server then evicted entries the client still held, and a later request referencing one failed as a COMPRESSION_ERROR, or a field section within http.maxHeaderListSize was refused. Sizes now come from the octets read. New AbstractHttp2HeaderLimitTck group ObsTextOctets.
 
 - **`spi-api-diff --history` labels each transition with the stability conf at its old ref, not the working tree's (tooling).** Regenerating the release history after a surface is promoted no longer reports that surface's earlier `preview` breaks as `stable` breaks; a single `--old/--new` run keeps judging by the current conf. `--self-test` pins the choice for each mode against a throwaway repository, and CI runs it.

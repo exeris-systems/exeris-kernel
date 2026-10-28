@@ -135,7 +135,8 @@ response.
 | `0`, other negatives | **refused at startup**, by `TransportConfig` and again by `AdmissionController` |
 
 `-1` removes the count cap, not admission control: the memory-pressure arbiter still decides every
-stream first, so an engine configured this way still sheds under watermark pressure. What it gives
+stream first, so an engine configured this way still sheds under watermark pressure — which a
+Community engine sees only when `memory.offHeapBudgetBytes` gives its allocator a budget. What it gives
 up is the ceiling that sheds *regardless* of memory pressure — the point for a JVM-controlled
 deployment measuring where saturation actually falls, and a foot-gun for a shared one. `0` is
 refused rather than read as "off" because an engine that admits nothing serves nothing.
@@ -366,6 +367,14 @@ event loop.
 PAQS is the enforcement arm of the `ResourceArbiter`. When `WatermarkManager` signals memory pressure,
 PAQS raises the shedding threshold — streams below that priority are dropped at the transport edge before
 a single byte enters the application stack. This prevents GC pressure from cascading into business logic.
+
+The Community carrier owns the refresh of the level its arbiter reads. `initPaqs()` samples the
+allocator once, so the level is current before the first accept instead of after the first periodic
+sample;
+after the listener is up, a refresh-only `MemoryMaintenanceTask` re-samples every 1 s (not
+configurable) until `stop()`. Every `start()` builds a new manager, arbiter and task, and the
+arbiter answers `ALLOW` for 30 s from that start, timed by the `TimeSource` bound at the call. With
+no `memory.offHeapBudgetBytes` the allocator reports no budget and the level stays `NORMAL`.
 
 ### 3. Zero-Copy Ingress
 
@@ -756,7 +765,9 @@ edge based on verifiable attributes — that is the target design. The priority 
 > the config key the third row depends on, is itself listed 🔲 planned (not wired) in
 > [config.md](config.md). Every stream a Community engine admits today carries `NORMAL`, so the
 > differential shedding this table and the Overview describe cannot happen against this build; the
-> table states the intended resolution chain, not current behavior.
+> table states the intended resolution chain, not current behavior. A consequence for memory
+> pressure: any level above `NORMAL` sheds every Community stream (`WARNING` already does), by
+> closing it with `FIN` and no response.
 
 | Source                             | Mechanism                                                                                         | Trust Level        |
 |:-----------------------------------|:--------------------------------------------------------------------------------------------------|:-------------------|
@@ -1041,7 +1052,7 @@ the record of what it costs.
   allocations; **Community tier is bounded**, not zero (`AbstractSubsystemZeroAllocTck` default
   budget: 5 allocations/iteration).
 - **PAQS Integration:** `WatermarkManager` pressure increase correctly raises PAQS threshold and
-  triggers `EX-NET-4006` for low-priority streams. 🚧 Planned — not yet implemented. `AbstractPaqsIntegrationTck` covering WatermarkManager→PAQS→EX-NET-4006 chain does not yet exist.
+  triggers `EX-NET-4006` for low-priority streams. 🚧 Planned as a TCK — `AbstractPaqsIntegrationTck` covering WatermarkManager→PAQS→EX-NET-4006 chain does not yet exist. The Community chain from a budgeted allocator to an admission decision is covered by `NativeTcpCarrierWatermarkAdmissionTest` (a real carrier: start sample, periodic refresh, startup grace, shed with `FIN`) and `CommunityAdmissionUnderBudgetTest` (allocator, watermark manager, arbiter and admission controller at each level).
 - **Berkeley socket seam round-trip (since 0.11):** `SyscallLoopbackRoundTripIT` (Core) drives the handles resolved by `CoreSyscallLoader` through a real loopback connection — bind, listen, connect, accept, send, recv, byte-exact comparison — plus a refusal case that pairs a successful connect with a refused one so neither can pass alone. Runs in the default build via Failsafe; Linux and Windows only, since BSD `sockaddr_in` carries a leading `sin_len` byte that the shared 16-byte layout does not model. Integer-width entries in the C-type→`ValueLayout` table stay reviewed-not-tested: the x86-64 SysV ABI zero-extends, so a `size_t` mis-declared as `JAVA_INT` passes this gate.
 
 `AbstractTransportStreamTck` also pins the outbound contract: `QueueWriteDoesNotWait` is ungated and binds
