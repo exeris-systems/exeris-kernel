@@ -247,6 +247,38 @@ distinct manifest now fails the boot with `EX-LIC-0001`, the message listing eve
 
 ---
 
+## 0.12.x → 0.13 — a finished saga keeps its snapshot row (ADR-013 A1)
+
+With a snapshot store bound, the flow engine writes a `COMPLETED` snapshot over a finished saga's row
+whatever `terminalCatalogMaxSize` is, and never deletes it; 0.12 deleted the row on completion when the
+catalog was unbounded, the default. A `Start` redelivered after a restart is now absorbed while that row
+exists, where it used to run the saga again.
+
+**What to change.** Nothing breaks, but the table grows. `exeris_saga_state` gains one row per finished
+saga, kept until you delete it, so a deployment on `JdbcFlowSnapshotStore` needs a purge job:
+
+```sql
+DELETE FROM exeris_saga_state
+ WHERE state IN ('COMPLETED', 'FAILED_ROLLEDBACK') AND last_update < ?
+```
+
+`idx_exeris_saga_state_parked (state, last_update)` serves it, and `last_update` is the completion wall
+time.
+
+**Retention rule.** Keep terminal rows at least as long as broker retention plus the worst consumer lag
+of anything that can send a `Start`. Deleting a row lets that instance id run again, so a purge shorter
+than that window reopens the redelivery the row closes.
+
+**Heap store.** The default `CommunityFlowSnapshotStore` holds one snapshot per finished saga for the life
+of the process, so a long-running process on it grows within that process. Bind a durable store, or
+restart the process, to bound it.
+
+A custom `FlowSnapshotStore` has to accept and return a snapshot in any `FlowState`, and nothing in the
+engine calls its `delete` any more. Out-of-tree `AbstractSagaRecoveryTck` bindings are described in the
+stability matrix note on `spi.flow`.
+
+---
+
 ## 0.12.x → 0.13 — embedding hosts: disable the kernel's shutdown hook (ADR-007 §5)
 
 `KernelBootstrap.boot()` now registers one JVM shutdown hook that runs `KernelBootstrap.shutdown()`, so a

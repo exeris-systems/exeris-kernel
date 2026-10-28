@@ -60,16 +60,16 @@ Community tier follows a **best-effort performance contract**:
 
 **Merge Gate:** Architecture sign-off on retention semantics in subsystem docs; if SPI/config surface changes, extend Flow TCK before release.
 
-**Status (v0.13): DELIVERED — exercised by `CoreFlowRuntimeBoundedTerminalFenceTest`, with row retention owned by the binder.**
+**Status (v0.13): DELIVERED — exercised by `CoreFlowRuntimeTerminalFenceTest`, with row retention owned by the binder.**
 `FlowEngineConfig.terminalCatalogMaxSize` bounds `CoreFlowRuntime`'s terminal-state catalog as an LRU
-(`0`, the default, is unbounded; `enterpriseDefaults` sets 100 000), and an evicted key falls back to
-`FlowSnapshotStore` for the idempotency fence; `flow.md` §"Terminal-State Catalog Retention" records
-the semantics (v0.7.0, ADR-013). In bounded mode with a snapshot store, completion replaces the
-instance's row with a `COMPLETED` snapshot, so a finished flow stays finished after an eviction or a
-restart. The Merge Gate's second clause is met by `CoreFlowRuntimeBoundedTerminalFenceTest`, the
-`AbstractSagaRecoveryTck` bounded cases and the terminal-snapshot cases of
-`AbstractDistributedFlowSnapshotStoreTck`. The kernel reclaims no terminal row (the saga TTL eviction
-half was never built), so storage retention belongs to the store's binder.
+(`0`, the default, is unbounded; `enterpriseDefaults` sets 100 000) and bounds memory only; `flow.md`
+§"Terminal-State Catalog Retention" records the semantics (v0.7.0, ADR-013). With a snapshot store bound,
+completion replaces the instance's row with a `COMPLETED` snapshot in both modes, so a finished flow stays
+finished after an eviction or a restart. The Merge Gate's second clause is met by
+`CoreFlowRuntimeTerminalFenceTest` (both modes, and a Start naming another definition), the
+`AbstractSagaRecoveryTck` bounded cases, its `CompletedInstanceAcrossRestart` case and the terminal-snapshot
+cases of `AbstractDistributedFlowSnapshotStoreTck`. The kernel reclaims no terminal row (the saga TTL
+eviction half was never built), so storage retention belongs to the store's binder.
 
 See also: [Flow Subsystem](./subsystems/flow.md) — Known Constraints.
 
