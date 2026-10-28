@@ -221,6 +221,13 @@ elsewhere; `CHANGELOG.md` links here for the authoritative version.
 - **experimental** — **No guarantees in any version.** A breaking change can land in any release,
   including a patch. The Javadoc carries an explicit "use-at-own-risk" disclaimer.
 
+- **The BOM's test libraries are outside the compatibility surface.** `exeris-kernel-bom` manages
+  the versions of the libraries the kernel's own tests use (Testcontainers, JUnit, Mockito, AssertJ,
+  JMH, ArchUnit) as a convenience for the build. Those entries follow the kernel's tests and may
+  change version or artifact name in any release; a consumer that depends on them pins its own
+  versions. The compatibility surface of the BOM is the kernel's own artifacts and the runtime
+  dependencies they need.
+
 ### Pre-1.0 / TRL-3 framing
 
 Exeris is pre-1.0 / TRL-3, and no SPI consumer is under a support contract today. This matrix is a
