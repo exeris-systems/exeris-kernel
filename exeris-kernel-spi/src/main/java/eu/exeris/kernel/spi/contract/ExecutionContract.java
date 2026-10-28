@@ -236,10 +236,10 @@ public record ExecutionContract(
                 Instant.MAX,
                 14,
                 Map.of(
-                        "capability", EnforcementLevel.SOFT,
-                        "environment", EnforcementLevel.HARD,
-                        "authorizedInstances", EnforcementLevel.AUDIT,
-                        "workloadEnvelope", EnforcementLevel.AUDIT
+                        CAPABILITY_CONSTRAINT, EnforcementLevel.SOFT,
+                        ENVIRONMENT_CONSTRAINT, EnforcementLevel.HARD,
+                        AUTHORIZED_INSTANCES_CONSTRAINT, EnforcementLevel.AUDIT,
+                        WORKLOAD_ENVELOPE_CONSTRAINT, EnforcementLevel.AUDIT
                 )
         );
     }

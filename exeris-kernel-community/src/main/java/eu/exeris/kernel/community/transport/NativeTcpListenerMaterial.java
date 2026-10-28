@@ -19,11 +19,11 @@ import java.util.Objects;
  */
 final class NativeTcpListenerMaterial {
 
-    /** The offer when the owner names none: HTTP/2 first, then HTTP/1.1. */
-    /* default */ static final List<String> DEFAULT = List.of("h2", "http/1.1");
-
     /** The fallback every TCP listener serves, which every offer therefore names. */
     /* default */ static final String HTTP_1_1 = "http/1.1";
+
+    /** The offer when the owner names none: HTTP/2 first, then HTTP/1.1. */
+    /* default */ static final List<String> DEFAULT = List.of("h2", HTTP_1_1);
 
     private NativeTcpListenerMaterial() {
     }

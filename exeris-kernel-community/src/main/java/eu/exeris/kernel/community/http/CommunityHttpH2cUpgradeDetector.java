@@ -136,7 +136,7 @@ final class CommunityHttpH2cUpgradeDetector {
      * as it is seen.
      */
     /* default */ static boolean isPrefaceOrPrefix(MemorySegment segment, long availableBytes) {
-        long comparable = Math.min(availableBytes, HTTP2_PRIOR_KNOWLEDGE_PREFACE.length);
+        int comparable = (int) Math.min(availableBytes, HTTP2_PRIOR_KNOWLEDGE_PREFACE.length);
         for (int index = 0; index < comparable; index++) {
             byte actual = segment.get(ValueLayout.JAVA_BYTE, index);
             if (actual != HTTP2_PRIOR_KNOWLEDGE_PREFACE[index]) {
