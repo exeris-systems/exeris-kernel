@@ -9,12 +9,19 @@ import eu.exeris.kernel.spi.memory.LeakDetectionMode;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
 
@@ -308,6 +315,176 @@ class MemoryMaintenanceTaskTest {
             MemoryMaintenanceTask task = new MemoryMaintenanceTask(alloc, mgr, 7_000L, 3_000L);
             assertThat(task.maintenanceIntervalMs()).isEqualTo(7_000L);
             assertThat(task.watermarkIntervalMs()).isEqualTo(3_000L);
+        }
+    }
+
+    // =========================================================================
+    // Refresh-only variant
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Refresh-only variant — watermarkRefreshOnly")
+    @Timeout(60)
+    class WatermarkRefreshOnly {
+
+        private static final long TOTAL_BYTES = 1_000_000L;
+        private static final long REFRESH_INTERVAL_MS = 1L;
+        private static final int PERMITS_PER_CHECK = 3;
+        private static final long AWAIT_SECONDS = 20L;
+        private static final String MAINTENANCE_CYCLE_EVENT = "eu.exeris.kernel.core.MemoryMaintenanceCycle";
+        private static final String MAINTENANCE_FAILURE_EVENT = "eu.exeris.kernel.core.MemoryMaintenanceFailure";
+
+        /**
+         * An allocator whose utilisation is settable and which hands out one permit at the end of each
+         * {@code stats()} served on the refresh thread, so a test waits on the refresh rather than on a clock.
+         */
+        private final class SignallingAllocator implements MemoryAllocator {
+            private final AtomicInteger maintenanceCalls = new AtomicInteger();
+            private final Semaphore refreshes = new Semaphore(0);
+            private final AtomicReference<Thread> refreshThread = new AtomicReference<>();
+            private volatile long allocatedBytes;
+
+            void utilisationPct(int pct) {
+                allocatedBytes = TOTAL_BYTES / 100L * pct;
+            }
+
+            @Override
+            public MemoryStats stats() {
+                MemoryStats stats = new MemoryStats(TOTAL_BYTES, allocatedBytes, TOTAL_BYTES - allocatedBytes,
+                        0, 0, allocatedBytes, 0, 0, LeakDetectionMode.DISABLED);
+                Thread current = Thread.currentThread();
+                if (MemoryMaintenanceTask.WATERMARK_REFRESH_THREAD_NAME.equals(current.getName())) {
+                    refreshThread.set(current);
+                    refreshes.release();
+                }
+                return stats;
+            }
+
+            @Override
+            public void performMaintenance() {
+                maintenanceCalls.incrementAndGet();
+            }
+
+            @Override
+            public LoanedBuffer allocate(AllocationHint h) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public LoanedBuffer allocateNetwork(int b) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public LoanedBuffer allocateCarrierSlab(int i) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public LoanedBuffer allocateInfrastructure(long s) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void close() {
+                // No-op: stub allocator holds no off-heap resources
+            }
+
+            boolean awaitRefreshes(int count) throws InterruptedException {
+                return refreshes.tryAcquire(count, AWAIT_SECONDS, TimeUnit.SECONDS);
+            }
+        }
+
+        @Test
+        @DisplayName("a pressure change reaches currentLevel() through the refresh thread alone")
+        void refreshesTheLevel() throws InterruptedException {
+            SignallingAllocator allocator = new SignallingAllocator();
+            WatermarkManager manager = new WatermarkManager(allocator);
+            try (MemoryMaintenanceTask task =
+                         MemoryMaintenanceTask.watermarkRefreshOnly(manager, REFRESH_INTERVAL_MS)) {
+                task.start();
+                allocator.utilisationPct(97);
+                allocator.refreshes.drainPermits();
+
+                assertThat(allocator.awaitRefreshes(PERMITS_PER_CHECK)).isTrue();
+
+                assertThat(manager.currentLevel()).isEqualTo(WatermarkLevel.SHEDDING);
+            }
+        }
+
+        @Test
+        @DisplayName("never attempts allocator maintenance: no maintenance cycle or failure is recorded")
+        void neverRunsAllocatorMaintenance() throws Exception {
+            SignallingAllocator allocator = new SignallingAllocator();
+            WatermarkManager manager = new WatermarkManager(allocator);
+            Path dump = Files.createTempFile("watermark-refresh-only", ".jfr");
+            try (Recording recording = new Recording()) {
+                recording.enable(MAINTENANCE_CYCLE_EVENT);
+                recording.enable(MAINTENANCE_FAILURE_EVENT);
+                recording.start();
+                MemoryMaintenanceTask task =
+                        MemoryMaintenanceTask.watermarkRefreshOnly(manager, REFRESH_INTERVAL_MS);
+                try {
+                    task.start();
+                    assertThat(allocator.awaitRefreshes(PERMITS_PER_CHECK)).isTrue();
+                } finally {
+                    task.stop();
+                }
+                recording.dump(dump);
+
+                assertThat(allocator.maintenanceCalls).hasValue(0);
+                assertThat(RecordingFile.readAllEvents(dump).stream()
+                        .map(event -> event.getEventType().getName())
+                        .filter(name -> name.equals(MAINTENANCE_CYCLE_EVENT)
+                                || name.equals(MAINTENANCE_FAILURE_EVENT)))
+                        .as("a maintenance attempt, even one that fails, leaves an event")
+                        .isEmpty();
+            } finally {
+                Files.deleteIfExists(dump);
+            }
+        }
+
+        @Test
+        @DisplayName("stop() ends the thread, a second stop() is a no-op, and start() refreshes again")
+        void stopAndRestart() throws InterruptedException {
+            SignallingAllocator allocator = new SignallingAllocator();
+            WatermarkManager manager = new WatermarkManager(allocator);
+            MemoryMaintenanceTask task = MemoryMaintenanceTask.watermarkRefreshOnly(manager, REFRESH_INTERVAL_MS);
+            try {
+                task.start();
+                assertThat(allocator.awaitRefreshes(1)).isTrue();
+                Thread first = allocator.refreshThread.get();
+
+                task.stop();
+
+                assertThat(task.isRunning()).isFalse();
+                assertThat(first.isAlive()).as("the refresh thread has ended").isFalse();
+                task.stop();
+                assertThat(task.isRunning()).isFalse();
+
+                allocator.refreshes.drainPermits();
+                task.start();
+                assertThat(task.isRunning()).isTrue();
+                assertThat(allocator.awaitRefreshes(PERMITS_PER_CHECK)).as("refreshing again").isTrue();
+            } finally {
+                task.stop();
+            }
+        }
+
+        @Test
+        @DisplayName("a null manager or a non-positive interval is refused; the maintenance interval reads 0")
+        void validation() {
+            WatermarkManager manager = new WatermarkManager(new SignallingAllocator());
+
+            assertThatThrownBy(() -> MemoryMaintenanceTask.watermarkRefreshOnly(null, 1_000L))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> MemoryMaintenanceTask.watermarkRefreshOnly(manager, 0L))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> MemoryMaintenanceTask.watermarkRefreshOnly(manager, -5L))
+                    .isInstanceOf(IllegalArgumentException.class);
+            MemoryMaintenanceTask task = MemoryMaintenanceTask.watermarkRefreshOnly(manager, 1_000L);
+            assertThat(task.maintenanceIntervalMs()).isZero();
+            assertThat(task.watermarkIntervalMs()).isEqualTo(1_000L);
         }
     }
 }

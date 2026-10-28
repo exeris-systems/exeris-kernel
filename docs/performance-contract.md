@@ -142,7 +142,8 @@ the enforcement in this repository is stated beside each.
   Concurrently admitted streams are capped per engine by `AdmissionController` at
   `transport.paqs.maxActiveStreams` (default `TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS`, 5,000; `-1`
   for none). `H3_EXCESSIVE_LOAD` is the documented response to the `SHEDDING` watermark, but no code in
-  this repository sends it, and the Community watermark never leaves `NORMAL` (#786). The HTTP `503` is
+  this repository sends it. The Community watermark moves only when `memory.offHeapBudgetBytes` is
+  set, and the arbiter answers `ALLOW` for 30 s after each carrier start. The HTTP `503` is
   the persistence admission gate above.
 - **Starved (L2):** Carrier Thread blocked > 50 ms → Kill Task (`EX-RUN-3002`). Target only: `EX-RUN-3002`
   is a registered code with a `CarrierPinnedJfrEvent`, and no kernel code measures carrier blocking or

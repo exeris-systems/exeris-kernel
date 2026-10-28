@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.memory.CommunityMemoryBudgetResolver;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
@@ -114,7 +115,7 @@ final class CommunityMemorySubsystem extends AbstractCommunitySubsystem {
         ConfigProvider.KernelSettings settings = config.kernelSettings().get();
         MemoryProviderConfig defaults = MemoryProviderConfig.defaults();
         return new MemoryProviderConfig(
-                -1L,
+                CommunityMemoryBudgetResolver.resolve(config),
                 defaults.networkOffHeapThreshold(),
                 carriers,
                 LeakDetectionMode.DISABLED,

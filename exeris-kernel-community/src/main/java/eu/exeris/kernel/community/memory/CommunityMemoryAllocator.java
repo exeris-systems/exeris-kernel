@@ -28,6 +28,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p><b>Thread confinement:</b> any thread — every counter is an {@link AtomicLong} or
  * {@link AtomicBoolean}, and allocation itself is delegated to the shard pool's own
  * thread-safe shard selection.
+ * <p><b>Budget:</b> {@link MemoryProviderConfig#totalOffHeapBytes()} is accepted as a pressure budget:
+ * the denominator of the utilisation {@link #stats()} reports. It is not an allocation cap — an
+ * allocation is never refused for exceeding it — and {@code allocate*} and release never read it.
  * <p><b>Ownership:</b> owns exactly one {@link CommunityArenaShardPool}, created in the
  * constructor; {@link #close()} closes it exactly once, guarded by a CAS on
  * {@code closed}. Individual buffers manage their own release through
@@ -47,6 +50,7 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     private final LeakTracker leakTracker;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final CommunityArenaShardPool arenaPool;
+    private final long budgetBytes;
 
     private final AtomicLong allocationCount = new AtomicLong(0);
     private final AtomicLong releaseCount = new AtomicLong(0);
@@ -59,6 +63,7 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
         this.jfrEnabled = config.jfrEnabled();
         this.jfrSampling = CommunityMemoryJfrSampling.fromSystemProperties();
         this.leakDetection = config.leakDetection();
+        this.budgetBytes = config.totalOffHeapBytes();
         this.leakTracker = new LeakTracker(config.leakDetection());
         this.arenaPool = new CommunityArenaShardPool();
         this.releaseAccounting =
@@ -149,11 +154,14 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     /**
      * Returns a point-in-time snapshot of this allocator's counters.
      *
-     * <p>{@code totalBytes} is always {@code -1} (unknown/heap-only, per
-     * {@link MemoryStats}) and {@code freeBytes} is always {@code 0}: the Community tier
-     * requires an unbounded off-heap budget (see
-     * {@link CommunityAllocatorSupport#validateSupportedConfig}) and does not track a
-     * free-byte count.
+     * <p>Without a budget, {@code totalBytes} is {@code -1} (unknown/heap-only, per
+     * {@link MemoryStats}) and {@code freeBytes} is {@code 0}. With a budget, {@code totalBytes}
+     * is the budget and {@code freeBytes} is {@code totalBytes - allocatedBytes}. The budget is the
+     * denominator of the memory-pressure signal, not an allocation cap: allocation is never refused
+     * for exceeding it, and above it {@code totalBytes} reports the live bytes, so utilisation reads
+     * {@code 1.0} and the snapshot stays a valid {@link MemoryStats}.
+     * {@code allocatedBytes} counts the capacities of live leased buffers, not pooled segments or
+     * the arena footprint.
      * {@code carrierPoolCount} is always {@code 0} because
      * {@link #allocateCarrierSlab(int)} does not maintain carrier-affine pools.
      *
@@ -162,10 +170,12 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     @Override
     public MemoryStats stats() {
         long allocated = allocatedBytes.get();
+        long total = budgetBytes > 0 ? Math.max(budgetBytes, allocated) : -1L;
+        long free = budgetBytes > 0 ? total - allocated : 0L;
         return new MemoryStats(
-                -1L,
+                total,
                 allocated,
-                0L,
+                free,
                 allocationCount.get(),
                 releaseCount.get(),
                 peakAllocated.get(),

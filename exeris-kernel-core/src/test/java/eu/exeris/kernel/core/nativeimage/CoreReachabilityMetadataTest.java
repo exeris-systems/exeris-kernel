@@ -92,7 +92,7 @@ class CoreReachabilityMetadataTest {
                     "Linker.downcallHandle",
                     "covered-by-metadata: errno location downcall defined in SyscallDowncall enum"),
 
-            // VarHandle reflection targets (23 sites)
+            // VarHandle reflection targets (24 sites)
             allow("eu.exeris.kernel.core.config.KernelConfigRegistry", "<clinit>", "MethodHandles$Lookup.findVarHandle",
                     "covered-by-metadata: sealed field registered via VarHandle literal extraction"),
             allow("eu.exeris.kernel.core.crypto.openssl.NativeCipherContext", "<clinit>",
@@ -238,13 +238,13 @@ class CoreReachabilityMetadataTest {
     }
 
     @Test
-    @DisplayName("findVarHandle sites match exactly the 23 extractable targets")
+    @DisplayName("findVarHandle sites match exactly the 24 extractable targets")
     void findVarHandleSitesMatchExtractableTargets() throws IOException {
         Class<?> anchor = resolveClass(KERNEL_VERSION_CLASS);
         DeclarationSiteScanner.ScanResult result = DeclarationSiteScanner.scanAll(anchor);
         assertThat(result.varHandles())
-                .as("findVarHandle sites in Core must match exactly 23 extractable targets")
-                .hasSize(23);
+                .as("findVarHandle sites in Core must match exactly 24 extractable targets")
+                .hasSize(24);
     }
 
     @Test
@@ -289,7 +289,7 @@ class CoreReachabilityMetadataTest {
             builder.registerType(typeName);
         }
 
-        // 3. VarHandle reflection targets (23 sites)
+        // 3. VarHandle reflection targets (24 sites)
         Path classesDir = DeclarationSiteScanner.classesDirectory(anchor);
         DeclarationSiteScanner.ScanResult scan = DeclarationSiteScanner.scanAll(classesDir);
         for (DeclarationSiteScanner.VarHandleTarget target : scan.varHandles()) {
