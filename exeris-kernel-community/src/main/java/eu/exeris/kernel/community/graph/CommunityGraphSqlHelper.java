@@ -86,7 +86,7 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
      *
      * @param path path specification
      * @return node IDs in the terminal frontier
-     * @throws GraphQueryException if query execution fails
+     * @throws GraphQueryException ({@code EX-GRPH-5002}) if query execution fails
      */
     // Dialect and JDBC driver throw RuntimeException; map to GraphQueryException
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
@@ -118,7 +118,7 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
      *
      * @param path path specification
      * @return a buffer holding the query's JSON text; caller-owned, caller must close it
-     * @throws GraphQueryException if query execution fails
+     * @throws GraphQueryException ({@code EX-GRPH-5002}) if query execution fails
      */
     // Dialect and JDBC driver throw RuntimeException; map to GraphQueryException
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
