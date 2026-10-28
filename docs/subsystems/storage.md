@@ -127,14 +127,14 @@ attributes would be tidier but are not portable across the filesystems a Communi
 The default content type is represented by the *absence* of a sidecar, so recording it means deleting
 any the previous object left — an overwrite that only ever wrote would keep reporting the old type.
 
-Both files used to be named by appending `.uploading` and `.ctype` to the object's own path. `BlobRef`
-rejects traversal, not extensions, so those are endings a tenant may legitimately use: the suffix named
-another object of the same tenant rather than a private file, and an upload to `report` truncated and
-then moved away whatever was stored at `report.uploading`. Separate trees remove the collision instead
-of forbidding the keys that expose it; disjointness is structural, since a container is always a child
-of `objects` and nothing the caller controls is a direct child of the tenant directory. Staging files
-are named by a random id rather than by the target key, so two concurrent uploads to one key no longer
-share a file. `CommunityFilesystemBlobNamespaceTest` holds these properties.
+Neither file is named by appending a suffix such as `.uploading` or `.ctype` to the object's own path.
+`BlobRef` rejects traversal, not extensions, so those are endings a tenant may legitimately use: such a
+suffix would name another object of the same tenant rather than a private file, and an upload to
+`report` would truncate and then move away whatever was stored at `report.uploading`. Separate trees
+remove the collision instead of forbidding the keys that expose it; disjointness is structural, since a
+container is always a child of `objects` and nothing the caller controls is a direct child of the tenant
+directory. Staging files are named by a random id rather than by the target key, so two concurrent
+uploads to one key do not share a file. `CommunityFilesystemBlobNamespaceTest` holds these properties.
 
 **A staging file can outlive the process that made it, and the store does not sweep them.** A commit
 either moves the staging file into place or deletes it, and an abort deletes it — but a kill signal
@@ -156,7 +156,7 @@ can do safely because they know which instances are running.
 | `BlobRefTest` | Key validation — traversal, absolute paths, separators, empty segments, NUL — rejected at construction, and ordinary keys (nesting, spaces, Unicode, dotted names) still accepted. |
 | `ExerisArchitectureTest.noFilesystemTypesInStorageSpi` | No `java.nio.file` inside the storage SPI package. `java.io` is already covered SPI-wide by `noJavaIoInSpi`. |
 | `CommunityFilesystemBlobLayoutTest` | A hostile isolation key cannot escape the store root, and the encoding is injective. Bound to the driver, not the SPI — the layout is a driver decision. |
-| `CommunityBlobJfrTest` | Both failure events are actually committed, and no recording carries an object key. |
+| `CommunityBlobJfrTest` | `BlobIsolationDenied` and `BlobTransferFailed` are actually committed, and no recording carries an object key. |
 | `CommunityS3BlobStorageTckIT` | The same contract against live MinIO. `@Tag("integration")`, so it runs in the community integration gate, not the default build. |
 | `CommunityS3ObjectKeyTest` | Tenant separation and wire encoding, in the default build — the integration gate proves a round trip works, not why two tenants stay apart. |
 | `CommunityS3SignerTest` | Published SHA-256 vectors, that every signing input reaches the signature, and that the secret key is in no header and no minted URL. |
@@ -169,7 +169,7 @@ across eight classes; pairing an emit with a throw by hand at each one makes "re
 and "thrown but not recorded" both reachable by omission, and returning the exception removes the
 pairing. The channel is bound once per driver to that driver's name, so a failure cannot be attributed to
 the sibling driver by an argument slip, and both drivers share the event names — filter
-`eu.exeris.kernel.storage.*` and read `providerName` to tell them apart. Both events are single-phase commits — transfers block on a channel and run on virtual threads,
+`eu.exeris.kernel.storage.*` and read `providerName` to tell them apart. All three events are single-phase commits — transfers block on a channel and run on virtual threads,
 so a `begin() → I/O → commit()` straddle would bind the carrier-local `EventWriter` across a park.
 
 | Event | When | Fields |
@@ -182,7 +182,7 @@ so a `begin() → I/O → commit()` straddle would bind the carrier-local `Event
 strategy `SHARED` with an empty key, so reporting the strategy alone would tell an operator `SHARED` for
 the one case where the interesting fact is that nothing was scoped. The strategy is recorded beside it.
 
-Neither event carries an object key, for the same reason `BlobStorageException` refuses to capture one.
+No event carries an object key, for the same reason `BlobStorageException` refuses to capture one.
 
 ## Error codes
 
@@ -194,6 +194,9 @@ Neither event carries an object key, for the same reason `BlobStorageException` 
 | `EX-BLOB-8004` | Upload contract violation — byte count differs from the declared length |
 | `EX-BLOB-8005` | Object exceeds the driver's configured single-object ceiling — a refusal by policy, before any allocation or request |
 | `EX-BLOB-8006` | A remote store answered and refused; the status is carried, because `403` is the caller's credential or clock and `5xx` is the store's problem |
+| `EX-BLOB-8007` | Blob storage is configured and no `BlobStorageProvider` is on the classpath — the fix is a dependency, not a key |
+| `EX-BLOB-8008` | The configured `storage.blob.provider` id does not resolve to exactly one discovered provider; `rawArgs` carry the key, the value set and the available ids |
+| `EX-BLOB-8009` | Blob storage is on and a key it needs (`storage.blob.location`) is unset; `rawArgs` carry the key and what a value for it looks like |
 
 No factory captures an object key: keys can carry application data, and a container plus a reason code
 is enough to locate a fault without putting caller data into telemetry.

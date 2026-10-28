@@ -4,7 +4,7 @@ type: module
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-27
+last-verified: 2026-10-28
 ---
 
 # Physical Tier: TCK (The Judge)
@@ -79,7 +79,7 @@ an assertion error:
 
 | Contract | Suite | Assertion | In-repository binding |
 | :-- | :-- | :-- | :-- |
-| Allocation on the TLS path | `CryptoZeroAllocTck`, over `JfrAllocationMonitor` (JFR) | No `eu.exeris.*` heap allocation per iteration when the binding overrides `supportsZeroGcHotPath()` to return `true`; otherwise at most `maxExerisAllocationsPerIteration()` per iteration (default 5) | `CoreOffHeapTlsEngineZeroAllocTckTest`: the zero contract, measured on the guard path; the steady-state cipher path is not measured |
+| Allocation on the TLS path | `CryptoZeroAllocTck`, over `JfrAllocationMonitor` (JFR) | No `eu.exeris.*` heap allocation per iteration when the binding overrides `supportsZeroGcHotPath()` to return `true`; otherwise at most `maxExerisAllocationsPerIteration()` per iteration (8 in this suite; the base default is 5) | `CoreOffHeapTlsEngineZeroAllocTckTest`: the zero contract, measured on the guard path; the steady-state cipher path is not measured |
 | `LoanedBuffer` leaks | `AbstractMemoryLeakDetectionTck` | The allocator runs in `LeakDetectionMode.PARANOID`; `allocatedBytes()` returns to 0 once every chunk is closed; `leakCount()` rises after GC for a buffer left open on purpose | `CommunityMemoryLeakDetectionParanoidTckTest` |
 
 `CryptoZeroAllocTck` extends `AbstractSubsystemZeroAllocTck`, the base other subsystems' allocation

@@ -36,10 +36,15 @@ Root reactor modules from [pom.xml](pom.xml):
 - exeris-kernel-community-kafka
 - exeris-kernel-diagnostics-cli
 
+Added by the `native` profile (GraalVM native-image smoke verification, ADR-103):
+
+- exeris-kernel-native-smoke
+- exeris-kernel-native-smoke-kafka
+
 Present in a clone but outside the root reactor:
 
-- `tools` — build and CI tooling: `spi-api-diff` (the ADR-065 SPI compatibility gate),
-  `preview-bytecode-scan`, `sbom-gate`, `release-readiness`, `central-verify`, `jfr-reporter`
+- `tools` — build and CI tooling, among them `spi-api-diff` (the ADR-065 SPI compatibility gate),
+  `preview-bytecode-scan`, `sbom-gate`, `release-readiness`, `central-verify`, `native-smoke`, `jfr-reporter`
 
 `exeris-kernel-enterprise` is referenced by the module docs and the enterprise licence text but is **not** part of this repository; it is a separate, closed distribution.
 

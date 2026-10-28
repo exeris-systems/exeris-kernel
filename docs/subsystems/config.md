@@ -57,13 +57,14 @@ It initializes before any other subsystem (including Memory) and provides:
   slab allocations based on detected CPU cache line widths (L1/L2), eliminating false sharing without
   manual tuning.~~ **Not implemented.** No CPU cache-line-width detection and no config-driven slab
   sizing on that basis exists anywhere in `exeris-kernel-spi`, `-core` or `-community`.
-- **Deterministic T-Minus 0 — API exists, nothing calls it today:** `ConfigProviderException`
+- **Deterministic T-Minus 0 — wired for one key only:** `ConfigProviderException`
   ships typed factories for exactly this (`missingProperty()` → `EX-CFG-1001`, `typeMismatch()` →
   `EX-CFG-1002`), and `Dynamic.required()` is declared on every `@Dynamic` field for the same intent.
-  But grepping the whole repository for `missingProperty(`, `typeMismatch(`, `EX_CFG_1001` and
-  `EX_CFG_1002` turns up no call site outside `ConfigProvider.java` itself (and the error-code /
-  mapper-registry tests, which exercise the codes generically, not through a real missing-key path);
-  `.required()` is likewise never read anywhere. Nothing today aborts bootstrap through this specific
+  Only `typeMismatch()` has a live call site: `ContractBootstrapStep` raises `EX-CFG-1002` when the
+  `environment` key names none of the six environment classes. Grepping the whole repository for
+  `missingProperty(` and `EX_CFG_1001` turns up no call site outside `ConfigProvider.java` itself (and
+  the error-code / mapper-registry tests, which exercise the codes generically, not through a real
+  missing-key path); `.required()` is never read anywhere. Nothing aborts bootstrap through this
   mechanism because a `REQUIRED` key is absent — a subsystem that needs one enforces it itself, with
   its own exception type (`CommunityStorageSubsystem`'s `BlobStorageException.missingConfiguration`,
   for example, not `ConfigProviderException`).
@@ -75,8 +76,8 @@ It initializes before any other subsystem (including Memory) and provides:
   redacted or truncated by the caller before emission. Raw secrets, credentials, or tokens must never reach the
   binary telemetry dump. See `KernelErrorCodes.EX_CFG_1002` for the canonical enforcement comment — this
   redaction logic (a private `sanitizeConfigValue` helper inside `ConfigProviderException`) is real and
-  runs whenever `typeMismatch(...)` is called, even though — per the point above — nothing in this
-  repository currently calls it from a live missing/malformed key at bootstrap.
+  runs whenever `typeMismatch(...)` is called; its only live caller is the `environment` check named in the
+  point above.
 
 ---
 
@@ -121,8 +122,8 @@ A file change triggers an atomic state reload in Core without a JVM restart — 
 > `Flexible Constructor` returns nothing. `ConfigProviderException`'s constructor is a plain
 > `super(errorCode, message, cause, rawArgs)` call with no statements ahead of it, and no class in
 > the config subsystem performs pre-`super()` validation of any kind. Combined with the
-> "Deterministic T-Minus 0" finding above (nothing currently throws `EX-CFG-1001`/`EX-CFG-1002` from
-> a real missing/malformed key), this whole subsection describes an intended validation strategy that
+> "Deterministic T-Minus 0" finding above (nothing throws `EX-CFG-1001`, and `EX-CFG-1002` is thrown
+> only for a malformed `environment`), this whole subsection describes an intended validation strategy that
 > was never built, not a delivered mechanism. Left here as a record of intent rather than deleted
 > outright — a future implementation of the required-key check above is the natural place to either
 > build this or drop the idea.
@@ -141,8 +142,8 @@ A file change triggers an atomic state reload in Core without a JVM restart — 
 2. Provide type-safe extraction (`get()`, `getInt()`, `getBoolean()`) via SPI.
 3. Watch the filesystem and atomically update fields annotated `@Dynamic`.
 4. ~~Abort bootstrap with `EX-CFG-1001` if any `REQUIRED` property is absent at T-minus 0.~~ Not
-   today — see "Deterministic T-Minus 0" under Core Philosophy above; the mechanism exists in the SPI
-   but nothing in this repository calls it.
+   today — see "Deterministic T-Minus 0" under Core Philosophy above; the factory exists in the SPI
+   but nothing in this repository calls `missingProperty`.
 
 **What Config DOES NOT DO:**
 
@@ -168,11 +169,12 @@ A file change triggers an atomic state reload in Core without a JVM restart — 
 it is a strict caller contract. See `KernelErrorCodes.EX_CFG_1002` Javadoc for the canonical CWE-532 enforcement
 comment.
 
-> **`EX-CFG-1001` / `EX-CFG-1002` are defined and ready, not yet thrown.** As detailed under "Deterministic
-> T-Minus 0" above, no call site in this repository currently constructs a `ConfigProviderException` with
-> either code — the "Fatal halt at T-0" row describes the contract a caller gets by using the typed factory,
-> not something this kernel currently does on its own for any key. `EX-CFG-1003` and `EX-CFG-1004` are real:
-> both are emitted by `DynamicConfigFileWatcher` today.
+> **`EX-CFG-1001` is defined and ready, not yet thrown; `EX-CFG-1002` is thrown for one key.** As detailed
+> under "Deterministic T-Minus 0" above, no call site in this repository constructs a
+> `ConfigProviderException` with `EX-CFG-1001`, and the only one that constructs it with `EX-CFG-1002` is
+> `ContractBootstrapStep`, for the `environment` key. The "Fatal halt at T-0" rows describe the contract a
+> caller gets by using the typed factory, not something this kernel does on its own for any other key.
+> `EX-CFG-1003` and `EX-CFG-1004` are real: both are emitted by `DynamicConfigFileWatcher`.
 
 ---
 
@@ -262,6 +264,11 @@ A read is one plain `volatile` load; a reload is one plain `volatile` store swap
 acquire/release scheme a manually-managed `VarHandle` field would use. The record's immutability is what makes
 the single-reference swap safe: a reader never observes a half-updated object.
 
+The registry matches a changed `.properties` line on the exact registered key (`persistence.admission` here,
+a bare prefix), and the callback re-resolves through the same `ConfigProvider`. The Community provider reads
+system properties and environment variables only, so a file edit under the config directory cannot change
+what `CommunityAdmissionConfig` reads.
+
 ### 4. No Classpath Secrets — Vault Injection via ScopedValue (Explicit Zeroing)
 
 ```java
@@ -295,8 +302,8 @@ not listed here.
 > **Not exhaustive.** A `configProvider.get*(...)` grep across this repository turns up several
 > dozen real, code-read keys this table does not list — most of `http.*` (`h2cUpgradeEnabled`,
 > `maxHeaderBlockSize`, `maxResponseBodyBytes`, …), most of
-> `persistence.*` (`connectionTimeoutMs`, `maxLifetimeMs`, `perTenantPooling`, `rlsEnabled`,
-> `useTls`, `pool.warmup.*`, …), `event.*`, `flow.*`, `graph.*`, `scheduling.schedulerName`,
+> `persistence.*` (`perTenantPooling`, `rlsEnabled`,
+> `useTls`, `maxTenantPools`, `minIdleConnections`, `pool.warmup.*`, …), `event.*`, `flow.*`, `graph.*`, `scheduling.schedulerName`,
 > `transport.auto.{minReactors,maxReactors,reserveCores}`, and the plain `network.certPath` /
 > `network.keyPath` pair `transport.certPath` / `transport.keyPath` fall back to. Each of those
 > subsystems is its own `docs/subsystems/*.md`; this table catalogues the keys that live in or
@@ -322,7 +329,7 @@ not listed here.
 | `persistence.jdbcUrl`                              | `string`  | `jdbc:postgresql://localhost:5432/exeris` | ❌ IMMUTABLE | ✅ WIRED | JDBC connection URL (`PersistenceSettings.jdbcUrl`) |
 | `persistence.username`                             | `string`  | `exeris`            | ❌ IMMUTABLE | ✅ WIRED    | Database user — **SECRET**, redacted in telemetry        |
 | `persistence.password`                             | `string`  | `""`                | ❌ IMMUTABLE | ✅ WIRED    | Database password — **SECRET**, redacted in telemetry    |
-| `persistence.maxPoolSize`                          | `int`     | adaptive when unset (`max(min(cores × 2, 32), 2)`) | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections; explicit config overrides the adaptive Community bootstrap sizing |
+| `persistence.maxPoolSize`                          | `int`     | adaptive when unset (`max(min(cores × 2, 32), 2)`) | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections (alias `persistence.pool.maxSize`); explicit config overrides the adaptive Community bootstrap sizing, and a value below `2` is refused |
 | `persistence.runMigrations`                        | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Run schema migrations on startup (`PersistenceSettings.runMigrations`) |
 | `persistence.rlsAllowBypassRole`                   | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Consent to a database role that bypasses row-level security (ADR-012 §4c.4). The Community engine checks the role when `RlsConnectionInterceptor` is registered and, on PostgreSQL, refuses a `SUPERUSER` or `BYPASSRLS` role with `EX-PERS-5009`; with the key set it boots instead, logging an ERROR line and emitting the JFR event `eu.exeris.kernel.persistence.RlsBypassRole` on every boot. A probe that cannot run is refused with `EX-PERS-5001` whatever the key says. Not checked on other databases. Limits: a later `SET ROLE` is not observed, the table-owner exemption of a table that is not `FORCE`'d is not detected, and a dedicated pool is probed before it is first used and refused at its first request. |
 | `telemetry.jfrEnabled`                             | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable JFR telemetry sink (`TelemetrySettings.jfrEnabled`) |
@@ -369,9 +376,9 @@ not listed here.
 | `telemetry.consoleSinkEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Enable Console telemetry sink                            |
 | `crypto.tls.minVersion`                            | `string`  | `TLSv1.3`           | ❌ IMMUTABLE | ✅ WIRED    | Minimum TLS version of every Community listener and client context: `TLSv1.3` or `TLSv1.2`. Read from the kernel configuration when each transport is built; absent or blank keeps `TLSv1.3`, so a TLS 1.2-only peer is refused unless this is `TLSv1.2`. Any other value (`TLSv1.4`, `1.3`, `tlsv1.3`, `TLSv1.1`) fails that transport's construction with `EX-NET-4004` (cause `EX-NET-2002`), before any listener opens |
 | `crypto.tls.client.trustFile`                      | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | PEM file of the certificates a TLS client verifies its server's chain against (ADR-074 Amendment A1). It **replaces** OpenSSL's default trust; unset, the client uses that default, whose file and directory `SSL_CERT_FILE` and `SSL_CERT_DIR` name — those two variables change the default only, never a configured file. Read when each `CLIENT` or `DUAL` transport is built: from the kernel configuration, else from `-Dexeris.crypto.tls.client.trustFile`. A value that is not a readable regular file fails that transport's construction with `EX-NET-4004` (cause `EX-NET-2002`) even when outbound TLS is not armed; a file that holds no certificate OpenSSL can load fails it the same way where outbound TLS is armed, since only then is the file loaded. The Community server sends the whole chain its certificate file names, so a client needs only the root of a chained server's certificate in this file. The OpenSSL builds under `/opt` that the TLS matrix uses, and minimal container images, can ship an empty default store; the transport logs a WARNING when neither default location exists, and every verification then fails, a chain sent without its root with `X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY` (20) |
-| `persistence.pool.connectionTimeoutMs`             | `int`     | `5000`              | ✅ DYNAMIC   | 🔲 planned  | JDBC pool acquisition timeout                            |
-| `persistence.pool.idleTimeoutMs`                   | `int`     | `600000`            | ✅ DYNAMIC   | 🔲 planned  | JDBC pool idle connection timeout                        |
-| `persistence.pool.keepaliveMs`                     | `int`     | `30000`             | ✅ DYNAMIC   | 🔲 planned  | JDBC pool keepalive heartbeat interval                   |
+| `persistence.connectionTimeoutMs`                  | `long`    | `250`               | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool acquisition timeout; a value below `250` is refused at engine construction (`PersistenceConfig.connectionTimeoutMs`) |
+| `persistence.idleTimeoutMs`                        | `long`    | `600000`            | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool idle connection timeout (`PersistenceConfig.idleTimeoutMs`) |
+| `persistence.maxLifetimeMs`                        | `long`    | `1800000`           | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool connection maximum lifetime (`PersistenceConfig.maxLifetimeMs`). The pool keepalive (30 s) and validation timeout (5 s) are fixed in `CommunityHikariSupport`, not keys |
 | `persistence.outbox.maxRetries`                    | `int`     | `10`                | ✅ DYNAMIC   | 🔲 planned  | Max Outbox delivery retries before DLQ                   |
 | `persistence.outbox.backoffBaseMs`                 | `int`     | `100`               | ✅ DYNAMIC   | 🔲 planned  | Outbox retry base backoff (ms)                           |
 | `config.vault.timeoutMs`                           | `int`     | `3000`              | ❌ IMMUTABLE | 🔲 planned  | Vault connection timeout during bootstrap                |
@@ -503,11 +510,12 @@ the old or new value itself. In regulated environments, this event stream is the
   `KernelConfigRegistryTest.SealContract` and `.ConcurrencyContract`.
 - ~~Fail-fast for missing `REQUIRED` fields (`EX-CFG-1001` with correct `rawArgs` layout).~~ ~~Type
   mismatch detection (`EX-CFG-1002`) with redacted `actualValue` — verified that raw value is NOT
-  present.~~ **No test exists for either.** A repository-wide grep for `missingProperty(` and
-  `typeMismatch(` turns up only their own definitions in `ConfigProvider.java` — no test file, in
-  `exeris-kernel-spi` or anywhere else, calls either factory or asserts its `rawArgs` layout or
-  redaction behaviour. This is the same gap as the missing call site noted above; the two are one
-  finding, not two.
+  present.~~ **No test exercises either factory directly.** A repository-wide grep for `missingProperty(`
+  and `typeMismatch(` in test sources turns up no call: nothing asserts the `rawArgs` layout of either
+  code or the redaction in `sanitizeConfigValue`. The one test that reaches `typeMismatch(` is
+  `ContractBootstrapStepTest`, which asserts that an `environment` value naming no environment class
+  fails with `EX-CFG-1002`. The missing `EX-CFG-1001` coverage is the same gap as the missing call site
+  noted above; the two are one finding, not two.
 
 ### Integration Tests
 
@@ -527,8 +535,9 @@ the old or new value itself. In regulated environments, this event stream is the
 > banned parsers, the raw `watch()` no-op contract on the per-tier provider in isolation).
 > `AbstractDynamicConfigRegistryTck` (bound by `CoreDynamicConfigRegistryTckTest`) separately covers
 > `KernelConfigRegistry`'s register/fireReload/seal dispatch contract. Neither exercises EX-CFG-1001 or
-> EX-CFG-1002 — that path coverage lives at the unit level in `exeris-kernel-spi` tests. Full end-to-end
-> TCK coverage (a bound provider driving a real file change through `KernelBootstrap`) is still pending.
+> EX-CFG-1002; the only live-path coverage of EX-CFG-1001/1002 is `ContractBootstrapStepTest`
+> (`EX-CFG-1002` for `environment`). `DynamicConfigFileWatcherTest` drives a real file change and asserts the
+> EX-CFG-1004 refusal event. Full end-to-end TCK coverage (a bound provider driving a real file change through `KernelBootstrap`) is still pending.
 
 ---
 

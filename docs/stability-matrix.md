@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-25
+last-verified: 2026-10-28
 ---
 
 # Exeris Kernel — SPI Stability Matrix
@@ -70,9 +70,9 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.persistence` | **stable** | 0.5.0 | ADR-012, ADR-022, ADR-080 [^rowcursor] [^scopetag] [^tenantless] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, `AbstractRlsBypassRoleCheckTck`, +7 | yes (slab/FFM tier) |
 | `…spi.flow` | **stable** | 0.5.0 | ADR-013 [^flowterminal] | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +4 | v0.11 record-component note below |
 
-> **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). Because 0.11 is unreleased, the intermediate twelve- and thirteen-parameter descriptors never shipped, so no further bridge is owed — one overload covers the whole milestone.
+> **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). The intermediate twelve- and thirteen-parameter descriptors never shipped in a release, so no further bridge is owed — one overload covers the whole step from 0.10.0.
 >
-> `FlowMigrationState` also gains a component in A5 and deliberately gets **no** overload: the record is `@since 0.11` and unreleased, so nothing compiled against a released artifact constructs it, and a bridge defaulting the identities to absent would hand a migration transform the one input the new guard exists to refuse.
+> `FlowMigrationState` also gains a component in A5 and deliberately gets **no** overload: the record is `@since 0.11` and carried that component in its first release, so nothing compiled against a released artifact constructs it without that component, and a bridge defaulting the identities to absent would hand a migration transform the one input the new guard exists to refuse.
 >
 > What the overload cannot restore, stated rather than glossed: adding a component changes the record's **component list**. Record deconstruction patterns and reflection over `RecordComponent[]` observe a different shape, and no overload can hide that — it is irreducible for a record.
 >
@@ -85,7 +85,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.transport` | **stable** | 0.5.0 | ADR-007 | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
 
 > **`spi.transport` in v0.13 — the stream write contract and a `TransportConfig` component.** `TransportStream` states three implementor obligations that `AbstractTransportStreamTck` pins: every transition that ends a stream wakes the threads blocked in `read` or `write`; `queueWrite` never waits for the peer (the one wait it may make is for the connection to be established, `EX-NET-4003`) and releases a loan once its bytes have left the stream's queue or the stream ends, not before; `write` blocks at `TransportConfig#maxQueuedWriteBytes()` and never on an event-loop thread. A transport whose `queueWrite` sends synchronously no longer conforms. `TransportConfig` gains the component `maxQueuedWriteBytes` (ADR-071), which moves the canonical constructor from nine parameters to ten. The 0.12 nine-argument descriptor is **restored as an overload**, and it and the eight-argument bridge apply the 256 KiB default, so code compiled against 0.12 still constructs the record and is bounded. A record deconstruction pattern or reflection over the component list sees a different shape and no bridge can hide that; **no automated gate reports it**, which is why the note is here. The changes are behaviour and an additive overload, so the gate passes clean.
-| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) [^eventbuscode] [^eventisolationcode] | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
+| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) [^eventbuscode] [^eventisolationcode] | `AbstractDisclosureModeTck` (+ `ExerisKernelExceptionGlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
 | `…spi.telemetry` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractTelemetryProviderTck`, `…SinkTck`, `…RingBufferTck`, `…JfrTelemetrySinkTck` | yes (binary glass-box sink) |
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, `…SubsystemErrorRoutingTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |

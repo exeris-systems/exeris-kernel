@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-10-28
 ---
 
 # Scheduling Subsystem
@@ -204,9 +204,9 @@ non-empty analysis set before asserting anything else.
 That is not an oversight. The in-process driver allocates no off-heap memory, opens no connection and
 reads no store — its construction is a config lookup and a virtual thread. The tempting declaration
 is `security`, on the reasoning that a job carries the identity that submitted it; that is wrong
-twice over. There is no `security` subsystem in the registry — identity arrives through `ScopedValue`
-slots, not a boot-ordered component — and identity crosses this seam at *submit* time from the
-caller's own scope, which no boot order can influence.
+twice over. The `security` subsystem binds the `SecurityProvider` slot and nothing a job captures —
+identity arrives through `ScopedValue` slots, not a boot-ordered component — and identity crosses this
+seam at *submit* time from the caller's own scope, which no boot order can influence.
 
 | Key | Default | Meaning |
 |---|---|---|

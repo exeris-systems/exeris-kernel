@@ -329,9 +329,8 @@ connection, every later call reuses it, and `box.release()` in the handler's
 
 ### The promise is scoped to `PROMPT` routes (ADR-077, since 0.12)
 
-The qualifier is new and the behaviour it qualifies is not: `PROMPT` is what every
-`RouteRequirement` factory returns, so a route that declares nothing gets exactly the paragraph
-above.
+`PROMPT` is what every `RouteRequirement` factory returns, so a route that declares nothing
+gets exactly the paragraph above.
 
 A route that **blocks** can say so — `RouteRequirement.authenticated().longRunning()` — and then no
 session is bound at all. Each persistence call acquires and releases through the engine, landing on
@@ -373,8 +372,9 @@ events on those threads look like a finding when it is a property of where the i
 `ConnectionHold` is emitted at the pool return itself, so every acquire has a matching hold whoever
 asked.
 
-Two fields make the residency apportionable, and both are sampled **at acquire**, not at release —
-the returning thread is not necessarily the acquiring one:
+Three fields make the residency apportionable and say how it ended. `withinRequestScope` and
+`acquiredOnVirtualThread` are sampled **at acquire**, not at release — the returning thread is not
+necessarily the acquiring one:
 
 | Field | Meaning |
 |---|---|
@@ -396,15 +396,15 @@ second tenant must not be served the first tenant's session.
 **Both `openConnection()` overloads MUST derive that key from the same source.**
 The no-arg overload resolves `KernelProviders.storageContextOrSystem()` and
 delegates to the context overload; it does not key the session `shared` on its
-own. Until v0.12 it did, and the damage was not confined to connection counts:
+own. Two overloads deriving the key from different sources would have consequences
+beyond connection counts:
 
-- Any request touching both overloads mismatched by construction. A Saga does:
+- Any request touching both overloads would mismatch by construction. A Saga does:
   the flow snapshot store, the outbox adapter and the event log all call the
-  no-arg overload while repositories arrive through the context one. Measured
-  on a v0.11 benchmark, 2.0 bypasses per request session.
-- The fallback ran **no** `ConnectionInterceptor`. `RlsConnectionInterceptor`
+  no-arg overload while repositories arrive through the context one.
+- A bypass connection would run **no** `ConnectionInterceptor`. `RlsConnectionInterceptor`
   publishes its keys with session-scoped `set_config(..., false)`, which
-  survives pool checkin, so that connection arrived carrying the *previous
+  survives pool checkin, so that connection would arrive carrying the *previous
   borrower's* tenant: a cross-tenant read under RLS, and a write judged by the
   wrong `WITH CHECK`.
 
@@ -466,10 +466,15 @@ genuinely deep queue. Setting `queueDepthAllowanceRatio=0` recovers the strict p
 | `persistence.admission.earlyGuardBandHeadroomRatio` | `0.15` | headroom fraction for early guard-band reject |
 | `persistence.admission.earlyGuardBandHeadroomCap` | `3` | absolute cap on the early guard-band window |
 
-**Tier split (per the `@Dynamic` contract):** Community resolves these once at bootstrap and does
-not hot-reload (`ConfigProvider.watch` is a no-op); Enterprise swaps the live config atomically on
-file change. The thresholds live entirely in Community (`CommunityAdmissionConfig`) — no SPI field
-is added, so The Wall is untouched.
+**Resolution and reload:** `CommunityAdmissionConfig.CURRENT` is a `@Dynamic` `volatile` field,
+resolved from `persistence.admission.*` at bootstrap by `CommunityPersistenceSubsystem`, which also
+registers a watch callback that re-resolves the record. The Community `ConfigProvider` reads system
+properties and environment variables only, and the callback re-reads through it, so in practice the
+thresholds are fixed for the life of the process. The callback is registered with `KernelConfigRegistry`
+(through `RegistryBackedConfigProvider`) for the exact key `persistence.admission` in `persistence.json`,
+so it fires only when that file changes a line keyed exactly `persistence.admission`; editing a
+`persistence.admission.<name>` threshold in the file does not fire it, whatever provider is bound. The thresholds live entirely in Community (`CommunityAdmissionConfig`) — no SPI
+field is added, so The Wall is untouched.
 
 ### HTTP Integration: 503 Service Unavailable
 
@@ -625,7 +630,7 @@ thread. The following guidance applies:
 | **Pool size formula**          | `cores × 2 + effective_spindle_count` (PgBouncer rule). For NVMe-backed PostgreSQL: `cores × 2`. Ignore VT count entirely — pool size is a DB resource limit, not a thread limit. |
 | **Typical range**              | 10–50 connections per JVM instance. Do NOT scale pool size proportionally to VT count (millions of VTs with 50 connections = correct; 1M connections = PostgreSQL crash). |
 | **Overflow behaviour**         | When pool is exhausted, the JDBC driver blocks the VT (parking, not pinning — see VT Pinning Check below). If the acquisition timeout fires, `EX-PERS-5002` is thrown with `rawArgs[1]=timeoutMs`. |
-| **HikariCP minimum config**    | `maximumPoolSize`: bounded (see formula); `connectionTimeout` (`persistence.connectionTimeoutMs`): 30 000 ms default; `idleTimeout` (`persistence.idleTimeoutMs`): 600 000 ms default; `keepaliveTime`: 30 000 ms (hardcoded, not operator-tunable); `validationTimeout`: 5 000 ms (hardcoded, not operator-tunable). |
+| **HikariCP minimum config**    | `maximumPoolSize`: bounded (see formula); `connectionTimeout` (`persistence.connectionTimeoutMs`): 250 ms default, and a value below 250 is refused at engine construction; `idleTimeout` (`persistence.idleTimeoutMs`): 600 000 ms default; `maxLifetime` (`persistence.maxLifetimeMs`): 1 800 000 ms default; `keepaliveTime`: 30 000 ms (hardcoded, not operator-tunable); `validationTimeout`: 5 000 ms (hardcoded, not operator-tunable). |
 | **Connection validation**      | Stale connections (idle timeout, PostgreSQL failover, `tcp_keepalive_time` breach) are detected via HikariCP's `keepaliveTime` heartbeat. A new connection is acquired transparently. If the pool cannot obtain a connection within `connectionTimeoutMs`: `EX-PERS-5002`. A query-time failure translates by SQLSTATE class, e.g. `08006` (connection failure) to `EX-PERS-5003`. |
 
 > **Anti-pattern:** `maximumPoolSize=1000` in a 10-core Kubernetes pod. This creates 1000 PostgreSQL
@@ -642,7 +647,7 @@ are the responsibility of the application layer or a dedicated migration tool.
 
 > **Exception — internal kernel tables:** The Community tier includes an opt-in migration path
 > (`persistence.runMigrations=true`) that executes built-in SQL scripts to create internal kernel
-> tables (`exeris_outbox`, `exeris_outbox_dlq`, `exeris_saga_state` since 0.7). This applies only to
+> tables (`exeris_outbox`, `exeris_outbox_dlq`, `exeris_saga_state` since 0.7, `exeris_event_log` since 0.10). This applies only to
 > Kernel-owned tables and is explicitly disabled by default. The migration list is maintained in
 > `CommunityPersistenceEngine.MIGRATION_RESOURCES`; new internal tables follow the
 > `db/migration/V{version}__{name}.sql` naming convention. The runner is intentionally minimal
@@ -651,14 +656,13 @@ are the responsibility of the application layer or a dedicated migration tool.
 
 ### Apply-once is the runner's property, not the SQL's (since 0.12, ADR-073)
 
-Until v0.12 the runner executed **every** script on **every** boot and recorded nothing. Re-running
-was harmless only because every author had written `CREATE TABLE IF NOT EXISTS` — counted, not
-assumed: 14 DDL statements across six scripts, all 14 guarded. The first migration that cannot be
-written that way breaks it, and the shapes are ordinary: a data backfill re-applies **silently**
-(healthy boot, wrong data), a constraint tightening fails the second boot outright.
+Re-running every script on every boot is harmless only while every migration is written
+`CREATE TABLE IF NOT EXISTS`. The first migration that cannot be written that way breaks it, and
+the shapes are ordinary: a data backfill re-applies **silently** (healthy boot, wrong data), a
+constraint tightening fails the second boot outright.
 
-`exeris_schema_history` now records one row per applied migration — version, script, checksum,
-timestamp. Three rules follow:
+`exeris_schema_history` therefore records one row per applied migration — version, script, checksum,
+timestamp (`applied_at`). Three rules follow:
 
 | Rule | Behaviour |
 |---|---|
@@ -766,7 +770,7 @@ infinite retry storms.
 - **Pool Exhaustion:** `EX-PERS-5002` is thrown with correct `rawArgs` when all connections are in use.
 - **No Provider:** `EX-PERS-5007` is thrown at bootstrap when no `PersistenceProvider` is on the classpath.
 
-**TCK abstract class set (10 named here):** `AbstractPersistenceEngineTck`, `AbstractPersistenceProviderTck`, `AbstractPersistenceEngineAdmissionControlTck`, `AbstractOutboxGuaranteeTck`, `AbstractEventStoreTck`, `AbstractEntityCodecTck`, `PersistenceCarrierPinningTck`, `PersistenceIsolationLeakTck`, `PersistenceZeroAllocTck`, `AbstractRowCursorThroughputBenchmark` (JMH, lives in `tck/perf`, not `tck/contract/persistence`). The `tck/contract/persistence` package itself holds 14 `*Tck` classes; four are not named above: `AbstractConnectionInterceptorInitTck`, `AbstractRowCursorTck`, `AbstractSharedScopeAccessMatrixTck`, `AbstractTransactionalExecutorTck`.
+**TCK abstract class set (10 named here):** `AbstractPersistenceEngineTck`, `AbstractPersistenceProviderTck`, `AbstractPersistenceEngineAdmissionControlTck`, `AbstractOutboxGuaranteeTck`, `AbstractEventStoreTck`, `AbstractEntityCodecTck`, `PersistenceCarrierPinningTck`, `PersistenceIsolationLeakTck`, `PersistenceZeroAllocTck`, `AbstractRowCursorThroughputBenchmark` (JMH, lives in `tck/perf`, not `tck/contract/persistence`). The `tck/contract/persistence` package itself holds 15 `*Tck` classes; six are not named above: `AbstractConnectionInterceptorInitTck`, `AbstractRowCursorTck`, `AbstractRowCursorTypeSetTck`, `AbstractRlsBypassRoleCheckTck`, `AbstractSharedScopeAccessMatrixTck`, `AbstractTransactionalExecutorTck`.
 
 ---
 

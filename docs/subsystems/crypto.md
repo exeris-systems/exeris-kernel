@@ -95,7 +95,7 @@ newest-major-first OS candidate lists for `libssl`/`libcrypto` (`.so.4` before `
 equivalent DLL names on Windows), honours the `EXERIS_OPENSSL_SSL_PATH` /
 `EXERIS_OPENSSL_CRYPTO_PATH` / `EXERIS_OPENSSL_PATH` environment overrides first, and version-gates
 the result to `3 <= OPENSSL_version_major() <= 4` with a packed-version floor of `0x30000000`
-(OpenSSL 3.0.0).
+(OpenSSL 3.0.0), and rejects a `libssl`/`libcrypto` pair whose majors differ.
 
 All OpenSSL downcall descriptors used by Core are declared in `OpenSslDowncall`, which serves as the
 single place where an OpenSSL symbol and its function descriptor are added. Descriptors are evaluated
@@ -527,8 +527,6 @@ Where each surfaces:
 
 ## JFR Events
 
-> **Note:** The previous table in this section contained incorrect field names (e.g., `sessionId` does not exist; the actual field is `sslPtr`). The table below reflects actual implementation.
-
 The headings below name each group's JFR event-name prefix (the `@Name` annotation's leading
 segments), not the Java package the class file lives in — every Core class in both tables actually
 lives under `eu.exeris.kernel.core.crypto.*` (`.openssl` / `.tls` subpackages), and the Community
@@ -538,9 +536,9 @@ pair lives under `eu.exeris.kernel.community.crypto`.
 
 | Event Class                           | JFR Category                                              | When Emitted                              | Key Fields                        |
 |:--------------------------------------|:----------------------------------------------------------|:------------------------------------------|:----------------------------------|
-| `CryptoContextAllocEvent`             | `eu.exeris.kernel.core.crypto.ContextAlloc`                | `NativeCipherContext` creation            | `sslPtr`, `sslCtxPtr`             |
-| `NativeCipherContextFreeFailureEvent` | `eu.exeris.kernel.core.crypto.NativeCipherContextFreeFailure` | `SSL_free` failure                    | `sslPtr`, `exceptionClass`        |
-| `OpenSslLoadEvent`                    | `eu.exeris.kernel.core.crypto.OpenSslLoad`                 | `CoreOpenSslLoader.load()` success (once, cold bootstrap path) | `versionMajor`, `versionMinor`, `sslPath`, `cryptoPath` |
+| `CryptoContextAllocEvent`             | `eu.exeris.kernel.core.crypto.ContextAlloc`                | `NativeCipherContext` creation            | `sslPtr`, `sslCtxPtr`, `providerName`, `sizeBytes` |
+| `NativeCipherContextFreeFailureEvent` | `eu.exeris.kernel.core.crypto.NativeCipherContextFreeFailure` | `SSL_free` failure                    | `sslPtr`, `exceptionClass`, `exceptionMessage` |
+| `OpenSslLoadEvent`                    | `eu.exeris.kernel.core.crypto.OpenSslLoad`                 | `CoreOpenSslLoader.load()` success (once, cold bootstrap path) | `versionMajor`, `versionMinor`, `versionText`, `ctxApi`, `sslPath`, `cryptoPath` |
 
 **Core — `eu.exeris.kernel.tls` JFR namespace (`eu.exeris.kernel.core.crypto.tls`):**
 
@@ -667,10 +665,10 @@ skipped one.
 
 > **TCK gap:** No Community binding exists for `CryptoZeroAllocTck` or `CryptoCarrierPinningTck` —
 > both are bound only against `OffHeapTlsEngine` directly, in `exeris-kernel-core/src/test/`
-> (`CoreOffHeapTlsEngineZeroAllocTckTest`, `CoreOffHeapTlsEngineCarrierPinningTckTest`). `Community`
-> is bound only to `AbstractCryptoEngineTck`, via `CommunityKernelCryptoProviderTckTest`. As of
-> current state, Community-tier zero-allocation on the TLS hot path (per ADR-008) is documented but
-> not TCK-enforced at the Community binding level.
+> (`CoreOffHeapTlsEngineZeroAllocTckTest`, `CoreOffHeapTlsEngineCarrierPinningTckTest`).
+> `AbstractCryptoEngineTck` is bound twice, by `CoreOffHeapTlsEngineTckTest` (Core) and
+> `CommunityKernelCryptoProviderTckTest` (Community). Community-tier zero-allocation on the TLS hot
+> path (per ADR-008) is documented but not TCK-enforced at the Community binding level.
 
 ---
 

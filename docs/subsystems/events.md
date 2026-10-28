@@ -15,7 +15,7 @@ last-verified: 2026-09-28
 - Core: `eu.exeris.kernel.core.events.*` (Outbox Orchestrator, Projections)
 - Drivers:
     - **`community`**: Standard Heap/NIO (PostgreSQL Event Store, JVM-heap Pub/Sub)
-    - **`community-kafka`**: Apache Kafka driver on `kafka-clients` 4.0.x, version managed in `exeris-kernel-bom` (`KafkaEventEngine`, plus a `KafkaEventBrokerPort` Outbox adapter that is built but not wired — see *Delivery Boundary*)
+    - **`community-kafka`**: Apache Kafka driver on `kafka-clients` 4.3.x, version managed in `exeris-kernel-bom` (`KafkaEventEngine`, plus a `KafkaEventBrokerPort` Outbox adapter that is built but not wired — see *Delivery Boundary*)
 
 **Layer:** L3 (Logic Engines)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -107,8 +107,8 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 
 ### 1. Valhalla-Ready Routing (`EventDescriptor`)
 
-Event routing metadata is encapsulated in `EventDescriptor` — a record of seven primitive fields (`long`,
-`int`). It avoids `synchronized`, `System.identityHashCode()`, and identity `==`, which makes it a candidate
+Event routing metadata is encapsulated in `EventDescriptor` — a record of eight primitive fields (`long`,
+`int`), the last being `isolationOrdinal`. It avoids `synchronized`, `System.identityHashCode()`, and identity `==`, which makes it a candidate
 for C2's scalar replacement. It is designed for future migration to a value class once JEP 401 (Value
 Classes and Objects) reaches mainline GA, which will further eliminate object headers.
 A primitive descriptor does not by itself make a publication allocation-free: the in-memory bus allocates
@@ -601,7 +601,7 @@ on compaction, and no row below is exercised by a test in this repository:
 ### Integration Tests (TCK)
 
 - **Outbox Guarantee:** Take the broker down; verify committed events accumulate in the DB outbox and are all delivered once it recovers, survive an engine rebuild, and never reappear once marked published. *(`AbstractOutboxGuaranteeTck`, Community binding `CommunityOutboxGuaranteeTckTest`.)*
-- **Provider Switching:** The same abstract suites run against more than one binding. `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` bind to PostgreSQL and Kafka (see ADR-049 above). `AbstractEventBusTck` binds to the Community bus (`CommunityEventBusTckTest`) and to the Kafka bus (`KafkaEventBusTckTest`, mock producer and consumer, no broker); the Kafka bus reports itself brokered, so the five cases that assert in-process fan-out are reported as skipped there. *(Kafka roundtrip + bit-exact descriptor preservation: `AbstractKafkaEventEngineTck` / `CommunityKafkaEventEngineTckIT` — Testcontainers `confluentinc/cp-kafka:7.6.1`.)*
+- **Provider Switching:** The same abstract suites run against more than one binding. `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` bind to PostgreSQL and Kafka (see ADR-049 above). `AbstractEventBusTck` binds to the Community bus (`CommunityEventBusTckTest`) and to the Kafka bus (`KafkaEventBusTckTest`, mock producer and consumer, no broker); the Kafka bus reports itself brokered, so the ten cases that assert in-process fan-out, handler-completion semantics or in-process isolation delivery are reported as skipped there. *(Kafka roundtrip + bit-exact descriptor preservation: `AbstractKafkaEventEngineTck` / `CommunityKafkaEventEngineTckIT` — Testcontainers `confluentinc/cp-kafka:7.6.1`.)*
 - **Order Integrity:** Per-`StreamId` order is a durable-log property, asserted by the ordering and OCC cases of `AbstractEventStreamAppenderTck`.
   > The `EventBus` makes no ordering promise (ADR-049), so no bus suite asserts one. On the Kafka bus the record key is the stream id, so one stream's records share a partition, but each consumed record is republished through the in-memory bus (one virtual thread per handler) and `AbstractKafkaEventEngineTck` asserts set equality for a stream, not order.
 - **Zero Subscriber Fast-Free:** Publish to a bus with zero subscribers; verify the bus calls
