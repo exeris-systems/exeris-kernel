@@ -10,7 +10,7 @@ last-verified: 2026-09-25
 # Kernel Subsystem: HTTP (HPACK + HTTP/2 + HTTP/1.1)
 
 **Layer:** L2 (Wire Translation)  
-**Status:** Validated Architectural Prototype (TRL-3) — SPI shipped v0.5.0, extended through v0.12.0 (SSE, route policy, WebSocket)
+**Status:** Validated Architectural Prototype (TRL-3) — SPI shipped v0.5.0, extended through v0.13.0 (SSE, route policy, WebSocket, HTTP/2 flow control and stream routes)
 
 ---
 
@@ -61,7 +61,7 @@ Streaming (server-push) contracts — ✅ shipped v0.10, ratified by [ADR-043](.
 
 **v0.10 delivery status (ADR-043).** The SSE mechanism is wired end-to-end in production (Core `HttpStreamEngine` + `SseEventEncoder`, Community dispatch): open → `emit`-N (park-the-VT backpressure) → graceful `close`, peer-disconnect → `StreamClosedException`/`EX-HTTP-4011`, abortive teardown, four single-phase JFR events, all pinned by `AbstractHttpStreamExchangeTck`. Two obligation **mechanisms are built + TCK-pinned but their production binding is deferred**, by design:
 - **JWT-expiry fail-closed (`EX-HTTP-4012`)** — the deadline enforcement lives in `HttpStreamEngine`, but production dispatch passes no deadline until the IdentityProvider SPI (ADR-040) surfaces a principal `exp` on the streaming path (ADR-043 §6: Community-internal until then).
-- **Streaming-occupancy ceiling** — `StreamAdmissionController` enforces a long-lived-slot ceiling distinct from sub-ms request accounting, but it is not yet wired into production dispatch. The safety property (new stream-opens shed under load) still holds via carrier-edge PAQS; plumbing the dedicated ceiling is a v0.10 follow-up.
+- **Streaming-occupancy ceiling** — `StreamAdmissionController` enforces a long-lived-slot ceiling distinct from sub-ms request accounting, but it is not yet wired into production dispatch. The safety property (new stream-opens shed under load) still holds via carrier-edge PAQS; plumbing the dedicated ceiling is a follow-up.
 
 Additional follow-ups (mechanism works; refinement deferred):
 - **Wire framing** — the SSE body is written as a raw, close-delimited HTTP/1.1 response (`Connection: close`, no `Content-Length`, no chunk framing; RFC 9112 §6.3). `Transfer-Encoding: chunked` per-event framing (so SSE streams through buffering reverse proxies / CDNs that hold length-unknown responses) is a follow-up. The response head of the `HttpStreamEngine` HTTP/1.1 path is HTTP/1.1-specific; over HTTP/2 a `StreamEgress` writes the head as a `HEADERS` frame and each event as `DATA` frames (see *Stream routes over HTTP/2* above).
@@ -127,6 +127,12 @@ HTTP abstract TCK suites present:
 - `AbstractHttpResponseBodyEncoderTck` and `AbstractHttpResponseBodyEncoderRegistryTck` (since 0.13.0, [ADR-034](../adr/ADR-034-client-side-body-codec-spi.md)) — pin the server-side `HttpResponseBodyEncoder` and its registry: `supports` per payload type, a live non-empty body allocated through the context allocator and released back to it, a `null` payload answered rather than rejected, no close or retention of the returned buffer, every buffer released when an encode fails, the declared `content-type`; the registry resolves an encoder that supports the type, answers `null` rather than a fallback for a type nothing supports, and `empty()` resolves nothing. Bound at Community tier (`CommunityJsonResponseBodyEncoderTckTest`, `CommunityResponseBodyEncoderRegistryTckTest`). The Community encoder supports every non-null payload type, so the two unsupported-type obligations (`supports` answers `false`, the registry answers `null`) are defined but not exercised by any binding: their cases run only for a binding that declares an unsupported type (TCK debt, [#743](https://github.com/exeris-systems/exeris-kernel/issues/743)).
 - `AbstractHttpStreamExchangeTck` (since 0.10.0, [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)) — pins the SSE streaming contract: open / emit-N / graceful close / disconnect-via-`StreamClosedException`, backpressure park-and-resume on window credit, an event larger than the credit window being admitted once nothing is outstanding, no respond-once regression, and (v0.11) `pathParams()` being non-null and immutable — the map is routing state, so a handler able to write to it could change what a later request resolves to. Community binding required; Enterprise native overlay declared as a cross-repo obligation.
 
+Further suites cover the other contracts of the package: `AbstractHttpRequestBodyEncoderTck`,
+`AbstractHttpResponseBodyDecoderTck` and `AbstractHttpRequestBodyDecoderTck` (the ADR-034 / ADR-036 codec
+quadrant, with the server-side encoder above), `AbstractHttpClientRequestEnricherTck` (ADR-032),
+`AbstractHttpRoutePolicyTck` (ADR-061 / ADR-077), `AbstractHttpRetryPolicyTck` (ADR-045),
+`AbstractStreamRouteResolverTck` (ADR-043 Amendment A1) and `AbstractWorkloadAdmissionTck` (ADR-089).
+
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
 
 ---
@@ -164,12 +170,17 @@ What this currently guarantees:
 
 ## Core HTTP vs Engine Responsibility
 
-Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
+Current `exeris-kernel-core` HTTP package holds codec/wire primitives and the transport-agnostic
+layers above them:
 
 - `http1.*`
 - `http2.*`
 - `hpack.*`
 - `hpack.huffman.*`
+- `routing.*` (`HttpRouter`)
+- `sse.*` (`HttpStreamEngine`, `SseEventEncoder`, `StreamEgress`, `StreamAdmissionController`)
+- `client.*` (`KernelWebClient`)
+- `jfr.*`
 
 **Community tier is implemented.** The Community HTTP source tree remains a single flat package,
 `eu.exeris.kernel.community.http`; a `shared/` / `client/` / `server/` / `h2/` subpackage split was
@@ -229,8 +240,8 @@ authority, not the connection's remote address.
 Outbound HTTP/1.1 requests managed by `CommunityHttpClientEngine` support persistent TCP connection reuse via `CommunityHttpClientConnectionPool`:
 
 - **LIFO Reuse Queue:** Reuses connections per authority using a synchronized LIFO queue (`ArrayDeque` wrapped in a `DequeHolder` with atomic retirement protection). LIFO ordering keeps the warmest connections active, avoiding keep-alive expiration races on the remote peer; the internal deque is pre-sized to `maxIdlePerPeer` to prevent array resizing, with zero heap allocations during `poll` and single-allocation `PooledConnection` tracking during `release`.
-- **Bounds & Eviction:** Global pool capacity is bounded by `HttpConfig.maxConnections()`, with per-authority idle capacity clamped to `[1, 64]`. Empty authority holders are pruned atomically upon draining to eliminate memory leaks. Idle connections exceeding `HttpConfig.idleTimeoutMillis()` (default 30s; `0` disables idle timeout) are evicted on acquire. When the pool reaches global capacity upon release, capacity eviction first scans for expired connections, then reclaims the oldest idle connection from another authority (FIFO tail of that authority's deque) to transfer its capacity slot to the offered connection before falling back to closing it.
-- **Carrier Disconnect & Zombie Prevention:** Sockets closed remotely (e.g. peer `FIN`) are marked as closed by the transport layer (`NativeTcpStream` sets `markClosedByCarrier()`), ensuring zombie sockets are not leased from the pool.
+- **Bounds & Eviction:** Global pool capacity is bounded by `HttpConfig.maxConnections()`, with per-authority idle capacity is `maxConnections()` clamped to `[1, 64]`. Empty authority holders are pruned atomically upon draining to eliminate memory leaks. Idle connections exceeding `HttpConfig.idleTimeoutMillis()` (default 30s; `0` disables idle timeout) are evicted on acquire. When the pool reaches global capacity upon release, capacity eviction first scans for expired connections, then reclaims the oldest idle connection from another authority (FIFO tail of that authority's deque) to transfer its capacity slot to the offered connection before falling back to closing it.
+- **Carrier Disconnect & Zombie Prevention:** Sockets closed remotely (e.g. peer `FIN`) are marked as closed by the transport layer (`NativeTcpStream` calls `markClosedByCarrier()` on its `NativeTcpConnection`), ensuring zombie sockets are not leased from the pool.
 - **Keep-Alive Qualification (RFC 9110 / RFC 9112):** Connections are returned to the pool only when:
   1. The underlying connection is still open, the stream has zero pending unconsumed bytes (`!stream.hasPendingData()`), and the decoder validates that no unconsumed trailing bytes remain in the response buffer when framed via `Content-Length` or bodyless (failing closed to prevent stream desynchronization per RFC 9112 §6.3 / §9.3).
   2. The protocol is HTTP/1.1 (or HTTP/1.0 with explicit `Connection: keep-alive`).

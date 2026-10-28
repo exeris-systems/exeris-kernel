@@ -530,17 +530,16 @@ failure is logged and never fails the subsystem.
 - `CoreSubsystemErrorRoutingTckTest` — `AbstractSubsystemErrorRoutingTck` (routing non-fatal `Error` through failure policy; `VirtualMachineError` raw propagation)
 - `CoreBootstrapZeroAllocTckTest` — `BootstrapZeroAllocTck`
 - `CoreHealthMonitorTckTest`, `CoreProviderBindingLifecycleTckTest`, `KernelBootstrapTest`, `ScopedValueBindingTest`
+- `KernelBootstrapShutdownTest`, `SubsystemOrchestratorShutdownTest` — the `shutdown()` entry point, the hook
+  lifecycle, and the concurrency rules (racing callers, re-entry, a stop requested during boot)
+- `CoreGracefulShutdownTckTest` binds `AbstractGracefulShutdownTck` over stub subsystems, with its trigger wired
+  to `KernelBootstrap.shutdown()`
 
 ### Integration Tests (Community)
 
 - `SubsystemInitOrderIntegrationTest`, `KernelBootstrapIntegrationTest`, `CommunityDegradedModeIntegrationTest`
 - `AbstractSubsystemLifecycleTck` bindings for `memory`, `transport`, `http` and `websocket`
 - `HealthEndpointHandlerKernelMonitorIntegrationTest`, `CommunitySubsystemHealthWatcherTest`
-
-- `KernelBootstrapShutdownTest`, `SubsystemOrchestratorShutdownTest` — the `shutdown()` entry point, the hook
-  lifecycle, and the concurrency rules (racing callers, re-entry, a stop requested during boot)
-- `CoreGracefulShutdownTckTest` binds `AbstractGracefulShutdownTck` over stub subsystems, with its trigger wired
-  to `KernelBootstrap.shutdown()`
 
 Community: `KernelSigtermShutdownTest` forks a kernel JVM and sends a real `SIGTERM` (in-flight request drained,
 ingress refused, subsystems stopped in reverse start order with memory last, exit status 143; a hook-disabled
@@ -573,8 +572,8 @@ its streams (60 s).
 
 `KernelHealthMonitor` (Core) implements `eu.exeris.kernel.spi.bootstrap.HealthProbe` and exposes two snapshots:
 
-- **Readiness** — UP only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `DEGRADED` (not ready) when a **required** subsystem has gone `DEGRADED` — live but impaired after boot, e.g. its broker died — so the load balancer drains the instance; a still-initializing required subsystem outranks `DEGRADED` for the status label. A **degraded optional** subsystem never sheds readiness. Returns `FAILED` after `FAILED` state.
-- **Liveness** — UP after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state. A `DEGRADED` subsystem never affects liveness — the process stays alive so it can recover (`DEGRADED → RUNNING` is reversible).
+- **Readiness** — `READY` only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `DEGRADED` (not ready) when a **required** subsystem has gone `DEGRADED` — live but impaired after boot, e.g. its broker died — so the load balancer drains the instance; a still-initializing required subsystem outranks `DEGRADED` for the status label. A **degraded optional** subsystem never sheds readiness. Returns `FAILED` after `FAILED` state.
+- **Liveness** — `UP` after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state. A `DEGRADED` subsystem never affects liveness — the process stays alive so it can recover (`DEGRADED → RUNNING` is reversible).
 
 A subsystem is required when it is in `FOUNDATION` or reports `isOptional() == false`.
 
@@ -677,7 +676,7 @@ not counted.
 **Not included:** the `KernelStart` event and `ConfigProvider` resolution before it (timed by
 `ConfigSettingsResolved.durationMs`), the contract gate after it, and `kernelMain`.
 
-The full event set, all in category `Exeris Kernel / Bootstrap`: `KernelStart`, `ConfigSettingsResolved`,
+The full event set, all in category `Exeris Kernel / Bootstrap` (`ConfigSettingsResolved` adds a `Config` sub-category and `CircularDependencyDetected` a `Fatal` one): `KernelStart`, `ConfigSettingsResolved`,
 `SubsystemInitialized` (also emitted on failure, with `success=false` and `errorMessage`),
 `SubsystemStarted`, `KernelBootReady`, `SubsystemStopped`, `KernelShutdownComplete`,
 `CircularDependencyDetected`, `SubsystemHealthTransition`, `SubsystemInitDeadlineExceeded`. The contract gate records each decision as

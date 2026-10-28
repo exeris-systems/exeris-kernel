@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-25
+last-verified: 2026-10-28
 ---
 
 # Kernel Subsystem: Memory (L0 Foundation)
@@ -22,7 +22,7 @@ last-verified: 2026-09-25
 
 ## Overview
 
-The **Memory subsystem** implements the **Zero-Allocation Memory Model** for the Exeris Kernel using Java 26 Panama
+The **Memory subsystem** implements the **Zero-Allocation Memory Model** for the Exeris Kernel using the Panama
 FFM (Foreign Function & Memory API). Instead of a monolithic manager, memory is handled via a strict SPI-driven provider
 model. It provides:
 
@@ -41,8 +41,9 @@ Every byte allocated must serve a purpose:
 - **Zero Copy:** Data is never copied to the JVM Heap unless interacting with legacy Java systems.
 - **Deterministic Lifecycle:** Reference counting via `VarHandle` atomics ensures memory is returned to native pools
   immediately after use.
-- **Implementation Blindness:** Core operates exclusively on the `MemoryAllocator` interface injected via
-  `ServiceLoader`. It must never know what platform-specific allocator backs the `MemoryAllocator` contract.
+- **Implementation Blindness:** Core operates exclusively on the `MemoryAllocator` interface, obtained from the
+  `MemoryProvider` that `ServiceLoader` discovers. It must never know what platform-specific allocator backs the
+  `MemoryAllocator` contract.
 
 ---
 
@@ -186,9 +187,10 @@ decisions.
 Core never directly instantiates an allocator. It receives it through the SPI discovery chain.
 
 ```java
-MemoryAllocator allocator = ServiceLoader.load(MemoryAllocator.class)
+MemoryProvider provider = ServiceLoader.load(MemoryProvider.class)
         .findFirst()
-        .orElseThrow(); // no MemoryAllocator provider on the module/class path
+        .orElseThrow(); // no MemoryProvider on the module/class path
+MemoryAllocator allocator = provider.createAllocator(config);
 ```
 
 ### 2. ResourceArbiter Integration
@@ -238,31 +240,19 @@ never cached, so it allocates one on every call, whenever `FlightRecorder` is in
 | Level        | Default Threshold | PAQS Response                                                  | `ResourceArbiter` Action (`TRANSPORT_IO`)        |
 |:-------------|:-----------------:|:---------------------------------------------------------------|:-------------------------------------------------|
 | `NORMAL`     | < 70%             | All `StreamPriority` admitted                                  | `ALLOW`                                          |
-| `WARNING`    | 70–85%            | `LOW` and `TELEMETRY` streams shed (`EX-NET-4006`)             | `THROTTLE`                                       |
+| `WARNING`    | 70–85%            | `NORMAL`, `LOW` and `TELEMETRY` streams shed (`EX-NET-4006`); `CRITICAL` and `HIGH` admitted | `THROTTLE`                                       |
 | `CRITICAL`   | 85–95%            | All streams shed except `CRITICAL` priority                    | `REJECT`                                         |
 | `SHEDDING`   | ≥ 95%             | All streams shed regardless of priority (`H3_EXCESSIVE_LOAD`) | `SHED_LOAD`                                      |
 
 (`KERNEL_LOGIC` context is stricter: it already reaches `SHED_LOAD` at `CRITICAL`, trading background
 work — projections, sagas, graph queries — for transport throughput under pressure.)
 
-**Configuration keys** (API format — prefix `exeris.` for system properties, e.g. `-Dexeris.memory.watermarkPollIntervalMs=50`):
-
-```
-network.paqs.warningThreshold=0.70    # fraction of total off-heap budget
-network.paqs.criticalThreshold=0.85
-network.paqs.sheddingThreshold=0.95
-memory.watermarkPollIntervalMs=50     # sampling interval
-```
-
-> **Sampling note:** Allocation sampling is configurable via `telemetry.allocationSampleRate=0.01`.
-> This rate is not hardcoded — operators running JFR-based heap analysis may set it to `1.0`
-> temporarily at the cost of higher telemetry overhead.
-
-> **Note:** These configuration keys are planned. In the current implementation: 
-> WatermarkManager thresholds are hardcoded via `WatermarkLevel` enum constants (70/85/95%); 
-> the watermark refresh interval defaults to **5,000 ms** (not 50 ms as shown); 
-> `telemetry.allocationSampleRate` is not implemented — Community JFR sampling uses system property 
-> `-Dexeris.community.memory.jfr.sampleEvery=N` (integer allocation-frequency, not a rate fraction).
+**Configuration:** none of the watermark thresholds or the poll interval is configurable.
+`WatermarkManager` thresholds are the `WatermarkLevel` enum constants (70/85/95% of the off-heap budget),
+and the watermark refresh interval is `MemoryMaintenanceTask.DEFAULT_WATERMARK_INTERVAL_MS` (5,000 ms).
+No code reads `network.paqs.*Threshold`, `memory.watermarkPollIntervalMs` or
+`telemetry.allocationSampleRate`. Community allocation JFR sampling uses the system property
+`-Dexeris.community.memory.jfr.sampleEvery=N` (integer allocation frequency, not a rate fraction).
 
 ---
 
@@ -279,49 +269,17 @@ memory.watermarkPollIntervalMs=50     # sampling interval
 
 ## Graceful Shutdown — In-Flight LoanedBuffers
 
-> **Not yet implemented.** Per `docs/subsystems/bootstrap.md`, OS signal handling (`SIGTERM`/`SIGINT`)
-> is not implemented in `KernelBootstrap`/`SubsystemOrchestrator` on this tree — callers are
-> responsible for invoking `boot()` and managing JVM shutdown themselves. Neither `closeIngress()`
-> nor a hard-timeout drain loop exists in the bootstrap code today, and no `SagaEngine` class exists
-> in this repository. The sequence below is the **target design** this subsystem is meant to honor
-> once bootstrap grows signal handling; treat it as forward-looking, not as what a `kill -TERM` on
-> today's kernel actually does to an in-flight `LoanedBuffer`.
+`KernelBootstrap.boot(...)` registers a JVM shutdown hook, unless `Builder.registerShutdownHook(false)`
+disables it, that runs `shutdown()`. A standalone process therefore stops in order on `SIGTERM`; the
+kernel installs no signal handler and never exits the JVM. `shutdown()` turns readiness to `503`, then
+stops every running subsystem in reverse topological order, the transport draining first and memory
+released last. `AbstractGracefulShutdownTck` pins that order and the drain of in-flight work before the
+Persistence engine closes.
 
-The intended contract for in-flight `LoanedBuffer` instances, once implemented:
-
-```mermaid
-sequenceDiagram
-    participant OS as OS (SIGTERM)
-    participant BS as KernelBootstrap / SubsystemOrchestrator
-    participant TP as Transport (PAQS)
-    participant LB as In-Flight LoanedBuffers
-    participant MA as MemoryAllocator
-
-    OS->>BS: SIGTERM
-    BS->>TP: closeIngress() — no new streams admitted
-    BS->>BS: startHardTimeout(60s)
-
-    Note over TP,LB: Existing VTs complete their work
-    loop until all VTs finish or timeout
-        LB->>LB: Business logic executes
-        LB->>MA: LoanedBuffer.close() [ref-count → 0]
-        MA->>MA: slab returned to pool
-    end
-
-    alt all buffers released before timeout
-        BS->>MA: MemoryAllocator.close() (e.g. CommunityMemoryAllocator, closing its CommunityArenaShardPool)
-        Note over MA: All slabs returned. Shard arenas closed.
-    else timeout fires (60s hard limit)
-        Note over BS: not EX-BOOT-0003, the initialization deadline
-        BS->>MA: forceReleaseArenas()
-        Note over MA: ⚠️ Force-release. Any VT still holding a LoanedBuffer<br/>will encounter SIGSEGV on next segment access.<br/>This is acceptable — the hard timeout implies<br/>the JVM is about to exit(1).
-    end
-```
-
-> **Operator implication (once implemented):** the target design sets `terminationGracePeriodSeconds: 75`
-> in the K8s pod spec (60 s drain + 15 s buffer). Long-lived work parked with active `LoanedBuffer`
-> references at shutdown would be force-released under this design; this document makes no claim about
-> a saga/compensation mechanism, since no such class exists in this repository today.
+The kernel has no hard drain timeout and no force-release step. Stopping the memory subsystem closes
+the allocator, which closes every shard arena and invalidates the buffers still outstanding from it, so
+a `LoanedBuffer` that is still held when memory stops is no longer usable. Work that holds buffers has to
+finish, and release them, while the transport drains.
 
 ---
 
@@ -386,7 +344,7 @@ flowchart TD
 ## Summary
 
 The Memory subsystem provides the foundation for hyper-density execution. By enforcing the `LoanedBuffer` pattern
-through SPI and resolving allocator implementations via `ServiceLoader`, it ensures that off-heap memory lifecycle is explicit and GC-independent, 
+through SPI and resolving allocator providers via `ServiceLoader`, it ensures that off-heap memory lifecycle is explicit and GC-independent, 
 regardless of which allocator is active.
 
 ---

@@ -701,42 +701,46 @@ sequenceDiagram
     autonumber
     participant NIC   as NIC / Transport Carrier
     participant PAQS  as PAQS Scheduler (Core)
-    participant WM    as WatermarkManager (L0)
+    participant AC    as AdmissionController (Core)
     participant RA    as ResourceArbiter (L0)
     participant VT    as Virtual Thread (Loom)
 
-    NIC->>PAQS: onStreamArrival(stream, rawHeaders)
-    PAQS->>PAQS: extractStreamPriority(stream)<br/>HTTP header / JWT claim / config default
+    NIC->>PAQS: onStreamArrival(stream)
+    PAQS->>PAQS: priorityExtractor.apply(stream)
 
-    PAQS->>WM: currentLevel()
-    WM-->>PAQS: NORMAL | WARNING | CRITICAL | SHEDDING
+    PAQS->>AC: admit(priority)
+    AC->>RA: decide(Context.TRANSPORT_IO)
+    Note over RA: Watermark level to action:<br/>NORMAL → ALLOW, WARNING → THROTTLE,<br/>CRITICAL → REJECT, SHEDDING → SHED_LOAD
 
-    alt NORMAL watermark
-        PAQS->>RA: decide(Context.TRANSPORT_IO)
-        RA-->>PAQS: ResourceArbiter.Action (ALLOW — slot granted)
-        PAQS->>VT: Thread.ofVirtual().start(streamHandler)
-        Note over VT: Request processed imperatively.<br/>ScopedValues bound. StructuredTaskScope used downstream.
-    else WARNING watermark — priority gate active
-        PAQS->>PAQS: streamPriority.ordinal() <= threshold?
-        alt priority sufficient
-            PAQS->>RA: decide(Context.TRANSPORT_IO)
-            RA-->>PAQS: ResourceArbiter.Action (THROTTLE — slot granted)
-            PAQS->>VT: Thread.ofVirtual().start(streamHandler)
-        else priority insufficient
-            PAQS->>NIC: stream.close()<br/>[TCP FIN (graceful close) / QUIC CONNECTION_CLOSE]
+    alt ALLOW
+        RA-->>AC: ALLOW
+        AC-->>PAQS: ADMIT (a slot under the stream ceiling is reserved)
+        PAQS->>VT: StreamExecutionBackend.start(task)
+        Note over VT: Request processed imperatively.<br/>ScopedValues bound. Concurrency inside the handler is structured.
+    else THROTTLE or REJECT — priority gate
+        RA-->>AC: THROTTLE (admits CRITICAL, HIGH) or REJECT (admits CRITICAL)
+        alt priority admitted
+            AC-->>PAQS: ADMIT
+            PAQS->>VT: StreamExecutionBackend.start(task)
+        else priority not admitted
+            AC-->>PAQS: SHED_MEMORY
+            PAQS->>NIC: stream.close()<br/>[TCP FIN (graceful close) / QUIC STOP_SENDING]
             PAQS->>PAQS: emit StreamShedEvent (JFR, @StackTrace false)
             Note over PAQS: Stream shed via close() + StreamShedEvent.<br/>No exception thrown back to carrier VT.<br/>No VT spawned, no heap allocation, no log.
         end
-    else CRITICAL or SHEDDING watermark — shed all
+    else SHED_LOAD (SHEDDING watermark) — shed all
+        RA-->>AC: SHED_LOAD
+        AC-->>PAQS: SHED_MEMORY
         PAQS->>NIC: stream.close()
         PAQS->>PAQS: emit StreamShedEvent (JFR)
         Note over PAQS: All streams shed (close + StreamShedEvent),<br/>no exception propagated to the carrier VT.
     end
+    Note over AC: Over transport.paqs.maxActiveStreams the decision<br/>is SHED_CAPACITY whatever the action.
 ```
 
-> The `extractStreamPriority` step above is illustrative of the target design (see the caveat under
+> The `priorityExtractor` step above is illustrative of the target design (see the caveat under
 > "`StreamPriority` — Origin and Assignment" below): the shipped Community carrier's extractor ignores
-> `rawHeaders` and always returns `NORMAL`, so the WARNING-watermark priority gate currently admits or
+> the stream and always returns `NORMAL`, so under `THROTTLE` and `REJECT` the priority gate currently
 > sheds every stream on an engine uniformly rather than differentiating by priority.
 
 ---
@@ -784,15 +788,16 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 
 | Scenario               | Community (TCP)                                     |
 |:-----------------------|:----------------------------------------------------|
-| **PAQS load shed**     | `FIN` (graceful close) — client receives `HTTP 503` |
+| **PAQS load shed**     | `FIN` (graceful close) — no response is written; the client sees the connection end, not a status |
 | **Graceful shutdown**  | `FIN` after drain timeout — no forced `RST`         |
 | **Hard shutdown timeout** | `FIN` — the coordinator seals unconditionally at 60 s and remaining streams close through the same `stream.close()` teardown as any other close, best-effort flush and all; no `reset()`/`RST` call sites exist on this path |
 | **`TransportStream.reset(long)`** | `RST` (abortive) — `SO_LINGER 0` then close; queued writes abandoned (no drain wait) |
 | **Unrecoverable outbound-write failure** | `RST` (abortive) — queued writes abandoned so teardown cannot hang |
 
 > **Why `FIN` not `RST` for load shedding?** `RST` causes immediate connection teardown on the client
-> side, which may interrupt in-flight retries and force the client to reconnect. `FIN` allows the client
-> to receive the `HTTP 503` response body, which is machine-readable and enables intelligent backoff.
+> side, which may interrupt in-flight retries and force the client to reconnect. `FIN` is the ordinary
+> end of a stream: it carries no status, because no transport-level path in the kernel answers with one
+> (ADR-081 §2), but it does not discard anything the peer was already sent.
 > `RST` is reserved for the two abortive primitives above — `reset(long)` and a failed outbound write —
 > never for the drain deadline itself: `NativeTcpCarrier.closeSelectorAndChannels()`, run whether the
 > drain finished cleanly or hit its 60 s deadline, calls every remaining stream's ordinary `close()`.
@@ -905,7 +910,7 @@ idle connections that used to hold shutdown open.
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
-| **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. The delivered wire framing is a close-delimited HTTP/1.1 response, not chunked transfer as sketched here before it landed; per-event chunked framing and an HTTP/2 `DATA` path are follow-ups. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
+| **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. Over HTTP/1.1 the wire framing is a close-delimited response, with per-event chunked framing a follow-up; over HTTP/2 the head is a `HEADERS` frame and each event is `DATA` frames, with `emit` parking on the flow-control window. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
 | **WebSocket** | ✅ Shipped v0.12 — ratified by [ADR-084](../adr/ADR-084-websocket-provider-spi.md) (ACCEPTED) | Full duplex over the RFC 6455 HTTP/1.1 Upgrade handshake, surfaced as the sibling `WebSocketExchange` SPI. `preview` surface; text frames only on the application side; one virtual thread per connection with no queue in either direction, so backpressure is the socket's. **Extended CONNECT (H2, RFC 8441) is not implemented** — the upgrade is HTTP/1.1 only. The engine is embeddable **and**, since v0.12, bootstrappable: a `websocket` subsystem starts one when `websocket.enabled` is set, which it is not by default (ADR-084 A2). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
@@ -927,7 +932,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 | Feature                            | Community                           |
 |:-----------------------------------|:-----------------------------------:|
 | Proxy Protocol v2 parsing          | 🚧 Planned TRL-4                    |
-| Real client IP in `StreamHeaders`  | 🚧 Planned via `remoteAddress()`    |
+| Proxy-supplied client IP in `remoteAddress()` | 🚧 Planned (`remoteAddress()` reports the immediate peer, which is the proxy) |
 | TLV extension support              | 🚧 Planned TRL-4                    |
 
 > **Target behavior:** when Proxy Protocol is enabled (`network.proxyProtocolEnabled=true`), the transport carrier
@@ -945,10 +950,18 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 | `StreamShedEvent` | `eu.exeris.kernel.core.transport.StreamShed` | Emitted by PAQS when stream is rejected under high load |
 | `StreamAcceptedEvent` | `eu.exeris.kernel.core.transport.StreamAccepted` | Emitted by PAQS when stream is admitted |
 | `StreamLifecycleEvent` | `eu.exeris.kernel.core.transport.StreamLifecycle` | Stream virtual-thread completion; `outcome` is `COMPLETE`, `ERROR` or `PEER_CLOSED` |
-| `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.transport.IngressQueueDepth` | Current queue depth metric |
-| `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
+| `ConnectionEstablishedEvent` | `eu.exeris.kernel.core.transport.ConnectionEstablished` | Once per established connection (plaintext: key armed; TLS: handshake active) |
+| `PaqsHandlerFailureEvent` | `eu.exeris.kernel.core.transport.PaqsHandlerFailure` | A stream handler failed; PAQS isolated it. Not emitted for a handler that ends with `EX-NET-4008` |
+| `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.core.transport.IngressQueueDepth` | Current queue depth metric |
+| `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.core.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
 | `TransportWriteParkEvent` | `eu.exeris.kernel.core.transport.WriteBackpressurePark` | A `write` is about to park at the stream's outbound bound; carries `streamId`, `queuedBytes`, `boundBytes`. Once per parking call, before the first park |
 | `CommunityConnectionIdleTimeoutEvent` | `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` | Connection reclaimed after `transport.idleTimeoutMillis` without activity; carries the observed idle span and the configured limit |
+| `CommunityConnectionRefusedEvent` | `eu.exeris.kernel.transport.CommunityConnectionRefused` | Connection refused at accept because the connection ceiling was reached |
+| `CommunityAcceptFaultEvent` | `eu.exeris.kernel.transport.CommunityAcceptFault` | Setting up an accepted connection threw; carries the exception class, never its message |
+| `CommunityAcceptRetryEvent` | `eu.exeris.kernel.transport.CommunityAcceptRetry` | `accept()` itself threw and the acceptor pauses and retries; carries the streak and the backoff |
+| `CommunityReactorDispatchFaultEvent` | `eu.exeris.kernel.transport.CommunityReactorDispatchFault` | Unrecoverable per-stream fault caught in the reactor select loop, answered by abortive teardown; carries the exception class, never its message |
+| `CommunityTransportDrainEvent` | `eu.exeris.kernel.transport.CommunityTransportDrain` | Graceful-shutdown drain: `busyAtStart`, `busyRemaining`, `openAtStart` and duration |
+| `TransportTlsDeclinedEvent` | `eu.exeris.kernel.transport.TransportTlsDeclined` | A listener configured with certificate and key bound plaintext because `-Dexeris.transport.tls=false` declined TLS |
 | `TransportTlsClientPostureEvent` | `eu.exeris.kernel.transport.TransportTlsClientPosture` | Once per `CLIENT` or `DUAL` carrier: whether its outbound connections verify TLS, dial plaintext or are refused (`posture`), the trust's origin (`trustSource`), `configBound`, and OpenSSL's effective `defaultCertFile`/`defaultCertDir` and `defaultTrustPresent` |
 
 ### Event classes are initialised at start-up, not at the first emit
@@ -985,20 +998,20 @@ carrier-pinning binding.
 
 Warming is per subsystem, not per kernel, and the reason is a measurement: initialising one JFR
 event class costs about 1 ms cold (103 classes in 79 ms with a recording running, 108 ms without —
-it is the class load, not the JFR registration). Warming all 128 event classes in the kernel would
+it is the class load, not the JFR registration). Warming every event class in the kernel (well over a hundred) would
 cost 100 ms or more, much of it for failure-path events a given process may never emit.
 
 Which transport classes are warmed is declared in `CoreJfrEventCatalogue` and
 `CommunityJfrEventCatalogue`, and the rule that governs both — plus the guard test that keeps them
-complete — is in [`telemetry.md`](telemetry.md). The transport subsystem warms all fourteen of its
-event classes: `SubsystemOrchestrator.doStart` warms the Core half, once the subsystem reports
+complete — is in [`telemetry.md`](telemetry.md). The transport subsystem warms all sixteen of its
+event classes (eight in each catalogue): `SubsystemOrchestrator.doStart` warms the Core half, once the subsystem reports
 `isRunning()`, and `CommunityTransportSubsystem.start()` the driver half. `NativeTcpCarrier.start()`
 asks for them directly as well, because CLIENT mode stands up no PAQS, an embedded engine has no
 orchestrator to start it, and the orchestrator's own call lands only after `start()` has returned —
 and it asks before `initPaqs()` builds a scheduler, which is why the scheduler's own constructor
 does not need to.
 
-**All fourteen, in both roles, and that is a cost rather than a property.** Roughly half of them —
+**All sixteen, in both roles, and that is a cost rather than a property.** Roughly half of them —
 the PAQS scheduler's stream events and the acceptor's connection events — cannot be emitted by a
 CLIENT-mode engine at all, so a client pays their class loads for nothing. Splitting the group by
 role would need a catalogue key that is not a `Subsystem` name, which is the same mechanism the
@@ -1036,7 +1049,7 @@ every transport (a `queueWrite` that waits for the peer fails it, and a loan rel
 leave the queue fails it); `WriteBackpressure` is gated by `supportsWriteBackpressure()`, which the
 Community bindings turn on with a 64 KiB bound.
 
-**Full TCK abstract class set (all have full Community bindings):** `AbstractTransportEngineTck`, `AbstractTransportProviderTck`, `AbstractTransportConnectionTck`, `AbstractTransportStreamTck`, `TransportZeroAllocTck`, `TransportCarrierPinningTck`.
+**Full TCK abstract class set (all have full Community bindings):** `AbstractTransportEngineTck`, `AbstractTransportProviderTck`, `AbstractTransportConnectionTck`, `AbstractTransportStreamTck`, `AbstractTransportWorkloadAdmissionTck`, `TransportZeroAllocTck`, `TransportCarrierPinningTck`.
 
 ### Load Tests
 
@@ -1055,9 +1068,9 @@ a v0.6 PR-review carry-over (HEUR-061) asked whether they should be decomposed a
 FD-owner / PAQS-dispatch responsibility lines. **Assessment outcome at the time: keep the single-file
 shape; do not refactor in that sprint** (reasoning below, kept for the record).
 
-**Current state (v0.12): partial decomposition has since happened, in the direction the v0.7
-assessment argued against.** `NativeTcpCarrier` is now ~1.1k LOC and `NativeTcpStream` ~1.4k LOC — the
-two have roughly swapped size rank since v0.7, so the LOC figures above no longer describe which file
+**Current state (v0.13): partial decomposition has since happened, in the direction the v0.7
+assessment argued against.** `NativeTcpCarrier` is now ~1.4k LOC and `NativeTcpStream` ~1.5k LOC — the
+two have swapped size rank since v0.7, so the LOC figures above no longer describe which file
 is larger. Declared-member counts are not re-verified here (unlike LOC, they were not mechanically
 recounted for this pass) and should be treated as unconfirmed for both classes at both dates. The
 reactor loop that Sprint 2 argued should stay an inner class — `ReactorLoop` — is now the top-level
@@ -1066,7 +1079,7 @@ into it for `closeKeyStream`, `readIngress`, `flushStream` and stream resolution
 "callback-heavy delegate" shape point 1 below predicted as the cost of extraction, taken on anyway.
 Alongside it, `NativeTcpSocketBackend` / `NativeTcpSocketProbe` now hold the FFM socket-backend
 selection and validation responsibility line, `ChannelRuntimeRegistry` holds channel/stream/owner
-bookkeeping, and on the stream side `NativeTcpStreamPendingWrite`, `NativeTcpStreamConsumerGate` and
+bookkeeping, and on the stream side `NativeTcpStreamPendingWrite`, `NativeTcpStreamConsumerGate`, `NativeTcpStreamRegistrationGate` and
 `NativeTcpStreamPlainSocketIo` have been split out of what was one file. `registerAndHandshakeConnection`
 below is `registerConnection` in the current source. Whether this extraction was driven by the
 per-reactor idle-reaper state introduced in 0.12 (`NativeTcpIdleReaper`, which needed a natural
@@ -1092,7 +1105,7 @@ socket-backend lines):**
 - Outbound queue (`MpscUnboundedArrayQueue`) and write loop with TLS layering — pending-write bookkeeping and plain-socket I/O now split into `NativeTcpStreamPendingWrite` and `NativeTcpStreamPlainSocketIo`.
 - Inbound queue (`SpscArrayQueue` / `SpscUnboundedArrayQueue`) and read loop with TLS layering.
 - Backpressure / queue-depth bookkeeping for PAQS interaction — the outbound-consumer handoff now via `NativeTcpStreamConsumerGate`.
-- Two inner classes remain: `RegistrationGate` and `StreamRuntimeState`.
+- One inner class remains, `StreamRuntimeState`; the registration gate is the top-level `NativeTcpStreamRegistrationGate`.
 
 **Why not extract, as reasoned at v0.7 Sprint 2 (superseded for points 1 and 2 by the extraction that
 has since happened):**
@@ -1104,7 +1117,7 @@ has since happened):**
 
 **When to revisit, as stated at v0.7 Sprint 2:**
 
-- If a future sprint introduces a second carrier (e.g., io_uring) that needs to share reactor/FD-owner code — at that point extraction yields a real reuse benefit. *(Not the trigger that occurred: no `io_uring` provider exists in this tree as of 0.12 — see "Testing Strategy" above.)*
+- If a future sprint introduces a second carrier (e.g., io_uring) that needs to share reactor/FD-owner code — at that point extraction yields a real reuse benefit. *(Not the trigger that occurred: no `io_uring` provider exists in this tree — see "Testing Strategy" above.)*
 - If profiling data shows that the current class layout regresses inlining or escape analysis on the hot path (no current evidence).
 - If the file size exceeds ~2k LOC after Sprint 5/6 changes — at that scale revisit with profiling data and a measured refactor PR. *(Neither file has crossed this; the extraction happened well below it.)*
 

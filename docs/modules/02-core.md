@@ -4,50 +4,43 @@ type: module
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-08-12
+last-verified: 2026-10-28
 ---
 
 # Physical Tier: Core (The Brain)
 
 **Module:** `exeris-kernel-core`
 **Dependencies:**
-- `compile`: `exeris-kernel-spi`
+- `compile`: `exeris-kernel-spi`, `org.jctools:jctools-core` (the `MpscArrayQueue` behind `AsyncTelemetrySink`)
 - `test`: `exeris-kernel-tck`
 
 ## 🗺️ Bootstrap Lifecycle: State Machine
 
-Core owns the canonical subsystem lifecycle. The state machine is driven by `KernelBootstrap`
-(implemented as `SubsystemOrchestrator` in `eu.exeris.kernel.core.bootstrap`) and is
-irreversible — there is no `RESTART` transition; a failed node must be replaced.
-
-> **Implementation status:** `SubsystemOrchestrator`, `KernelBootstrap`, and the
-> `BootstrapJfrEvents.KernelBootReadyEvent` telemetry path are present in
-> `exeris-kernel-core`. The full `ServiceLoader`-backed multi-provider discovery path and the
-> named `KernelBootstrap` entrypoint are planned for TRL-4. The state machine below reflects the
-> intended complete behaviour.
+Core owns the canonical subsystem lifecycle. `KernelBootstrap.boot(Runnable)` resolves configuration and
+runs the contract gate; `SubsystemOrchestrator` (both in `eu.exeris.kernel.core.bootstrap`) then initializes
+and starts the subsystems. The lifecycle is irreversible — there is no `RESTART` transition; a failed node
+must be replaced. `KernelHealthMonitor.KernelState` latches the kernel-level states below; the
+per-subsystem state machine is in [`subsystems/bootstrap.md`](../subsystems/bootstrap.md).
 
 ```mermaid
 stateDiagram-v2
     direction LR
-    [*] --> INIT : JVM start / KernelBootstrap.create()
+    [*] --> INITIALIZED : config resolved · contract gate passed\nevery subsystem initialize() returned
+    [*] --> FAILED      : ConfigProvider missing · contract refused\nprovider missing · initialize() failure
 
-    INIT --> STARTING : ServiceLoader discovery complete\nAll SPI providers validated (non-null, contract-checked)
-    INIT --> FAILED   : SPI provider missing or contract violation\nJVM halts (System.exit / ExerisKernelException)
+    INITIALIZED --> STARTED : every subsystem start() returned
+    INITIALIZED --> FAILED  : start() failure
 
-    STARTING --> READY        : All subsystems (Memory · Transport · Persistence)\nbound and health-checked
-    STARTING --> FAILED       : Subsystem bind timeout or port conflict
+    STARTED --> SHUTTING_DOWN : kernelMain returns · KernelBootstrap.shutdown()\nor the JVM shutdown hook (SIGTERM)
 
-    READY --> SHUTTING_DOWN   : Graceful shutdown signal (SIGTERM / shutdown hook)
-    READY --> FAILED          : Unrecoverable runtime error (Arena corruption,\nWatermark ceiling breach)
+    SHUTTING_DOWN --> [*] : running subsystems stopped in reverse\ntopological order, memory last
 
-    SHUTTING_DOWN --> [*]     : All LoanedBuffers released · Arenas closed\nVirtual Threads drained
+    FAILED --> [*] : boot() throws BootstrapException\nthe kernel never exits the JVM
 
-    FAILED --> [*]            : Emergency dump (JFR snapshot) · JVM exit(1)
-
-    note right of READY
+    note right of STARTED
         Hot-path active.
-        WatermarkManager enforcing backpressure.
-        ResourceArbiter scheduling allocations.
+        WatermarkManager tracks off-heap pressure.
+        ResourceArbiter answers admission checks.
     end note
 ```
 
@@ -60,33 +53,35 @@ Concrete implementations are discovered at runtime via `ServiceLoader`, which fu
 graph TD
     subgraph "exeris-kernel-core (The Brain)"
         KB["KernelBootstrap"]
-        WM["WatermarkManager"]
-        RA["ResourceArbiter"]
+        SO["SubsystemOrchestrator\nSubsystemRegistryLoader"]
+        BPS["BootstrapProviderSelector"]
         SL["java.util.ServiceLoader"]
     end
 
     subgraph "exeris-kernel-spi (Contracts)"
-        TE["TlsEngine (interface)"]
-        MA["MemoryAllocator (interface)"]
-        SP["SecurityProvider (interface)"]
-        PP["PersistenceProvider (interface)"]
-        PE["PersistenceEngine (interface)"]
-        TP["TransportProvider (interface)"]
-        TR["TransportEngine (interface)"]
+        CP["ConfigProvider"]
+        SPV["SubsystemProvider"]
+        MP["MemoryProvider"]
+        KC["KernelCryptoProvider"]
+        SP["SecurityProvider"]
+        PP["PersistenceProvider"]
+        HP["HttpProvider"]
     end
 
-    subgraph "Runtime Classpath (injected — conceptual placeholders)"
-        COMM_IMPL["CommunityTlsEngine\nCommunityMemoryAllocator\nDefaultSecurityProvider\nJdbcPersistenceProvider\nJdbcPersistenceEngine\nNioTransportProvider\nNioTransportEngine"]
-        ENT_IMPL["EnterpriseTlsEngine\nGlobalMemoryArbiter\nFipsSecurityProvider\nNativePersistenceProvider\nNativePersistenceEngine\nQuicTransportProvider\nQuicTransportEngine"]
+    subgraph "Runtime Classpath (injected)"
+        COMM_IMPL["CommunitySubsystemProvider\nCommunityMemoryProvider\nCommunityKernelCryptoProvider\nCommunitySecurityProvider\nCommunityPersistenceProvider\nCommunityHttpProvider"]
+        ENT_IMPL["Enterprise implementations\n(not in this repository)"]
     end
 
     KB --> SL
-    SL -->|"resolves at T-0"| TE & MA & SP & PP & PE & TP & TR
-    COMM_IMPL -.->|"implements (Community classpath)"| TE & MA & SP & PP & PE & TP & TR
-    ENT_IMPL  -.->|"implements (Enterprise classpath)"| TE & MA & SP & PP & PE & TP & TR
-    WM --> MA
-    RA --> MA
-    KB -->|"validates contracts"| WM & RA
+    KB -->|"resolves"| CP
+    KB --> SO
+    SO -->|"all providers, priority-sorted"| SPV
+    SO --> BPS
+    BPS --> SL
+    BPS -->|"highest-priority provider per contract"| MP & KC & SP & PP & HP
+    COMM_IMPL -.->|"implements (Community classpath)"| SPV & MP & KC & SP & PP & HP
+    ENT_IMPL  -.->|"implements (Enterprise classpath)"| SPV & MP & KC & SP & PP & HP
 
     style KB fill:#16213e,color:#e0e0ff,stroke:#4a90d9
     style SL fill:#16213e,color:#e0e0ff,stroke:#4a90d9
@@ -94,8 +89,12 @@ graph TD
     style ENT_IMPL  fill:#533483,color:#e0e0ff,stroke:#9b59b6,stroke-dasharray: 5 5
 ```
 
-> **Invariant:** If `ServiceLoader` returns zero providers for any mandatory SPI contract, `KernelBootstrap`
-> transitions to `FAILED` and the JVM halts. There is no partial bootstrap.
+> **Failure behaviour:** a missing `ConfigProvider` fails `KernelBootstrap.boot()` with a
+> `BootstrapException` citing `EX-CFG-0001`. A subsystem whose `initialize()` or `start()` fails aborts
+> the boot under the default `FAIL_FAST` policy; under `DEGRADE` only an optional subsystem outside
+> `FOUNDATION` is dropped, with its dependents. A subsystem with no provider or no configuration stays
+> inert and reports `isRunning() == false`. `boot()` throws; the kernel never exits the JVM. See
+> [`subsystems/bootstrap.md`](../subsystems/bootstrap.md).
 
 ## 🧠 Architectural Rules (L0 Enforcement)
 
@@ -125,10 +124,10 @@ graph TD
    and (c) PAQS per-stream virtual threads where the stream lifecycle defines the concurrency scope (`PaqsScheduler`).
    These exceptions must be explicitly documented in-code and must not reintroduce ad-hoc executors or unstructured
    concurrency.
-4. **Fail-Fast Bootstrap:** Must validate all injected SPI providers at T-minus 0 and halt the JVM if contracts are not
-   met.
+4. **Fail-Fast Bootstrap:** The default `FAIL_FAST` policy aborts the boot — `boot()` throws, and the kernel never
+   exits the JVM — when a subsystem fails to initialize or start.
 5. **Synchronization (JEP 491 Amendment):** The `synchronized` keyword is **permitted exclusively** in off-heap memory
-   pool internals (e.g., `SlabPool` slab reclamation, `SegmentPool` free-list management) where CAS sequences are
+   pool internals (slab reclamation and free-list management in a driver's pool) where CAS sequences are
    susceptible to ABA problems. It is **categorically banned** around FFM `downcall` invocations or any blocking I/O —
    violations cause Virtual Thread Pinning. See ADR-007 for the full rationale.
 6. **Lazy Constants (JEP 526 Semantics):** Singleton config caches and expensive one-time initialisations in Core MUST
@@ -140,7 +139,9 @@ graph TD
 ## HTTP in Core (Current Repository State)
 
 - HTTP wire codecs are currently implemented in `exeris-kernel-core` under `eu.exeris.kernel.core.http`.
-- Implemented areas: `http1.*`, `http2.*`, `hpack.*`, `hpack.huffman.*`.
+- Implemented areas: `http1.*`, `http2.*`, `hpack.*`, `hpack.huffman.*`, plus `routing.*` (`HttpRouter`,
+  path templates, stream routes), `sse.*` (`HttpStreamEngine`, `SseEventEncoder`, stream admission),
+  `client.*` (`KernelWebClient`) and `jfr.*` (HTTP stream events).
 - Root reactor does not currently include a dedicated `exeris-kernel-http` module.
 - Core remains responsible for delivering these codec primitives to downstream transport integrations in the current layout.
 

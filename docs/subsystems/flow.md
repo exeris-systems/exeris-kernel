@@ -203,10 +203,10 @@ the flow, `PARK` waits, and `FAIL` unwinds the compensation stack. So a flow can
 result — a failure branch, a timeout branch or a guarded edge is not expressible — and a second
 conditional transition from the same step is accepted and never taken.
 
-Outcome-based routing is #582, under the roadmap entry *Tooling Asks Carried to v0.13*. An RFC in
-0.13 decides its shape, and the shape has to add to the flow surface 1.0 declares stable rather than
-change it: a new constant in `FlowOutcome` stops every `switch` expression over it without a
-`default` from compiling. The implementation and its TCK follow 1.0.
+Outcome-based routing is #582, under the roadmap entry *Tooling Asks Carried to v0.13*. It is not
+started: no RFC fixes its shape yet, and the shape has to add to the flow surface 1.0 declares stable
+rather than change it — a new constant in `FlowOutcome` stops every `switch` expression over it without
+a `default` from compiling. The implementation and its TCK follow 1.0.
 
 ### Terminal-State Catalog Retention
 

@@ -357,10 +357,8 @@ public class VirtualThreadPinningException extends ExerisKernelException {
 ### 2. Error Mapper Registry (Core — Protocol Blindness)
 
 // NOTE: this mirrors the real `ErrorMapperRegistry` (`exeris-kernel-core`) — it dispatches on the
-// `errorCode` *string prefix*, not `instanceof`, and only the `TransportErrorCode` values that
-// class actually declares. An earlier version of this example used a fictional
-// `mapToTransportCode(Throwable)` method and enum constants (`EXCESSIVE_LOAD`, `UNAUTHORIZED`)
-// that do not exist anywhere in the codebase; that has been replaced with the real shape below.
+// `errorCode` *string prefix*, not `instanceof`, and only to the `TransportErrorCode` values that
+// enum declares. The real `mapCode` also returns `INTERNAL_ERROR` for a null or empty code.
 
 ```java
 package eu.exeris.kernel.core.telemetry;
@@ -387,7 +385,9 @@ public final class ErrorMapperRegistry {
 }
 ```
 
-> **Note:** `EX-HTTP-*` and `EX-GRPH-*` codes map to `INTERNAL_ERROR` by policy — these represent internal infrastructure failures not surfaced as distinct protocol-level codes.
+> **Note:** `EX-EVENT-*` and `EX-FLOW-*` map to `INTERNAL_ERROR` explicitly, and every prefix the registry does not list
+> (`EX-HTTP-*`, `EX-GRPH-*`, `EX-BLOB-*`, `EX-JOB-*`, `EX-LIC-*`) falls through to it — these represent internal
+> infrastructure failures not surfaced as distinct protocol-level codes.
 
 ---
 

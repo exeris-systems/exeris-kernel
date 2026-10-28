@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-10-28
 ---
 
 # Kernel Subsystem: Graph (L2 Data Synthesis)
@@ -50,7 +50,7 @@ We use the **MATCH** pattern to express relationship intent. The Kernel is respo
 efficient way to execute this intent on the active driver — business code never changes when the driver is
 swapped.
 
-> **Correction — not native GDS.** BFS traversal is pushed down as a query on both backends (SQL/PGQ recursive
+> **Not native GDS.** BFS traversal is pushed down as a query on both backends (SQL/PGQ recursive
 > CTE, Cypher variable-length `MATCH`), but shortest-path is not: on Community, `findShortestPath` always runs
 > the same in-JVM Dijkstra (`CommunityPathFinder`, a heap `ArrayList`/`PriorityQueue` implementation) after
 > loading the relevant adjacency, for **both** the PostgreSQL and the Neo4j backend — it does not call Neo4j's
@@ -195,14 +195,13 @@ try (GraphSession session = engine.openSession()) {
 }
 ```
 
-> **Note:** The fluent DSL (`GraphQueryBuilder`) described in earlier documentation does not exist in the current SPI. The current traversal API uses `GraphTraversal` record directly.
+> **Note:** The SPI has no fluent `GraphQueryBuilder`; the traversal API takes the `GraphTraversal` record (or a `GraphPathSpec`) directly.
 
 ### 2. GraphDialect Extension Point (SPI)
 
-> **Corrected:** earlier documentation showed a `transpile(GraphQuery)` / `supportsNativePathAlgorithms()`
-> shape. Neither method, nor a `GraphQuery` type, exists anywhere in this tree. The real contract below is
-> transcribed from `eu.exeris.kernel.spi.graph.GraphDialect` (abridged; see the source for the DDL-building
-> methods and full Javadoc).
+> The contract below is transcribed from `eu.exeris.kernel.spi.graph.GraphDialect` (abridged; see the source
+> for the full Javadoc). There is no `transpile(GraphQuery)` method, no `supportsNativePathAlgorithms()`, and
+> no `GraphQuery` type.
 
 ```java
 package eu.exeris.kernel.spi.graph;
@@ -210,6 +209,7 @@ package eu.exeris.kernel.spi.graph;
 public interface GraphDialect {
     String buildMatchQuery(GraphEdgeDescriptor edge);
     String buildMultiHopQuery(GraphEdgeDescriptor edge, int minHops, int maxHops);
+    String buildPathQuery(List<GraphHop> hops);
     String buildShortestPathQuery(GraphEdgeDescriptor edge, int maxDepth);
     String buildCreatePropertyGraph(List<GraphNodeDescriptor> nodes, List<GraphEdgeDescriptor> edges);
     String buildCreateEdgeTable(GraphEdgeDescriptor edge);
@@ -414,8 +414,7 @@ that is a shortest-path detail, not a traversal one.
   `CommunityGraphSessionNeo4jContractTckIT` (live Neo4j).
   `CommunityGraphSessionGuardTest` covers the refusal and the unbound-engine case without a database.
 
-The following two checks are described in earlier documentation but have no backing test or type in
-this tree today — listed here as gaps, not coverage:
+The following two checks have no backing test or type in this tree — listed here as gaps, not coverage:
 
 - There is no `TraversalResult` type anywhere in the codebase, and no test comparing PostgreSQL and Neo4j
   output bit-for-bit; `CommunityGraphBackendParityIT` (Testcontainers Neo4j, `@Tag("integration")`) proves
