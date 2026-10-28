@@ -255,8 +255,7 @@ public final class InMemoryEventBus implements EventBus {
                     // throwIfFailed is only reachable on the normal exit, so without this the caller is
                     // told delivery was cut short and never told that part of what was delivered also
                     // failed — the more actionable of the two facts, and the one it cannot recover by
-                    // retrying. Same defect as on the default line; the dispatch mechanism differs, the
-                    // dropped failures do not.
+                    // retrying.
                     forEachFailure(failures, interruptEx::addSuppressed);
                     Thread.currentThread().interrupt();
                     throw interruptEx;
@@ -265,9 +264,7 @@ public final class InMemoryEventBus implements EventBus {
                 // the caller inspects state(). The fork body collects a handler's RuntimeException
                 // itself, so the only thing that reaches this loop is what it does NOT catch — an Error
                 // out of a handler killed its subtask silently, leaving `failures` empty and
-                // publishAndAwait returning as though delivery had succeeded. Found by running the
-                // default line's regression case here after the merge-up: it expected a throwable and
-                // got none.
+                // publishAndAwait returning as though delivery had succeeded.
                 // join() lists the subtasks in fork order, which is slot order.
                 for (int i = 0; i < tasks.size(); i++) {
                     StructuredTaskScope.Subtask<Void> task = tasks.get(i);

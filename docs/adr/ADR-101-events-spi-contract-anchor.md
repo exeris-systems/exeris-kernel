@@ -80,9 +80,8 @@ brokered bus copies the payload to the wire and releases the caller's reference 
 
 **`ScopedValue` inheritance, as implemented.** `InMemoryEventBus.publish` starts one handler thread
 with `Thread.ofVirtual().start(...)`, which inherits no `ScopedValue` binding.
-`InMemoryEventBus.publishAndAwait` runs every handler inside the publisher's `ScopedValue` scope —
-on the calling thread on the distributed line, in subtasks of a scope it opens on the `preview` line —
-so they observe every binding the publisher had, including values the kernel does not define;
+`InMemoryEventBus.publishAndAwait` runs handlers on the calling thread in subscription order, so they
+observe every binding the publisher had, including values the kernel does not define;
 `AbstractEventBusTck$ScopedValuePropagation#handlerInheritsPublishScopeScopedValue` pins this and is
 skipped (`assumeFalse(isBrokered())`) on a brokered bus. A brokered bus's handlers run on the
 consumer loop's thread after a broker round trip and observe none of the publisher's bindings. The

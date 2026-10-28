@@ -26,7 +26,7 @@ final class BootSession {
     }
 
     /**
-     * Bound to the session for the whole boot. A subsystem's {@code start()} that this line forks into a
+     * Bound to the session for the whole boot. A subsystem's {@code start()} forked into a
      * {@link java.util.concurrent.StructuredTaskScope} inherits it, so a stop it requests is recognised
      * as coming from the boot itself even though it runs on another thread.
      */

@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.StructuredTaskScope;
 
 /**
- * Community: the scope one HTTP/2 connection forks its response tasks into, on this line's
+ * Community: the scope one HTTP/2 connection forks its response tasks into, over a
  * {@link StructuredTaskScope}.
  *
  * <p>The scope lives as long as the connection and forks repeatedly, so it keeps nothing about a task

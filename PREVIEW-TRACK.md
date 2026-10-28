@@ -368,9 +368,13 @@ have).
   `DiagnosticsCliShadedJarIT` cases could not load a preview-stamped class.
 - **The two `native-smoke` modules** arrived under `eu.exeris`; they carry `eu.exeris.preview` here.
   They build only under the opt-in `native` profile, and no GraalVM targets JDK 28.
-- **Three mechanism statements** — ADR-101 on `publishAndAwait`, `docs/subsystems/http.md` on the
-  continuation task's scope, and an `EventBusZeroAllocTck` comment — described the GA line's
-  in-thread dispatch and now state what holds on both.
+- **Mechanism statements**: two paragraphs of `docs/subsystems/http.md` named the connection's
+  `StructuredScope`, and an `EventBusZeroAllocTck` comment described in-thread dispatch; they now
+  state what holds on both lines. ADR-101 keeps its decision text, which describes the distributed
+  line: there `publishAndAwait` runs handlers on the calling thread. **On this line it forks one
+  subtask per handler**, and since a subtask inherits the publisher's bindings, the ADR's conclusion
+  — handlers observe every binding the publisher had — holds here too; only the subscription-order
+  sequencing does not.
 
 `EventBusZeroAllocTck`'s same-instance check asserts with `isSameAs` on `EventDescriptor`, a value
 record here: it passes, but cannot tell an equal copy from the published instance on this line.
