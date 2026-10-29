@@ -227,7 +227,7 @@ sequenceDiagram
     else SIGTERM, or the host calls KernelBootstrap.shutdown()
         HOOK->>ORC: shutdown()  (via KernelBootstrap.shutdown())
     end
-    Note over KB,ORC: one caller wins a compare-and-set and runs the stop; every other caller waits for it
+    Note over KB,ORC: one caller wins a compare-and-set and runs the stop, and every other caller waits for it
     ORC->>ORC: markKernelState(SHUTTING_DOWN) — readiness 503
     loop each subsystem, last initialized first
         alt isRunning() == true
