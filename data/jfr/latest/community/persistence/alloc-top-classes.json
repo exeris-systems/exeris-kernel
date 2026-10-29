@@ -2,12 +2,12 @@
   "class" : "java.util.ArrayList$Itr",
   "kind" : "jdk",
   "category" : "third_party",
-  "count" : 10,
-  "events" : 10,
-  "samples" : 5,
-  "sample_weight_bytes" : 1307760,
-  "tlab_refills" : 5,
-  "tlab_bytes" : 1310720,
+  "count" : 12,
+  "events" : 12,
+  "samples" : 6,
+  "sample_weight_bytes" : 1569352,
+  "tlab_refills" : 6,
+  "tlab_bytes" : 1572864,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
@@ -15,17 +15,57 @@
     "loom" : 0,
     "panama" : 0,
     "array" : 0,
-    "jdk" : 10,
+    "jdk" : 12,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.HashMap",
+  "kind" : "jdk",
+  "category" : "third_party",
+  "count" : 6,
+  "events" : 6,
+  "samples" : 3,
+  "sample_weight_bytes" : 784568,
+  "tlab_refills" : 3,
+  "tlab_bytes" : 786432,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 6,
     "other" : 0
   }
 }, {
   "class" : "org.h2.result.RowFactory$DefaultRowFactory",
   "kind" : "other",
   "category" : "third_party",
+  "count" : 6,
+  "events" : 6,
+  "samples" : 3,
+  "sample_weight_bytes" : 784640,
+  "tlab_refills" : 3,
+  "tlab_bytes" : 786432,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 6
+  }
+}, {
+  "class" : "org.h2.table.DualTable",
+  "kind" : "other",
+  "category" : "third_party",
   "count" : 4,
   "events" : 4,
   "samples" : 2,
-  "sample_weight_bytes" : 523112,
+  "sample_weight_bytes" : 523104,
   "tlab_refills" : 2,
   "tlab_bytes" : 524288,
   "outside_tlab" : 0,
@@ -39,13 +79,13 @@
     "other" : 4
   }
 }, {
-  "class" : "org.h2.index.DualIndex",
+  "class" : "org.h2.command.query.Select",
   "kind" : "other",
   "category" : "third_party",
   "count" : 4,
   "events" : 4,
   "samples" : 2,
-  "sample_weight_bytes" : 522992,
+  "sample_weight_bytes" : 522776,
   "tlab_refills" : 2,
   "tlab_bytes" : 524288,
   "outside_tlab" : 0,
@@ -59,53 +99,13 @@
     "other" : 4
   }
 }, {
-  "class" : "java.util.HashMap",
-  "kind" : "jdk",
-  "category" : "third_party",
-  "count" : 4,
-  "events" : 4,
-  "samples" : 2,
-  "sample_weight_bytes" : 523048,
-  "tlab_refills" : 2,
-  "tlab_bytes" : 524288,
-  "outside_tlab" : 0,
-  "outside_tlab_bytes" : 0,
-  "by_kind" : {
-    "exeris" : 0,
-    "loom" : 0,
-    "panama" : 0,
-    "array" : 0,
-    "jdk" : 4,
-    "other" : 0
-  }
-}, {
-  "class" : "org.h2.index.IndexCursor",
+  "class" : "org.h2.result.LocalResult",
   "kind" : "other",
   "category" : "third_party",
   "count" : 4,
   "events" : 4,
   "samples" : 2,
-  "sample_weight_bytes" : 523024,
-  "tlab_refills" : 2,
-  "tlab_bytes" : 524288,
-  "outside_tlab" : 0,
-  "outside_tlab_bytes" : 0,
-  "by_kind" : {
-    "exeris" : 0,
-    "loom" : 0,
-    "panama" : 0,
-    "array" : 0,
-    "jdk" : 0,
-    "other" : 4
-  }
-}, {
-  "class" : "org.h2.expression.ValueExpression",
-  "kind" : "other",
-  "category" : "third_party",
-  "count" : 4,
-  "events" : 4,
-  "samples" : 2,
-  "sample_weight_bytes" : 523120,
+  "sample_weight_bytes" : 523056,
   "tlab_refills" : 2,
   "tlab_bytes" : 524288,
   "outside_tlab" : 0,
@@ -125,7 +125,7 @@
   "count" : 4,
   "events" : 4,
   "samples" : 2,
-  "sample_weight_bytes" : 522960,
+  "sample_weight_bytes" : 522984,
   "tlab_refills" : 2,
   "tlab_bytes" : 524288,
   "outside_tlab" : 0,
@@ -139,15 +139,15 @@
     "other" : 0
   }
 }, {
-  "class" : "org.h2.command.Token$EndOfInputToken",
-  "kind" : "other",
+  "class" : "java.util.HashMap$KeyIterator",
+  "kind" : "jdk",
   "category" : "third_party",
-  "count" : 2,
-  "events" : 2,
-  "samples" : 1,
-  "sample_weight_bytes" : 261560,
-  "tlab_refills" : 1,
-  "tlab_bytes" : 262144,
+  "count" : 4,
+  "events" : 4,
+  "samples" : 2,
+  "sample_weight_bytes" : 523088,
+  "tlab_refills" : 2,
+  "tlab_bytes" : 524288,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
@@ -155,37 +155,17 @@
     "loom" : 0,
     "panama" : 0,
     "array" : 0,
-    "jdk" : 0,
-    "other" : 2
-  }
-}, {
-  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection",
-  "kind" : "exeris",
-  "category" : "production",
-  "count" : 2,
-  "events" : 2,
-  "samples" : 1,
-  "sample_weight_bytes" : 261528,
-  "tlab_refills" : 1,
-  "tlab_bytes" : 262144,
-  "outside_tlab" : 0,
-  "outside_tlab_bytes" : 0,
-  "by_kind" : {
-    "exeris" : 2,
-    "loom" : 0,
-    "panama" : 0,
-    "array" : 0,
-    "jdk" : 0,
+    "jdk" : 4,
     "other" : 0
   }
 }, {
-  "class" : "java.util.HashSet",
+  "class" : "java.util.BitSet",
   "kind" : "jdk",
   "category" : "third_party",
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261568,
+  "sample_weight_bytes" : 261552,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -199,13 +179,33 @@
     "other" : 0
   }
 }, {
-  "class" : "org.h2.expression.ExpressionVisitor",
+  "class" : "[Ljava.util.HashMap$Node;",
+  "kind" : "array",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261528,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 2,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "org.h2.index.IndexType",
   "kind" : "other",
   "category" : "third_party",
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261536,
+  "sample_weight_bytes" : 261544,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -219,7 +219,7 @@
     "other" : 2
   }
 }, {
-  "class" : "org.h2.command.Tokenizer",
+  "class" : "org.h2.table.PlanItem",
   "kind" : "other",
   "category" : "third_party",
   "count" : 2,
@@ -239,33 +239,13 @@
     "other" : 2
   }
 }, {
-  "class" : "eu.exeris.kernel.community.persistence.CommunityHikariSupport",
-  "kind" : "exeris",
+  "class" : "java.util.ImmutableCollections$ListItr",
+  "kind" : "jdk",
   "category" : "production",
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261568,
-  "tlab_refills" : 1,
-  "tlab_bytes" : 262144,
-  "outside_tlab" : 0,
-  "outside_tlab_bytes" : 0,
-  "by_kind" : {
-    "exeris" : 2,
-    "loom" : 0,
-    "panama" : 0,
-    "array" : 0,
-    "jdk" : 0,
-    "other" : 0
-  }
-}, {
-  "class" : "org.h2.jdbc.JdbcResultSet",
-  "kind" : "other",
-  "category" : "third_party",
-  "count" : 2,
-  "events" : 2,
-  "samples" : 1,
-  "sample_weight_bytes" : 261464,
+  "sample_weight_bytes" : 261544,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -275,8 +255,8 @@
     "loom" : 0,
     "panama" : 0,
     "array" : 0,
-    "jdk" : 0,
-    "other" : 2
+    "jdk" : 2,
+    "other" : 0
   }
 }, {
   "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
@@ -285,7 +265,7 @@
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261520,
+  "sample_weight_bytes" : 261552,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -299,13 +279,13 @@
     "other" : 0
   }
 }, {
-  "class" : "org.h2.mvstore.tx.Transaction",
+  "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
   "kind" : "other",
   "category" : "third_party",
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261480,
+  "sample_weight_bytes" : 261504,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -319,53 +299,13 @@
     "other" : 2
   }
 }, {
-  "class" : "eu.exeris.kernel.community.persistence.CommunityHikariSupport$$Lambda.0x000000009e7508c0",
-  "kind" : "exeris",
-  "category" : "production",
-  "count" : 2,
-  "events" : 2,
-  "samples" : 1,
-  "sample_weight_bytes" : 261560,
-  "tlab_refills" : 1,
-  "tlab_bytes" : 262144,
-  "outside_tlab" : 0,
-  "outside_tlab_bytes" : 0,
-  "by_kind" : {
-    "exeris" : 2,
-    "loom" : 0,
-    "panama" : 0,
-    "array" : 0,
-    "jdk" : 0,
-    "other" : 0
-  }
-}, {
-  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcQueryResult$JdbcRowCursor",
-  "kind" : "exeris",
-  "category" : "production",
-  "count" : 2,
-  "events" : 2,
-  "samples" : 1,
-  "sample_weight_bytes" : 261552,
-  "tlab_refills" : 1,
-  "tlab_bytes" : 262144,
-  "outside_tlab" : 0,
-  "outside_tlab_bytes" : 0,
-  "by_kind" : {
-    "exeris" : 2,
-    "loom" : 0,
-    "panama" : 0,
-    "array" : 0,
-    "jdk" : 0,
-    "other" : 0
-  }
-}, {
-  "class" : "com.zaxxer.hikari.pool.HikariProxyConnection",
+  "class" : "org.h2.expression.ExpressionVisitor",
   "kind" : "other",
   "category" : "third_party",
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261528,
+  "sample_weight_bytes" : 261512,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -379,28 +319,8 @@
     "other" : 2
   }
 }, {
-  "class" : "[J",
-  "kind" : "array",
-  "category" : "third_party",
-  "count" : 2,
-  "events" : 2,
-  "samples" : 1,
-  "sample_weight_bytes" : 261552,
-  "tlab_refills" : 1,
-  "tlab_bytes" : 262144,
-  "outside_tlab" : 0,
-  "outside_tlab_bytes" : 0,
-  "by_kind" : {
-    "exeris" : 0,
-    "loom" : 0,
-    "panama" : 0,
-    "array" : 2,
-    "jdk" : 0,
-    "other" : 0
-  }
-}, {
-  "class" : "[I",
-  "kind" : "array",
+  "class" : "java.util.HashMap$Node",
+  "kind" : "jdk",
   "category" : "third_party",
   "count" : 2,
   "events" : 2,
@@ -414,18 +334,18 @@
     "exeris" : 0,
     "loom" : 0,
     "panama" : 0,
-    "array" : 2,
-    "jdk" : 0,
+    "array" : 0,
+    "jdk" : 2,
     "other" : 0
   }
 }, {
-  "class" : "[Lorg.h2.table.TableFilter;",
-  "kind" : "array",
+  "class" : "org.h2.command.query.AllColumnsForPlan",
+  "kind" : "other",
   "category" : "third_party",
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261568,
+  "sample_weight_bytes" : 261552,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -434,8 +354,28 @@
     "exeris" : 0,
     "loom" : 0,
     "panama" : 0,
-    "array" : 2,
+    "array" : 0,
     "jdk" : 0,
-    "other" : 0
+    "other" : 2
+  }
+}, {
+  "class" : "org.h2.mvstore.tx.VersionedBitSet",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 67936,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
   }
 } ]
