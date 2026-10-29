@@ -162,9 +162,9 @@ graph TD
 
 ```mermaid
 graph LR
-    TCK[exeris-kernel-tck\nAbstractHttp*Tck] --> CORETEST[exeris-kernel-core tests\nCoreHttp*TckTest]
-    CORETEST --> FIXTURE[CoreHttpProviderFixture\n(test-only)]
-    COREMAIN[exeris-kernel-core main\nhttp1/http2/hpack codecs] --> RUNTIME[Driver tiers\nCommunity/Enterprise]
+    TCK["exeris-kernel-tck<br/>AbstractHttp*Tck"] --> CORETEST["exeris-kernel-core tests<br/>CoreHttp*TckTest"]
+    CORETEST --> FIXTURE["CoreHttpProviderFixture<br/>(test-only)"]
+    COREMAIN["exeris-kernel-core main<br/>http1/http2/hpack codecs"] --> RUNTIME["Driver tiers<br/>Community/Enterprise"]
 ```
 
 ## Native-image metadata
