@@ -1,4 +1,13 @@
-﻿# Glossary of Terms
+---
+title: "Glossary of Terms"
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-08-12
+---
+
+# Glossary of Terms
 
 This document defines the core terminology used within the **Exeris Kernel** ecosystem. A precise
 understanding of these terms is mandatory to maintain the "No Waste Compute" performance standards

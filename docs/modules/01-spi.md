@@ -1,3 +1,12 @@
+---
+title: "Physical Tier: SPI (The Constitution)"
+type: module
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-06-20
+---
+
 # Physical Tier: SPI (The Constitution)
 
 **Module:** `exeris-kernel-spi`
