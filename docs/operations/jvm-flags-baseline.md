@@ -1,3 +1,12 @@
+---
+title: "JVM Flags Baseline (Community)"
+type: operations
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-06-20
+---
+
 # JVM Flags Baseline (Community)
 
 > **Scope:** generic, Community-tier recommended JVM flag baseline for running the Exeris Kernel in a
