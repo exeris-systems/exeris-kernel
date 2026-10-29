@@ -1,3 +1,12 @@
+---
+title: "Physical Tier: Enterprise (The Accelerator)"
+type: module
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-08-12
+---
+
 # Physical Tier: Enterprise (The Accelerator)
 
 **Module:** `exeris-kernel-enterprise` (Proprietary / Closed Source Extension)
