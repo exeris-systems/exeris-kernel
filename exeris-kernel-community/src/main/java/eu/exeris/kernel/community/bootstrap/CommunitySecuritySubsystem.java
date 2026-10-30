@@ -99,19 +99,21 @@ final class CommunitySecuritySubsystem extends AbstractCommunitySubsystem {
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     @Override
     public void start() {
-        if (jwksProvider != null) {
-            try {
-                jwksProvider.start();
-            } catch (RuntimeException ex) {
-                throw new SubsystemException(NAME, SubsystemException.Phase.START, JWKS_UNBUILDABLE, ex);
-            }
-        }
         if (provider != null) {
             // Same reason as every other Community subsystem: the hot-path JFR event classes
             // initialise on the starting thread, never later on a virtual thread where a <clinit>
             // pins its carrier. Behind the guard, because a subsystem that found no provider will
             // emit none of them and should not pay their class load at boot.
             CommunityJfrEventCatalogue.warmHotPath(name());
+        }
+        // The key set is built last: shutdown() stops only a running subsystem, so nothing that can
+        // throw may sit between building the client engine and markRunning, or the engine outlives it.
+        if (jwksProvider != null) {
+            try {
+                jwksProvider.start();
+            } catch (RuntimeException ex) {
+                throw new SubsystemException(NAME, SubsystemException.Phase.START, JWKS_UNBUILDABLE, ex);
+            }
         }
         markRunning(provider != null);
     }
