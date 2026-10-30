@@ -116,7 +116,7 @@ public final class CommunitySecurityProvider implements SecurityProvider, AutoCl
      *         classpath
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException ({@code EX-NET-4004}) if
      *         {@code jwksUri} is {@code https} and no engine that verifies its server can be built
-     * @since 0.13.1
+     * @since 0.13
      */
     public static CommunitySecurityProvider overJwksEndpoint(URI jwksUri, KeyRotationPolicy policy,
                                                              Clock clock, String expectedIssuer,
@@ -219,7 +219,7 @@ public final class CommunitySecurityProvider implements SecurityProvider, AutoCl
      * {@link #overJwksEndpoint}; does nothing for a provider over a fixed key map. Idempotent. A
      * token that needs a key refresh after close is denied ({@code EX-SEC-2002}).
      *
-     * @since 0.13.1
+     * @since 0.13
      */
     @Override
     public void close() {

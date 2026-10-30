@@ -45,9 +45,9 @@ import java.util.Optional;
      *
      * @param config the kernel configuration
      * @return the settings, or empty when token verification is not configured
-     * @throws SubsystemException ({@code INITIALIZE}) naming the first key that is missing when some
-     *         are set and others are not, or if {@value #JWKS_URI_KEY} is not an absolute
-     *         {@code http} or {@code https} URI with a host
+     * @throws SubsystemException ({@code EX-BOOT-0002}, phase {@code INITIALIZE}) naming the first
+     *         key that is missing when some are set and others are not, or if
+     *         {@value #JWKS_URI_KEY} is not an absolute {@code http} or {@code https} URI with a host
      */
     /* default */ static Optional<CommunityJwksSettings> read(ConfigProvider config) {
         Optional<String> uri = nonBlank(config, JWKS_URI_KEY);
