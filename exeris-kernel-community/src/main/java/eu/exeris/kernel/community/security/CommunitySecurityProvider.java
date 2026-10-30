@@ -10,10 +10,14 @@ import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
+import eu.exeris.kernel.spi.security.identity.ClaimsMapper;
 import eu.exeris.kernel.spi.security.identity.IdentityProvider;
 import eu.exeris.kernel.spi.security.identity.IdentityProviderRegistry;
+import eu.exeris.kernel.spi.security.identity.KeyRotationPolicy;
 
+import java.net.URI;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 
@@ -29,13 +33,15 @@ import java.util.Map;
  * <p>The JWT verification pipeline lives in {@link CommunityOidcIdentityProvider} and
  * {@link CommunityOidcTokenValidator}.
  *
- * <p>ServiceLoader-based discovery of {@link IdentityProvider} bindings and config-driven
- * construction (issuer / audience / JWKS endpoint) land with the config wiring step; today the
- * registry is built from the directly-constructed Community OIDC provider.
+ * <p>The registry holds exactly one Community OIDC provider. The {@code ServiceLoader} instance holds
+ * no verification key, so it denies every token; the Community security subsystem replaces it with
+ * one built by {@link #overJwksEndpoint} when {@code security.jwks.uri}, {@code security.jwt.issuer}
+ * and {@code security.jwt.audience} are configured. {@code ServiceLoader} discovery of
+ * {@link IdentityProvider} bindings is not part of this provider.
  *
  * @since 0.5
  */
-public final class CommunitySecurityProvider implements SecurityProvider {
+public final class CommunitySecurityProvider implements SecurityProvider, AutoCloseable {
 
     private static final String PROVIDER_ID = "jwt-community";
     private static final String PROVIDER_NAME = "ExerisCommunity/JWT";
@@ -45,6 +51,7 @@ public final class CommunitySecurityProvider implements SecurityProvider {
 
     private final IdentityProviderRegistry registry;
     private final IdentityProvider identityProvider;
+    private final Runnable closeAction;
 
     /**
      * Public no-arg constructor required by {@link java.util.ServiceLoader}.
@@ -77,8 +84,49 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     }
 
     private CommunitySecurityProvider(IdentityProvider identityProvider) {
+        this(identityProvider, () -> { });
+    }
+
+    private CommunitySecurityProvider(IdentityProvider identityProvider, Runnable closeAction) {
         this.identityProvider = identityProvider;
         this.registry = IdentityProviderRegistry.of(List.of(identityProvider));
+        this.closeAction = closeAction;
+    }
+
+    /**
+     * Creates a provider that verifies tokens against the key set served at {@code jwksUri},
+     * fetched on first use and rotated under {@code policy}
+     * ({@link CommunityOidcIdentityProvider#overJwksEndpoint}).
+     *
+     * <p>The provider owns the client engine the key set is fetched with, and {@link #close()}
+     * releases it. An {@code https} URI is fetched only over TLS that verifies the server, so it
+     * needs a crypto provider bound when this method runs; an {@code http} URI is plaintext by the
+     * caller's request.
+     *
+     * @param jwksUri the absolute {@code http} or {@code https} URI the JWKS document is served from
+     * @param policy the overlap window and stale-fetch budget governing key rotation
+     * @param clock the clock driving both rotation timing and token-expiry checks
+     * @param expectedIssuer the {@code iss} claim value a token must present to be accepted
+     * @param expectedAudience the {@code aud} claim value a token must present to be accepted
+     * @return a provider that resolves verification keys through the rotating key set
+     * @throws IllegalArgumentException if {@code jwksUri} is not an absolute {@code http} or
+     *         {@code https} URI with a host, or carries user information or a fragment
+     * @throws IllegalStateException if more than one
+     *         {@link eu.exeris.kernel.spi.security.identity.ClaimsMapper} is registered on the
+     *         classpath
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException ({@code EX-NET-4004}) if
+     *         {@code jwksUri} is {@code https} and no engine that verifies its server can be built
+     * @since 0.13.1
+     */
+    public static CommunitySecurityProvider overJwksEndpoint(URI jwksUri, KeyRotationPolicy policy,
+                                                             Clock clock, String expectedIssuer,
+                                                             String expectedAudience) {
+        // Resolved before the engine exists, so a refusal here leaves nothing to close.
+        ClaimsMapper claimsMapper = CommunityClaimsMapperResolver.resolve();
+        CommunityOidcIdentityProvider oidc = CommunityOidcIdentityProvider.overJwksEndpoint(
+                jwksUri, Map.of(), policy, clock, expectedIssuer, expectedAudience)
+                .withClaimsMapper(claimsMapper);
+        return new CommunitySecurityProvider(oidc, oidc::close);
     }
 
     /**
@@ -164,5 +212,17 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     @Override
     public StorageContext systemStorageContext() {
         return ImmutableStorageContext.GLOBAL;
+    }
+
+    /**
+     * Releases the client engine the key set is fetched with, when this provider was built by
+     * {@link #overJwksEndpoint}; does nothing for a provider over a fixed key map. Idempotent. A
+     * token that needs a key refresh after close is denied ({@code EX-SEC-2002}).
+     *
+     * @since 0.13.1
+     */
+    @Override
+    public void close() {
+        closeAction.run();
     }
 }
