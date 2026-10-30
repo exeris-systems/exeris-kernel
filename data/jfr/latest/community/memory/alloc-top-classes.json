@@ -5,9 +5,9 @@
   "count" : 8,
   "events" : 8,
   "samples" : 4,
-  "sample_weight_bytes" : 897952,
+  "sample_weight_bytes" : 854280,
   "tlab_refills" : 4,
-  "tlab_bytes" : 999328,
+  "tlab_bytes" : 856832,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
@@ -19,23 +19,23 @@
     "other" : 0
   }
 }, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
-  "kind" : "exeris",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "kind" : "jdk",
   "category" : "production",
   "count" : 6,
   "events" : 6,
   "samples" : 3,
-  "sample_weight_bytes" : 747768,
+  "sample_weight_bytes" : 784632,
   "tlab_refills" : 3,
-  "tlab_bytes" : 749256,
+  "tlab_bytes" : 786432,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
-    "exeris" : 6,
+    "exeris" : 0,
     "loom" : 0,
     "panama" : 0,
     "array" : 0,
-    "jdk" : 0,
+    "jdk" : 6,
     "other" : 0
   }
 } ]
