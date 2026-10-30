@@ -14,6 +14,16 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [0.13.1] — 2026-10-30
+
+### Breaking
+
+- None. No SPI type changes, and `MIGRATION.md` has no 0.13.1 section.
+
+### Added
+
+- **The Community `SecurityProvider` takes its verification keys from configuration (Community security, ADR-040).** `security.jwks.uri`, `security.jwt.issuer` and `security.jwt.audience` together arm it over a rotating JWKS key set, built at the security subsystem's `start()` and released at `stop()`; with none of them set it holds no key and denies every token, as before, and any other combination fails the boot with `EX-BOOT-0002` naming the missing key. `CommunitySecurityProvider.overJwksEndpoint(URI, KeyRotationPolicy, Clock, String, String)` builds the same provider for an embedding host, and `CommunitySecurityProvider` is `AutoCloseable`. See `docs/subsystems/security.md`.
+
 ## [0.13.0] — 2026-10-28
 
 ### Breaking
