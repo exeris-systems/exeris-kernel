@@ -7,8 +7,12 @@ package eu.exeris.kernel.community.bootstrap;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.sun.net.httpserver.HttpServer;
+import com.tngtech.archunit.core.domain.JavaMethod;
+import com.tngtech.archunit.core.domain.JavaMethodCall;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.security.CommunitySecurityProvider;
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.community.transport.MapConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -184,6 +188,21 @@ class CommunitySecuritySubsystemJwksTest {
         }
 
         @Test
+        @DisplayName("start() builds the key set after the JFR warm-up, its last fallible step")
+        void keySetIsBuiltAfterTheWarmUp() {
+            JavaMethod start = new ClassFileImporter().importClasses(CommunitySecuritySubsystem.class)
+                    .get(CommunitySecuritySubsystem.class).getMethod("start");
+
+            int warmUp = firstCallLine(start, CommunityJfrEventCatalogue.class, "warmHotPath");
+            int keySet = firstCallLine(start, DeferredSecurityProvider.class, "start");
+
+            assertThat(keySet)
+                    .as("shutdown() stops only a running subsystem: a warm-up that failed after the key "
+                            + "set was built would leave its client engine open with nothing to close it")
+                    .isGreaterThan(warmUp);
+        }
+
+        @Test
         @DisplayName("all three keys: the bound provider verifies against the endpoint, and stop() closes it")
         void configuredProviderAuthenticatesUntilStop() throws Exception {
             byte[] jwks = new JWKSet(new RSAKey.Builder(TestJwt.testPublicKey()).keyID(TestJwt.TEST_KID).build())
@@ -227,6 +246,15 @@ class CommunitySecuritySubsystemJwksTest {
                 server.stop(0);
             }
         }
+    }
+
+    private static int firstCallLine(JavaMethod method, Class<?> owner, String name) {
+        return method.getMethodCallsFromSelf().stream()
+                .filter(call -> call.getTargetOwner().isEquivalentTo(owner) && name.equals(call.getName()))
+                .mapToInt(JavaMethodCall::getLineNumber)
+                .min()
+                .orElseThrow(() -> new AssertionError(method.getFullName() + " never calls "
+                        + owner.getSimpleName() + "." + name));
     }
 
     private static MapConfigProvider config(Map<String, String> strings) {
