@@ -16,6 +16,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [0.13.1] — 2026-10-30
 
+### Breaking
+
+- None. No SPI type changes, and `MIGRATION.md` has no 0.13.1 section.
+
 ### Added
 
 - **The Community `SecurityProvider` takes its verification keys from configuration (Community security, ADR-040).** `security.jwks.uri`, `security.jwt.issuer` and `security.jwt.audience` together arm it over a rotating JWKS key set, built at the security subsystem's `start()` and released at `stop()`; with none of them set it holds no key and denies every token, as before, and any other combination fails the boot with `EX-BOOT-0002` naming the missing key. `CommunitySecurityProvider.overJwksEndpoint(URI, KeyRotationPolicy, Clock, String, String)` builds the same provider for an embedding host, and `CommunitySecurityProvider` is `AutoCloseable`. See `docs/subsystems/security.md`.
