@@ -1,0 +1,73 @@
+[ {
+  "t" : 1793347500545,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261536,
+  "sizeKind" : "sample_weight",
+  "kind" : "panama",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:133)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1793347500545,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "panama",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:133)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1793347501906,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:1052)",
+  "stackId" : "stk_0002"
+}, {
+  "t" : 1793347501906,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:1052)",
+  "stackId" : "stk_0002"
+}, {
+  "t" : 1793347511155,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261560,
+  "sizeKind" : "sample_weight",
+  "kind" : "panama",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:133)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1793347511155,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "panama",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:133)",
+  "stackId" : "stk_0001"
+} ]
