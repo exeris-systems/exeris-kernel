@@ -233,6 +233,34 @@ key decides the algorithm, never the token:
 
 The contract is ADR-040 Amendment A1; `AbstractSecurityProviderTck.PerKeyAlgorithmPinContract` pins it.
 
+### Token verification keys from configuration
+
+The `ServiceLoader` instance of `CommunitySecurityProvider` holds no verification key, so on its own it denies
+every token. Since 0.13.1 the Community security subsystem arms it from three keys ([config.md](config.md)):
+
+| Key | Meaning |
+|:--|:--|
+| `security.jwks.uri` | The JWKS document tokens are verified against: an absolute `http` or `https` URI with a host. |
+| `security.jwt.issuer` | The `iss` claim a token must present. |
+| `security.jwt.audience` | The `aud` claim a token must present. |
+
+- **All three or none.** With none set the subsystem binds the key-less provider, as before. With all three it binds a
+  provider over that endpoint. Any other combination fails the boot in `initialize()` with `EX-BOOT-0002`, naming the
+  first key that is missing, as does a `security.jwks.uri` that is not an absolute `http` or `https` URI with a host.
+- **The key set is built at `start()`, not when the provider is discovered.** The JWKS client engine needs the
+  memory allocator and, for an `https` endpoint, a crypto provider, and neither is bound while subsystems
+  initialise. Until `start()` the bound provider denies every token. A key set that cannot be built — an `https`
+  endpoint with no crypto provider, or under `exeris.transport.tls=false` (`EX-NET-4004`, see *Outbound* below) —
+  fails `start()` with `EX-BOOT-0002`, the refusal kept as its cause.
+- **The key set is fetched on the first token and rotated** under `KeyRotationPolicy.defaults()`, on the kernel's
+  time source. `stop()` releases the client engine, and the provider then denies every token.
+- **Only the Community provider reads the keys.** A `SecurityProvider` that outranks it is bound unchanged, and the
+  keys are not read.
+
+An embedding host that builds the provider itself uses `CommunitySecurityProvider.overJwksEndpoint(URI,
+KeyRotationPolicy, Clock, String, String)`, which returns an `AutoCloseable` provider over the same rotating key set.
+It builds the engine when called, so it needs the same bindings as `start()`.
+
 ---
 
 ## Testing Strategy
