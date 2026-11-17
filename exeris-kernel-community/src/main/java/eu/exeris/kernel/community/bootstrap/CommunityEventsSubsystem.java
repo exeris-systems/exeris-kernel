@@ -70,7 +70,7 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
      * <p>Kept for the reflective name-readers in the architecture guards, which instantiate each
      * subsystem without a kernel context.
      *
-     * @since 0.13.2
+     * @since 0.13
      */
     /* default */ CommunityEventsSubsystem() {
         this(null);
@@ -94,7 +94,7 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
      * naming the key, which the failure policy handles.
      *
      * @param config the resolved kernel configuration; {@code null} means every key takes its default
-     * @since 0.13.2
+     * @since 0.13
      */
     /* default */
     @SuppressWarnings("PMD.AvoidCatchingGenericException") // a foreign ConfigProvider may throw anything
