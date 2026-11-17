@@ -20,7 +20,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
  *
  * <p>These types deliberately expose {@code kafka-clients} types.
  *
- * @since 0.13.2
+ * @since 0.13
  */
 public interface KafkaRecordChannel {
 
