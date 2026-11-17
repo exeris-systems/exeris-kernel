@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * threads and read, without locking, by the consumer loop thread; {@link #version()} is the cheap
  * change signal the loop reads once per iteration.
  *
- * @since 0.13.2
+ * @since 0.13
  */
 final class KafkaRawRecordChannel implements KafkaRecordChannel {
 

@@ -217,7 +217,7 @@ public final class KafkaEventEngine implements EventEngine {
      * Exeris header. See the <em>Raw Records</em> section of the class documentation.
      *
      * @return the engine's one channel, never {@code null}
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaRecordChannel records() {
         return rawChannel;

@@ -24,7 +24,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * <p>The record's value may be {@code null} (a tombstone) or empty; the handler decides what that
  * means.
  *
- * @since 0.13.2
+ * @since 0.13
  */
 @FunctionalInterface
 public interface KafkaRecordHandler {
