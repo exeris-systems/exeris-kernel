@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
@@ -59,13 +60,13 @@ public final class KafkaEventProvider implements EventProvider {
     private static final String CFG_REQUIRE_ALL_ACKS   = "events.kafka.require-all-acks";
     private static final String CFG_LINGER_MS          = "events.kafka.producer-linger-ms";
     private static final String CFG_POLL_TIMEOUT_MS    = "events.kafka.consumer-poll-timeout-ms";
-    /** Optional path of a {@code .properties} file of Kafka producer overrides. @since 0.13.2 */
+    /** Optional path of a {@code .properties} file of Kafka producer overrides. @since 0.13 */
     private static final String CFG_PRODUCER_PROPS_FILE = "events.kafka.producer-properties-file";
-    /** Optional path of a {@code .properties} file of Kafka consumer overrides. @since 0.13.2 */
+    /** Optional path of a {@code .properties} file of Kafka consumer overrides. @since 0.13 */
     private static final String CFG_CONSUMER_PROPS_FILE = "events.kafka.consumer-properties-file";
-    /** Optional Kafka {@code client.id} for both clients. @since 0.13.2 */
+    /** Optional Kafka {@code client.id} for both clients. @since 0.13 */
     private static final String CFG_CLIENT_ID           = "events.kafka.client-id";
-    /** Optional consumer-loop thread kind, {@code virtual} (default) or {@code platform}. @since 0.13.2 */
+    /** Optional consumer-loop thread kind, {@code virtual} (default) or {@code platform}. @since 0.13 */
     private static final String CFG_LOOP_THREAD         = "events.kafka.consumer-loop-thread";
 
     /**
@@ -136,9 +137,9 @@ public final class KafkaEventProvider implements EventProvider {
         long lingerMs = cfg.getLong(CFG_LINGER_MS).orElse(5L);
         long pollTimeoutMs = cfg.getLong(CFG_POLL_TIMEOUT_MS).orElse(250L);
         Map<String, String> producerOverrides = cfg.getString(CFG_PRODUCER_PROPS_FILE)
-                .map(f -> loadOverrides(Path.of(f))).orElse(Map.of());
+                .map(KafkaEventProvider::overridesFile).orElse(Map.of());
         Map<String, String> consumerOverrides = cfg.getString(CFG_CONSUMER_PROPS_FILE)
-                .map(f -> loadOverrides(Path.of(f))).orElse(Map.of());
+                .map(KafkaEventProvider::overridesFile).orElse(Map.of());
         String clientId = cfg.getString(CFG_CLIENT_ID).orElse("");
         KafkaEventConfig.LoopThread loopThread = parseLoopThread(
                 cfg.getString(CFG_LOOP_THREAD).orElse("virtual"));
@@ -169,13 +170,25 @@ public final class KafkaEventProvider implements EventProvider {
         };
     }
 
+    // A malformed path value is a configuration error like a missing file, not a raw exception.
+    private static Map<String, String> overridesFile(String configured) {
+        Path file;
+        try {
+            file = Path.of(configured);
+        } catch (InvalidPathException e) {
+            throw EventProviderException.creationFailure(PROVIDER_NAME,
+                    "invalid Kafka properties file path", e);
+        }
+        return loadOverrides(file);
+    }
+
     /**
      * Loads a {@code .properties} file of Kafka client overrides.
      *
      * @param file the properties file
      * @return the file's entries as an immutable map
-     * @throws EventProviderException when the file is missing or unreadable
-     * @since 0.13.2
+     * @throws EventProviderException ({@code EX-EVENT-6004}) when the file is missing or unreadable
+     * @since 0.13
      */
     /* default */ static Map<String, String> loadOverrides(Path file) {
         Properties props = new Properties();

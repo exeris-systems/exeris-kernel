@@ -100,6 +100,17 @@ class KafkaEventProviderTest {
     }
 
     @Test
+    @DisplayName("a properties-file value that is not a path is a creation failure, not a raw InvalidPathException")
+    void malformedPathFails() {
+        Map<String, String> values = baseValues();
+        values.put("events.kafka.consumer-properties-file", "consumer\u0000.properties");
+
+        assertThatThrownBy(() -> readConfig(values))
+                .isInstanceOf(EventProviderException.class)
+                .hasCauseInstanceOf(java.nio.file.InvalidPathException.class);
+    }
+
+    @Test
     @DisplayName("an invalid consumer-loop-thread value is a creation failure naming the key")
     void invalidLoopThreadFails() {
         Map<String, String> values = baseValues();
