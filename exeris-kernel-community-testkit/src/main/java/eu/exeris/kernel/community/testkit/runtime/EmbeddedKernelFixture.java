@@ -28,9 +28,10 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * runtime, which is also how it works in production.
  *
  * <p>Dependency closure is the orchestrator's job, so a caller names only what it wants:
- * {@code flow} pulls {@code persistence}, and {@code events} pulls {@code persistence} and
- * {@code memory}. {@link #persistenceEngine()} is therefore always available — the engine those
- * subsystems store into is the one you can assert against.
+ * {@code flow} pulls {@code persistence}, and {@code events} pulls {@code memory}. The fixture also
+ * selects {@code persistence} itself, whichever subsystems the caller named, so
+ * {@link #persistenceEngine()} is always available — the engine those subsystems store into is the one
+ * you can assert against.
  *
  * <h2>Lifecycle</h2>
  * {@snippet lang="java" :
@@ -79,9 +80,11 @@ public interface EmbeddedKernelFixture extends AutoCloseable {
     /**
      * Returns the persistence engine the selected subsystems store into.
      *
-     * <p>Always available: both {@code events} and {@code flow} declare {@code dependsOn("persistence")},
-     * so it is present whichever of them was selected. This is what makes an assertion on saga state or
-     * on the outbox possible — the test reads the same rows the engine wrote.
+     * <p>Always available: the fixture selects the {@code persistence} subsystem itself, so it is present
+     * whichever of {@code events} and {@code flow} was selected and whatever {@code event.durableLogEnabled}
+     * is set to — the events subsystem only depends on persistence while that key is {@code true}. This is
+     * what makes an assertion on saga state or on the outbox possible — the test reads the same rows the
+     * engine wrote.
      *
      * @return the real {@link PersistenceEngine}
      * @throws IllegalStateException if the fixture has not been started
