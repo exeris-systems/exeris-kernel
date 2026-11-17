@@ -579,12 +579,17 @@ class ContractBootstrapStepTest {
                      new URL[] {dir.resolve("classpath").toUri().toURL()}, getClass().getClassLoader())) {
             recording.enable("eu.exeris.kernel.contract.Resolved");
             recording.start();
-            ContractBootstrapStep.run(config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, developer.toString())),
-                    loader, resolver);
-            ContractBootstrapStep.run(config(Map.of("environment", "production",
-                    ContractBootstrapStep.MANIFEST_PATH_KEY, production.toString())), loader, resolver);
-            assertThatThrownBy(() -> ContractBootstrapStep.run(config(Map.of("environment", "production",
-                    ContractBootstrapStep.MANIFEST_PATH_KEY, developer.toString())), loader, resolver));
+            // Inside the fixtures' validity windows, not at the platform clock: the developer
+            // manifest's window is sixteen days of October 2026, and this test is about what the
+            // event records, not about when it runs.
+            ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt("2026-10-06T12:00:00Z")).run(() -> {
+                ContractBootstrapStep.run(config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY,
+                        developer.toString())), loader, resolver);
+                ContractBootstrapStep.run(config(Map.of("environment", "production",
+                        ContractBootstrapStep.MANIFEST_PATH_KEY, production.toString())), loader, resolver);
+                assertThatThrownBy(() -> ContractBootstrapStep.run(config(Map.of("environment", "production",
+                        ContractBootstrapStep.MANIFEST_PATH_KEY, developer.toString())), loader, resolver));
+            });
             recording.stop();
             recording.dump(dump);
         }
