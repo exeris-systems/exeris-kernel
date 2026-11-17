@@ -579,10 +579,9 @@ class ContractBootstrapStepTest {
                      new URL[] {dir.resolve("classpath").toUri().toURL()}, getClass().getClassLoader())) {
             recording.enable("eu.exeris.kernel.contract.Resolved");
             recording.start();
-            // Inside the fixtures' validity windows, not at the platform clock: the developer
-            // manifest's window is sixteen days of October 2026, and this test is about what the
-            // event records, not about when it runs.
-            ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt("2026-10-06T12:00:00Z")).run(() -> {
+            // The fixtures' validity windows are fixed dates, so the gate is run at NOW rather than
+            // at the platform clock.
+            ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt(NOW.toString())).run(() -> {
                 ContractBootstrapStep.run(config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY,
                         developer.toString())), loader, resolver);
                 ContractBootstrapStep.run(config(Map.of("environment", "production",
