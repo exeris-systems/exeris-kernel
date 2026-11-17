@@ -24,6 +24,7 @@ import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
 
+import org.apache.kafka.clients.consumer.CloseOptions;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -37,10 +38,14 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
+import java.time.Duration;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -80,14 +85,30 @@ import java.util.function.Function;
  * remain implementation-blind; the {@link KafkaEventBrokerPort} adapter bridges the two
  * worlds without exposing Kafka types upstream.
  *
- * <h2>MVP Scope</h2>
- * <p>This first release covers publish + consume roundtrip, at-least-once on <em>produce</em>
- * via {@code acks=all} (when {@link KafkaEventConfig#requireAllAcks()} is true), and a
- * virtual-thread poll loop that runs with {@code enable.auto.commit=true}. Note that
- * auto-commit yields <em>at-most-once</em> semantics on the consume side: if a local
- * subscriber's handler crashes after the consumer publishes onto the in-process delegate
- * but before the offset commit can be replayed, the event is lost. A future revision will
- * flip to {@code enable.auto.commit=false} with manual commit-after-handler.
+ * <h2>Commit Modes</h2>
+ * <p>The mode is decided once, from the effective consumer properties: <em>manual</em> when
+ * {@code enable.auto.commit} is {@code false} (set through
+ * {@link KafkaEventConfig#consumerOverrides()}), otherwise <em>auto</em> (the default). In auto mode
+ * each record is published onto the in-process bus fire-and-forget and the Kafka client commits on
+ * its own schedule, which is at-most-once on the consume side: a handler that fails after the
+ * record was handed over loses it. In manual mode each record is delivered with
+ * {@link EventBus#publishAndAwait} on the poll thread, and the loop calls {@code commitAsync()}
+ * after every non-empty batch whose records were all handled; any failure ends the loop without
+ * committing that batch (see {@link #loopFailure()}), so the batch is redelivered, and a final
+ * {@code commitSync} runs on a clean stop. At-least-once covers <em>consumption</em>, not the output
+ * a handler produces: a batch's commit can precede the acknowledgement of sends its handlers made,
+ * and a failed asynchronous send is surfaced by stopping the loop, not by redelivery.
+ *
+ * <h2>Shutdown</h2>
+ * <p>{@link #close()} is terminal and idempotent. It stops the loop without interrupting it; the
+ * loop thread then flushes the producer, commits (manual mode, no failure), and closes the consumer,
+ * each bounded by {@link KafkaEventConfig#closeTimeout()}, and the caller closes the producer last.
+ * A loop that does not finish in time is interrupted as an escalation, and that is not reported as a
+ * failure.
+ *
+ * <h2>Scope</h2>
+ * <p>This engine covers publish + consume roundtrip and at-least-once on <em>produce</em>
+ * via {@code acks=all} (when {@link KafkaEventConfig#requireAllAcks()} is true).
  *
  * <p>This engine's own {@link EventBus#publish} / {@link EventLoop} pair goes
  * producer&nbsp;→&nbsp;consumer directly and does not use the durable event log; the
@@ -121,6 +142,10 @@ public final class KafkaEventEngine implements EventEngine {
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicLong publishedTotal = new AtomicLong(0L);
     private final AtomicLong publishFailedTotal = new AtomicLong(0L);
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    // Set when an asynchronous producer send fails; in manual-commit mode the loop reads it.
+    private final AtomicBoolean sendFailed = new AtomicBoolean(false);
+    private final Duration closeTimeout;
 
     /**
      * Constructs the engine from SPI and Kafka-specific configuration: creates the underlying
@@ -157,9 +182,11 @@ public final class KafkaEventEngine implements EventEngine {
         this.producer          = Objects.requireNonNull(producer, "producer");
         this.publishBus        = new KafkaPublishBus(spiConfig.engineName(),
                                                      producer, registry, isolationRegistry, kafkaConfig,
-                                                     localDelegate, publishedTotal, publishFailedTotal);
+                                                     localDelegate, publishedTotal, publishFailedTotal,
+                                                     sendFailed);
+        this.closeTimeout  = kafkaConfig.closeTimeout();
         this.loop          = new ConsumerLoop(spiConfig.engineName(), kafkaConfig,
-                                              registry, localDelegate,
+                                              registry, localDelegate, producer, sendFailed,
                                               Objects.requireNonNull(consumerFactory, "consumerFactory"));
     }
 
@@ -194,8 +221,16 @@ public final class KafkaEventEngine implements EventEngine {
         return isolationRegistry;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalStateException when the engine has been closed
+     */
     @Override
     public void start() {
+        if (closed.get()) {
+            throw new IllegalStateException("engine is closed");
+        }
         if (!started.compareAndSet(false, true)) {
             return;
         }
@@ -207,17 +242,63 @@ public final class KafkaEventEngine implements EventEngine {
         loop.start();
     }
 
+    /**
+     * Stops the loop, waits for its ordered shutdown (producer flush, final commit in manual mode,
+     * consumer close) for a time derived from {@link KafkaEventConfig#closeTimeout()}, interrupting
+     * it as an escalation when it does not finish, then closes the producer. Terminal and
+     * idempotent; also closes the producer of an engine that was never started. Called from the loop
+     * thread itself (a handler or a failure listener), it does not wait: the loop thread closes the
+     * producer when it ends.
+     */
     @Override
     public void close() {
-        if (!started.compareAndSet(true, false)) {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        if (loop.isLoopThread()) {
+            loop.closeProducerOnExit(closeTimeout);
+            loop.stop();
             return;
         }
         loop.stop();
+        closeProducer(producer, closeTimeout);
+    }
+
+    private static void closeProducer(Producer<byte[], byte[]> producer, Duration timeout) {
         try {
-            producer.close();
+            producer.close(timeout);
         } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException — best-effort producer shutdown
             // best-effort producer shutdown
         }
+    }
+
+    /**
+     * Returns why the consumer loop died, if it did. A stop requested through {@link #close()} or
+     * {@link EventLoop#stop()} is never a failure.
+     *
+     * @return the first failure that ended the loop, or empty
+     * @since 0.13.2
+     */
+    public Optional<Throwable> loopFailure() {
+        return loop.failure();
+    }
+
+    /**
+     * Registers a listener for the death of the consumer loop. It is invoked at most once, on the
+     * loop thread, after the consumer has been closed; a listener registered once that has already
+     * happened is invoked immediately on the registering thread. A listener must not block, and may
+     * call {@link #close()}.
+     *
+     * @param listener receives the failure cause
+     * @since 0.13.2
+     */
+    public void onLoopFailure(java.util.function.Consumer<Throwable> listener) {
+        loop.onFailure(Objects.requireNonNull(listener, "listener"));
+    }
+
+    // Package-private: the latch a later raw-record send path sets when its asynchronous send fails.
+    /* default */ AtomicBoolean sendFailureLatch() {
+        return sendFailed;
     }
 
     @Override
@@ -226,7 +307,7 @@ public final class KafkaEventEngine implements EventEngine {
                 publishedTotal.get(),
                 publishFailedTotal.get(),
                 loop.processedTotal(),
-                0L,                       // failed deliveries — no DLQ in MVP
+                loop.failedTotal(),       // handler failures (manual-commit mode)
                 0,                        // local queue depth — Kafka-driven
                 spiConfig.queueCapacity(),
                 0L,                       // no local dispatch latency tracked
@@ -310,6 +391,7 @@ public final class KafkaEventEngine implements EventEngine {
         private final EventBus                 localDelegate;
         private final AtomicLong               publishedTotal;
         private final AtomicLong               publishFailedTotal;
+        private final AtomicBoolean            sendFailed;
 
         private KafkaPublishBus(String engineName,
                                 Producer<byte[], byte[]> producer,
@@ -318,7 +400,8 @@ public final class KafkaEventEngine implements EventEngine {
                                 KafkaEventConfig config,
                                 EventBus localDelegate,
                                 AtomicLong publishedTotal,
-                                AtomicLong publishFailedTotal) {
+                                AtomicLong publishFailedTotal,
+                                AtomicBoolean sendFailed) {
             this.engineName         = engineName;
             this.producer           = producer;
             this.registry           = registry;
@@ -327,6 +410,7 @@ public final class KafkaEventEngine implements EventEngine {
             this.localDelegate      = localDelegate;
             this.publishedTotal     = publishedTotal;
             this.publishFailedTotal = publishFailedTotal;
+            this.sendFailed         = sendFailed;
         }
 
         @Override
@@ -344,7 +428,7 @@ public final class KafkaEventEngine implements EventEngine {
                 EventDescriptor stamped = IsolationStamp.stamp(descriptor, isolationRegistry);
                 ProducerRecord<byte[], byte[]> producerRecord = buildRecord(stamped, payload);
                 AsyncFailureRecorder recorder = new AsyncFailureRecorder(engineName,
-                        producerRecord.topic(), stamped.eventTypeOrdinal(), publishFailedTotal);
+                        producerRecord.topic(), stamped.eventTypeOrdinal(), publishFailedTotal, sendFailed);
                 producer.send(producerRecord, recorder);
                 recorder.sendReturned();
                 recorder.throwIfRejectedBeforeReturn();
@@ -410,17 +494,20 @@ public final class KafkaEventEngine implements EventEngine {
             private final String topic;
             private final int eventTypeOrdinal;
             private final AtomicLong publishFailedTotal;
+            private final AtomicBoolean sendFailed;
             private boolean sending = true;
             private Exception rejection;
 
             private AsyncFailureRecorder(String engineName,
                                          String topic,
                                          int eventTypeOrdinal,
-                                         AtomicLong publishFailedTotal) {
+                                         AtomicLong publishFailedTotal,
+                                         AtomicBoolean sendFailed) {
                 this.engineName = engineName;
                 this.topic = topic;
                 this.eventTypeOrdinal = eventTypeOrdinal;
                 this.publishFailedTotal = publishFailedTotal;
+                this.sendFailed = sendFailed;
             }
 
             @Override
@@ -433,6 +520,7 @@ public final class KafkaEventEngine implements EventEngine {
                     return;
                 }
                 publishFailedTotal.incrementAndGet();
+                sendFailed.set(true);
                 // "publishAsync" names a send the producer completed exceptionally after publish
                 // returned; "publish" and "publishAndAwait" name the paths that refuse the call.
                 KafkaPublishFailedEvent.emit(engineName, topic, eventTypeOrdinal, "publishAsync",
@@ -514,29 +602,55 @@ public final class KafkaEventEngine implements EventEngine {
     // Internal: ConsumerLoop — virtual-thread Kafka consumer poll loop
     // =========================================================================
 
+    @SuppressWarnings({"PMD.GodClass", "PMD.CyclomaticComplexity"})
     private static final class ConsumerLoop implements EventLoop {
+
+        // The extra time, beyond the bounded shutdown steps, that close() waits for the loop thread.
+        private static final Duration JOIN_SLACK = Duration.ofSeconds(1);
 
         private final String              engineName;
         private final KafkaEventConfig    config;
         private final KafkaEventRegistry  registry;
         private final EventBus            localDelegate;
+        private final Producer<byte[], byte[]> producer;
+        private final AtomicBoolean       sendFailed;
         private final Function<Properties, Consumer<byte[], byte[]>> consumerFactory;
+        private final boolean             manualCommit;
+        private final Duration            closeTimeout;
         private final AtomicReference<Thread> loopThread = new AtomicReference<>();
         private final AtomicBoolean       running = new AtomicBoolean(false);
+        private final AtomicBoolean       stopping = new AtomicBoolean(false);
         private final AtomicLong          processedTotal = new AtomicLong(0L);
+        private final AtomicLong          failedTotal = new AtomicLong(0L);
+        private final AtomicReference<Throwable> failure = new AtomicReference<>();
+        private final AtomicReference<Duration> producerCloseOnExit = new AtomicReference<>();
+        private final List<FailureListener> listeners = new CopyOnWriteArrayList<>();
+        private volatile boolean          consumerClosed;
         private final Set<String>         subscribedTopics = new HashSet<>();
+        private boolean                   everSubscribed;
         private int                       lastRegisteredVersion = -1;
 
         private ConsumerLoop(String engineName,
                              KafkaEventConfig config,
                              KafkaEventRegistry registry,
                              EventBus localDelegate,
+                             Producer<byte[], byte[]> producer,
+                             AtomicBoolean sendFailed,
                              Function<Properties, Consumer<byte[], byte[]>> consumerFactory) {
             this.engineName      = engineName;
             this.config          = config;
             this.registry        = registry;
             this.localDelegate   = localDelegate;
+            this.producer        = producer;
+            this.sendFailed      = sendFailed;
             this.consumerFactory = consumerFactory;
+            this.manualCommit    = isManualCommit(consumerProperties(config));
+            this.closeTimeout    = config.closeTimeout();
+        }
+
+        private static boolean isManualCommit(Properties props) {
+            String value = props.getProperty("enable.auto.commit");
+            return value != null && "false".equalsIgnoreCase(value.trim());
         }
 
         @Override
@@ -544,27 +658,74 @@ public final class KafkaEventEngine implements EventEngine {
             if (!running.compareAndSet(false, true)) {
                 return;
             }
+            stopping.set(false);
             String threadName = "exeris-kafka-consumer-" + config.consumerGroupId();
             Thread thread = config.loopThread() == KafkaEventConfig.LoopThread.PLATFORM
-                    ? Thread.ofPlatform().name(threadName).daemon(true).start(this::run)
-                    : Thread.ofVirtual().name(threadName).start(this::run);
+                    ? Thread.ofPlatform().name(threadName).daemon(true).unstarted(this::run)
+                    : Thread.ofVirtual().name(threadName).unstarted(this::run);
+            // Published before it runs, so a stop() racing the start always finds the thread to join.
             loopThread.set(thread);
+            thread.start();
         }
 
+        /**
+         * Asks the loop to stop and waits for it. Does not interrupt it and does not wake the
+         * consumer: the loop sees the flag within one poll timeout, and handlers in flight finish.
+         * If it has not finished after a time derived from the close timeout, the thread is
+         * interrupted as an escalation (and what that causes is not a failure). From the loop
+         * thread itself it only signals.
+         */
         @Override
         public void stop() {
-            if (!running.compareAndSet(true, false)) {
+            running.set(false);
+            Thread thread = loopThread.get();
+            if (thread == null) {
                 return;
             }
-            Thread thread = loopThread.getAndSet(null);
-            if (thread != null) {
+            LockSupport.unpark(thread);
+            if (thread.equals(Thread.currentThread())) {
+                return;
+            }
+            Duration wait = closeTimeout.multipliedBy(2L).plus(config.consumerPollTimeout()).plus(JOIN_SLACK);
+            boolean finished = false;
+            try {
+                finished = thread.join(wait);
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+            if (!finished) {
+                stopping.set(true);
                 thread.interrupt();
-                try {
-                    thread.join(5_000L);
-                } catch (InterruptedException _) {
-                    Thread.currentThread().interrupt();
+            }
+        }
+
+        /* default */ boolean isLoopThread() {
+            return Thread.currentThread().equals(loopThread.get());
+        }
+
+        /* default */ void closeProducerOnExit(Duration timeout) {
+            producerCloseOnExit.set(timeout);
+        }
+
+        /* default */ Optional<Throwable> failure() {
+            return Optional.ofNullable(failure.get());
+        }
+
+        /* default */ void onFailure(java.util.function.Consumer<Throwable> listener) {
+            FailureListener slot = new FailureListener(listener);
+            listeners.add(slot);
+            // Either this thread sees the loop's closed flag and fires, or the loop thread's
+            // iteration (which starts after the flag is set) sees the slot; the slot fires once.
+            if (consumerClosed) {
+                Throwable cause = failure.get();
+                if (cause != null) {
+                    slot.fire(cause);
                 }
             }
+        }
+
+        /* default */ long failedTotal() {
+            return failedTotal.get();
         }
 
         @Override
@@ -583,40 +744,154 @@ public final class KafkaEventEngine implements EventEngine {
             return processedTotal.get();
         }
 
+        // PMD.CloseResource — the consumer is closed by closeConsumer, bounded by the close timeout.
+        @SuppressWarnings("PMD.CloseResource")
         private void run() {
-            Properties props = consumerProperties(config);
-
-            try (Consumer<byte[], byte[]> consumer = consumerFactory.apply(props)) {
-                long pollNanos = config.consumerPollTimeout().toNanos();
-                while (running.get() && !Thread.currentThread().isInterrupted()) {
-                    refreshSubscriptions(consumer);
-                    // KafkaConsumer.poll() throws IllegalStateException when called with no
-                    // subscriptions and no manual assignments (kafka-clients 3.x behavior).
-                    // Pre-subscribed-state is normal during engine warm-up: start() launches
-                    // the consumer loop before any caller has registered an event type.
-                    // Park on a no-op tick of the same duration as poll() so the loop stays
-                    // responsive to a register() that bumps the registry version.
-                    if (subscribedTopics.isEmpty()) {
-                        LockSupport.parkNanos(pollNanos);
-                        continue;
-                    }
-                    ConsumerRecords<byte[], byte[]> batch = consumer.poll(config.consumerPollTimeout());
-                    for (ConsumerRecord<byte[], byte[]> consumerRecord : batch) {
-                        dispatch(consumerRecord);
-                    }
+            Consumer<byte[], byte[]> consumer = null;
+            boolean clean = false;
+            try {
+                consumer = consumerFactory.apply(consumerProperties(config));
+                pollUntilStopped(consumer);
+                clean = true;
+            } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — any escape ends the loop, with a cause
+                // A stop's escalation interrupt is not a failure; everything else is, and operators
+                // rely on the JFR event to see silent consumer-thread death.
+                if (!stopping.get()) {
+                    fail(ex);
                 }
-            } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — KafkaException is a RuntimeException
-                // Operators rely on this JFR event to detect silent consumer-thread death;
-                // without it isRunning() simply flips false and events stop arriving with no
-                // further signal. Payload is secret-safe — bootstrap.servers / credentials are
-                // never included.
+            }
+            try {
+                if (consumer != null) {
+                    if (clean) {
+                        flushAndCommit(consumer);
+                    }
+                    closeConsumer(consumer);
+                }
+            } finally {
+                consumerClosed = true;
+                running.set(false);
+                notifyListeners();
+                Duration producerTimeout = producerCloseOnExit.get();
+                if (producerTimeout != null) {
+                    closeProducer(producer, producerTimeout);
+                }
+            }
+        }
+
+        private void pollUntilStopped(Consumer<byte[], byte[]> consumer) throws InterruptedException {
+            Duration pollTimeout = config.consumerPollTimeout();
+            long pollNanos = pollTimeout.toNanos();
+            while (running.get()) {
+                refreshSubscriptions(consumer);
+                // KafkaConsumer.poll() throws IllegalStateException when called with no
+                // subscriptions and no manual assignments (kafka-clients 3.x behavior).
+                // Pre-subscribed-state is normal during engine warm-up: start() launches
+                // the consumer loop before any caller has registered an event type.
+                // Park on a no-op tick of the same duration as poll() so the loop stays
+                // responsive to a register() that bumps the registry version.
+                if (subscribedTopics.isEmpty()) {
+                    LockSupport.parkNanos(pollNanos);
+                    if (Thread.interrupted()) {
+                        throw new InterruptedException("consumer loop interrupted");
+                    }
+                    continue;
+                }
+                ConsumerRecords<byte[], byte[]> batch = consumer.poll(pollTimeout);
+                handleBatch(batch);
+                if (manualCommit && !batch.isEmpty()) {
+                    throwIfSendFailed();
+                    consumer.commitAsync();
+                }
+            }
+        }
+
+        private void handleBatch(ConsumerRecords<byte[], byte[]> batch) throws InterruptedException {
+            try {
+                for (ConsumerRecord<byte[], byte[]> consumerRecord : batch) {
+                    dispatch(consumerRecord);
+                }
+            } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — counted, then rethrown unchanged
+                if (manualCommit && !stopping.get()) {
+                    failedTotal.incrementAndGet();
+                }
+                throw ex;
+            }
+        }
+
+        private void throwIfSendFailed() {
+            if (sendFailed.get()) {
+                throw new IllegalStateException(
+                        "an asynchronous producer send failed (see publishFailedTotal); "
+                        + "the consumer loop stops rather than commit past it");
+            }
+        }
+
+        // Runs on the loop thread after the poll loop ended cleanly: drain the producer, then commit
+        // the positions (equal to the handled records) unless something already went wrong.
+        private void flushAndCommit(Consumer<byte[], byte[]> consumer) {
+            try {
+                producer.flush();
+                if (manualCommit && everSubscribed && failure.get() == null) {
+                    throwIfSendFailed();
+                    consumer.commitSync(closeTimeout);
+                }
+            } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — recorded as the loop's failure
+                if (!stopping.get()) {
+                    fail(ex);
+                }
+            }
+        }
+
+        private void closeConsumer(Consumer<byte[], byte[]> consumer) {
+            try {
+                consumer.close(CloseOptions.timeout(closeTimeout));
+            } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — recorded as the loop's failure
+                if (!stopping.get()) {
+                    fail(ex);
+                }
+            }
+        }
+
+        // Records the first failure only. The JFR event is secret-safe: bootstrap.servers and
+        // credentials are never included.
+        private void fail(Throwable cause) {
+            if (failure.compareAndSet(null, cause)) {
                 KafkaConsumerLoopFailedEvent.emit(
                         engineName,
                         config.consumerGroupId(),
-                        ex.getClass().getName(),
-                        ex.getMessage());
-            } finally {
-                running.set(false);
+                        cause.getClass().getName(),
+                        cause.getMessage());
+            }
+        }
+
+        private void notifyListeners() {
+            Throwable cause = failure.get();
+            if (cause == null) {
+                return;
+            }
+            for (FailureListener listener : listeners) {
+                listener.fire(cause);
+            }
+        }
+
+        /** A registered listener that fires at most once, from whichever thread gets there first. */
+        private static final class FailureListener {
+            private final java.util.function.Consumer<Throwable> delegate;
+            private final AtomicBoolean fired = new AtomicBoolean(false);
+
+            private FailureListener(java.util.function.Consumer<Throwable> delegate) {
+                this.delegate = delegate;
+            }
+
+            private void fire(Throwable cause) {
+                if (!fired.compareAndSet(false, true)) {
+                    return;
+                }
+                try {
+                    delegate.accept(cause);
+                } catch (Throwable _) { //NOPMD AvoidCatchingThrowable — a listener must not break the loop
+                    // A throwing listener is its own problem; the loop's shutdown continues.
+                }
             }
         }
 
@@ -644,14 +919,15 @@ public final class KafkaEventEngine implements EventEngine {
                 consumer.subscribe(desired);
                 subscribedTopics.clear();
                 subscribedTopics.addAll(desired);
+                everSubscribed |= !desired.isEmpty();
             }
             lastRegisteredVersion = currentVersion;
         }
 
-        // PMD.CloseResource — payload ownership is transferred to localDelegate.publish()
+        // PMD.CloseResource — payload ownership is transferred to localDelegate.publish()/publishAndAwait()
         // per the EventBus RAII broadcast protocol; close happens in handlers.
         @SuppressWarnings("PMD.CloseResource")
-        private void dispatch(ConsumerRecord<byte[], byte[]> consumerRecord) {
+        private void dispatch(ConsumerRecord<byte[], byte[]> consumerRecord) throws InterruptedException {
             byte[] frame = consumerRecord.value();
             if (frame == null || frame.length == 0) {
                 return;
@@ -663,7 +939,12 @@ public final class KafkaEventEngine implements EventEngine {
             // the lifetime of the payload's reference count.
             KafkaHeapEventPayload payload =
                     KafkaHeapEventPayload.wrap(KafkaEventCodec.decodePayloadSegment(frame));
-            localDelegate.publish(descriptor, payload);
+            if (manualCommit) {
+                // On this thread, so the commit that follows the batch cannot precede a handler.
+                localDelegate.publishAndAwait(descriptor, payload);
+            } else {
+                localDelegate.publish(descriptor, payload);
+            }
             processedTotal.incrementAndGet();
         }
     }

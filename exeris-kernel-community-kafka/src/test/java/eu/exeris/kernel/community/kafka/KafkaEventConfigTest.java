@@ -90,7 +90,25 @@ class KafkaEventConfigTest {
             assertThat(cfg.consumerOverrides()).isEmpty();
             assertThat(cfg.clientId()).isEmpty();
             assertThat(cfg.loopThread()).isEqualTo(KafkaEventConfig.LoopThread.VIRTUAL);
+            assertThat(cfg.closeTimeout()).isEqualTo(Duration.ofSeconds(30));
         }
+    }
+
+    @Test
+    @DisplayName("closeTimeout must be present and positive, and withCloseTimeout changes only it")
+    void closeTimeoutValidationAndWither() {
+        assertThatThrownBy(() -> BASE.withCloseTimeout(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> BASE.withCloseTimeout(Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("closeTimeout");
+        assertThatThrownBy(() -> BASE.withCloseTimeout(Duration.ofMillis(-1L)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("closeTimeout");
+
+        KafkaEventConfig cfg = BASE.withClientId("c").withCloseTimeout(Duration.ofSeconds(2));
+
+        assertThat(cfg.closeTimeout()).isEqualTo(Duration.ofSeconds(2));
+        assertThat(cfg.clientId()).isEqualTo("c");
+        assertThat(cfg.withClientId("d").closeTimeout()).isEqualTo(Duration.ofSeconds(2));
+        assertThat(cfg.toString()).contains("closeTimeout=PT2S");
     }
 
     @Test

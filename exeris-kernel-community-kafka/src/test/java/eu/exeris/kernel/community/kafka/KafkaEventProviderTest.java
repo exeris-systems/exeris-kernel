@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -86,6 +87,28 @@ class KafkaEventProviderTest {
     }
 
     @Test
+    @DisplayName("close-timeout-ms is read into closeTimeout, defaulting to 30 s")
+    void closeTimeoutKeyIsRead() {
+        assertThat(readConfig(baseValues()).closeTimeout()).isEqualTo(Duration.ofSeconds(30));
+
+        Map<String, String> values = baseValues();
+        values.put("events.kafka.close-timeout-ms", "1500");
+
+        assertThat(readConfig(values).closeTimeout()).isEqualTo(Duration.ofMillis(1500));
+    }
+
+    @Test
+    @DisplayName("a non-positive close-timeout-ms is a creation failure")
+    void nonPositiveCloseTimeoutFails() {
+        Map<String, String> values = baseValues();
+        values.put("events.kafka.close-timeout-ms", "0");
+
+        assertThatThrownBy(() -> readConfig(values))
+                .isInstanceOf(EventProviderException.class)
+                .hasCauseInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("a missing properties file is a creation failure naming the path, with the IOException as cause")
     void missingFileFails() {
         Path missing = tmp.resolve("absent.properties");
@@ -155,7 +178,7 @@ class KafkaEventProviderTest {
 
         @Override
         public Optional<Long> getLong(String key) {
-            return Optional.empty();
+            return Optional.ofNullable(values.get(key)).map(Long::valueOf);
         }
 
         @Override
