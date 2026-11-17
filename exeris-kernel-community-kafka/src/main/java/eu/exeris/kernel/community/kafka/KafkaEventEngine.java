@@ -310,7 +310,7 @@ public final class KafkaEventEngine implements EventEngine {
      * {@link EventLoop#stop()} is never a failure.
      *
      * @return the first failure that ended the loop, or empty
-     * @since 0.13.2
+     * @since 0.13
      */
     public Optional<Throwable> loopFailure() {
         return loop.failure();
@@ -323,7 +323,7 @@ public final class KafkaEventEngine implements EventEngine {
      * call {@link #close()}.
      *
      * @param listener receives the failure cause
-     * @since 0.13.2
+     * @since 0.13
      */
     public void onLoopFailure(java.util.function.Consumer<Throwable> listener) {
         loop.onFailure(Objects.requireNonNull(listener, "listener"));
