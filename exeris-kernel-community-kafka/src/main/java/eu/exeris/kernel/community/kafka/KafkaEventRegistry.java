@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /**
  * Heap-backed thread-safe {@link EventRegistry} implementation used by the Kafka driver.
@@ -32,8 +33,17 @@ final class KafkaEventRegistry implements EventRegistry {
     private final ConcurrentMap<Integer, String>       byOrdinal = new ConcurrentHashMap<>();
     private final AtomicInteger                        version   = new AtomicInteger();
 
+    // Supplied by the engine; refuses a spec whose topic the raw record channel already owns.
+    private volatile Consumer<EventTypeSpec> registrationGuard = _ -> { };
+
+    /** Installs the check run before every registration mutates state; it throws to refuse. */
+    /* default */ void registrationGuard(Consumer<EventTypeSpec> guard) {
+        this.registrationGuard = guard;
+    }
+
     @Override
     public void register(EventTypeSpec spec) {
+        registrationGuard.accept(spec);
         String existingName = byOrdinal.putIfAbsent(spec.ordinal(), spec.name());
         if (existingName != null && !existingName.equals(spec.name())) {
             throw EventRegistryException.duplicateConflict(spec.name(), spec.ordinal());
