@@ -340,7 +340,7 @@ public final class KafkaEventEngine implements EventEngine {
                 publishedTotal.get(),
                 publishFailedTotal.get(),
                 loop.processedTotal(),
-                loop.failedTotal(),       // handler failures (manual-commit mode)
+                loop.failedTotal(),       // framed-event handler failures (manual-commit mode)
                 0,                        // local queue depth — Kafka-driven
                 spiConfig.queueCapacity(),
                 0L,                       // no local dispatch latency tracked
@@ -695,6 +695,11 @@ public final class KafkaEventEngine implements EventEngine {
 
         @Override
         public void start() {
+            Thread previous = loopThread.get();
+            if (previous != null && previous.isAlive() && !running.get()) {
+                // A stop issued from the loop thread returns before the loop has closed its consumer.
+                throw new IllegalStateException("the consumer loop is still stopping");
+            }
             if (!running.compareAndSet(false, true)) {
                 return;
             }
@@ -847,15 +852,8 @@ public final class KafkaEventEngine implements EventEngine {
         }
 
         private void handleBatch(ConsumerRecords<byte[], byte[]> batch) throws InterruptedException {
-            try {
-                for (ConsumerRecord<byte[], byte[]> consumerRecord : batch) {
-                    dispatch(consumerRecord);
-                }
-            } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — counted, then rethrown unchanged
-                if (manualCommit && !stopping.get()) {
-                    failedTotal.incrementAndGet();
-                }
-                throw ex;
+            for (ConsumerRecord<byte[], byte[]> consumerRecord : batch) {
+                dispatch(consumerRecord);
             }
         }
 
@@ -1049,7 +1047,14 @@ public final class KafkaEventEngine implements EventEngine {
                     KafkaHeapEventPayload.wrap(KafkaEventCodec.decodePayloadSegment(frame));
             if (manualCommit) {
                 // On this thread, so the commit that follows the batch cannot precede a handler.
-                localDelegate.publishAndAwait(descriptor, payload);
+                try {
+                    localDelegate.publishAndAwait(descriptor, payload);
+                } catch (EventBusException ex) {
+                    // An event whose handler failed: the one thing EventEngineStats.failedTotal
+                    // counts. A raw record is not an event, so a raw handler's failure is not here.
+                    failedTotal.incrementAndGet();
+                    throw ex;
+                }
             } else {
                 localDelegate.publish(descriptor, payload);
             }

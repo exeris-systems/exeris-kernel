@@ -16,8 +16,13 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  *       concurrently with itself or with any other handler of the engine;</li>
  *   <li>it must not block for long: it holds up polling, and a handler that runs past
  *       {@code max.poll.interval.ms} gets the consumer evicted from its group;</li>
- *   <li>an exception thrown from it ends the consumer loop without committing the batch (see
- *       {@link KafkaEventEngine#loopFailure()});</li>
+ *   <li>an exception thrown from it ends the consumer loop (see
+ *       {@link KafkaEventEngine#loopFailure()}). In manual-commit mode the batch is not committed
+ *       and the record is delivered again to the next consumer of the group. In auto-commit mode
+ *       the Kafka client commits consumed positions on its own schedule and when the consumer
+ *       closes, so the failing batch is committed all the same: that mode is at-most-once;</li>
+ *   <li>its failures are not counted in {@code EventEngineStats.failedTotal}, which counts events,
+ *       and its records are not counted in {@code processedTotal};</li>
  *   <li>the kernel's {@code ScopedValue} bindings are not present on that thread.</li>
  * </ul>
  *
