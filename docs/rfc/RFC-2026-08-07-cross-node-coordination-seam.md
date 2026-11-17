@@ -117,6 +117,14 @@ free monotonic fencing token, unused. The consumer is a private static class ins
 with no seam. And the group id is taken raw with no per-node suffix and no separate coordination group,
 so a driver reusing it would entangle leadership with event delivery.
 
+> **Note (2026-11-17, 0.13.2).** The paragraph above is the repository as of 2026-08-07 and stays as
+> written. From 0.13.2 the Kafka engine exposes rebalance hooks: `KafkaEventEngine.records().rebalanceListener(...)`
+> takes a `ConsumerRebalanceListener`, called on the consumer loop thread, and the loop reads
+> `consumer.assignment()` to replay the current assignment to a listener set late. They are an
+> observation surface for state a partition owns, not the coordination seam this RFC discusses: the
+> kernel commits nothing on revoke, the group id is still taken raw, and
+> `ConsumerGroupMetadata.generationId()` is still unused.
+
 There is a sharper observation buried here: because all instances share one group and `subscribe()`,
 Kafka's competing-consumer semantics mean a record reaches **one** instance, not five. That is
 simultaneously a caveat on the ROADMAP's "cross-node fan-out" phrasing and the strongest exclusivity

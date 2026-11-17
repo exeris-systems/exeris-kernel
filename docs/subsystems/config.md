@@ -303,12 +303,14 @@ not listed here.
 > dozen real, code-read keys this table does not list — most of `http.*` (`h2cUpgradeEnabled`,
 > `maxHeaderBlockSize`, `maxResponseBodyBytes`, …), most of
 > `persistence.*` (`perTenantPooling`, `rlsEnabled`,
-> `useTls`, `maxTenantPools`, `minIdleConnections`, `pool.warmup.*`, …), `event.*`, `flow.*`, `graph.*`, `scheduling.schedulerName`,
+> `useTls`, `maxTenantPools`, `minIdleConnections`, `pool.warmup.*`, …), most of `event.*`
+> (`event.engineName`, `event.queueCapacity`, `event.outboxEnabled`, …), `flow.*`, `graph.*`, `scheduling.schedulerName`,
 > `transport.auto.{minReactors,maxReactors,reserveCores}`, and the plain `network.certPath` /
 > `network.keyPath` pair `transport.certPath` / `transport.keyPath` fall back to. Each of those
 > subsystems is its own `docs/subsystems/*.md`; this table catalogues the keys that live in or
-> map onto `KernelSettings` plus the boundary-crossing transport/websocket knobs, not a complete
-> inventory of every key any subsystem reads.
+> map onto `KernelSettings` plus the boundary-crossing transport/websocket knobs and a number of
+> subsystem keys added since (security, `event.durableLogEnabled`, the Kafka driver's `events.kafka.*`),
+> not a complete inventory of every key any subsystem reads.
 
 > **Key name convention:** Keys are specified in the `ConfigProvider` API format (e.g. `network.port`).
 > A typical community configuration provider maps these to system properties by prepending `exeris.` (e.g.
@@ -380,6 +382,18 @@ not listed here.
 | `security.jwks.uri`                                | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | The JWKS document the Community `SecurityProvider` verifies tokens against: an absolute `http` or `https` URI with a host, fetched on first use and rotated under `KeyRotationPolicy.defaults()` ([security.md](security.md#token-verification-keys-from-configuration)). Set together with `security.jwt.issuer` and `security.jwt.audience`, or none of the three: any other combination fails the boot with `EX-BOOT-0002` naming the missing key. Unset, the Community provider holds no key and denies every token. Read only when the Community provider is the one selected |
 | `security.jwt.issuer`                              | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | The `iss` claim a token must present to the Community `SecurityProvider`; set with `security.jwks.uri` |
 | `security.jwt.audience`                            | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | The `aud` claim a token must present to the Community `SecurityProvider`; set with `security.jwks.uri` |
+| `event.durableLogEnabled`                          | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Whether the Community `events` subsystem depends on `persistence` and binds the JDBC durable event log (`EVENT_STREAM_APPENDER` / `EVENT_STREAM_READER`, ADR-049). `false` removes the dependency, so selecting `events` no longer boots persistence, and leaves both slots unbound even when persistence boots for another reason. Read once, when the Community subsystem set is built. A value other than `true` or `false` (case and surrounding blanks ignored) fails the `events` subsystem's `initialize()` with a `SubsystemException` naming the key. Since 0.13.2 ([bootstrap.md](bootstrap.md#the-holy-order-of-initialization)) |
+| `events.kafka.bootstrap-servers`                   | `string`  | *(none)*            | ❌ IMMUTABLE | ✅ WIRED    | Kafka `bootstrap.servers` of the Kafka events driver (`exeris-kernel-community-kafka`). **Required** when `KafkaEventProvider` creates the engine; missing, the creation fails with `EX-EVENT-6004`. The `events.kafka.*` keys are read only by that provider, when it is the one selected ([events.md](events.md#kafka-consumer-loop-commit-modes-shutdown-and-raw-records)) |
+| `events.kafka.group-id`                            | `string`  | *(none)*            | ❌ IMMUTABLE | ✅ WIRED    | Consumer group id of the engine's consumer loop. **Required**; missing, `EX-EVENT-6004` |
+| `events.kafka.topic-prefix`                        | `string`  | `""`                | ❌ IMMUTABLE | ✅ WIRED    | Prepended to each event type's topic and to the event-log topic. Not applied to raw record topics |
+| `events.kafka.require-all-acks`                    | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | `acks=all` when `true`, `acks=1` when `false` |
+| `events.kafka.producer-linger-ms`                  | `long`    | `5`                 | ❌ IMMUTABLE | ✅ WIRED    | Producer `linger.ms`; a negative value fails the creation with `EX-EVENT-6004` |
+| `events.kafka.consumer-poll-timeout-ms`            | `long`    | `250`               | ❌ IMMUTABLE | ✅ WIRED    | How long each `poll` may block, and so how soon the loop sees a stop; must be positive (`EX-EVENT-6004`) |
+| `events.kafka.producer-properties-file`            | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | Path of a `.properties` file of Kafka producer properties, applied after the binding's own so an entry wins over them. A missing or unreadable file, or an entry for `bootstrap.servers`, `transactional.id`, `key.serializer` or `value.serializer`, fails the creation with `EX-EVENT-6004`. Classes it names are outside the kernel's native-image metadata (ADR-103 amendment 2026-11-17). Since 0.13.2 |
+| `events.kafka.consumer-properties-file`            | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | The same for the engine's consumer; refused entries are `bootstrap.servers`, `transactional.id`, `group.id`, `key.deserializer` and `value.deserializer`. `enable.auto.commit=false` here selects the manual-commit mode. The event-log scan consumer takes no overrides. Since 0.13.2 |
+| `events.kafka.client-id`                           | `string`  | unset               | ❌ IMMUTABLE | ✅ WIRED    | Kafka `client.id` for both clients; a `client.id` in a properties file wins over it. Since 0.13.2 |
+| `events.kafka.consumer-loop-thread`                | `string`  | `virtual`           | ❌ IMMUTABLE | ✅ WIRED    | `virtual` or `platform` (a daemon platform thread), case ignored; any other value fails the creation with `EX-EVENT-6004`. Since 0.13.2 |
+| `events.kafka.close-timeout-ms`                    | `long`    | `30000`             | ❌ IMMUTABLE | ✅ WIRED    | Bound on each blocking step of an engine shutdown (final commit, consumer close, producer close); `close()` and `EventLoop.stop()` wait up to twice this plus one poll timeout plus one second. Must be positive (`EX-EVENT-6004`). Since 0.13.2 |
 | `persistence.connectionTimeoutMs`                  | `long`    | `250`               | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool acquisition timeout; a value below `250` is refused at engine construction (`PersistenceConfig.connectionTimeoutMs`) |
 | `persistence.idleTimeoutMs`                        | `long`    | `600000`            | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool idle connection timeout (`PersistenceConfig.idleTimeoutMs`) |
 | `persistence.maxLifetimeMs`                        | `long`    | `1800000`           | ❌ IMMUTABLE | ✅ WIRED    | JDBC pool connection maximum lifetime (`PersistenceConfig.maxLifetimeMs`). The pool keepalive (30 s) and validation timeout (5 s) are fixed in `CommunityHikariSupport`, not keys |
