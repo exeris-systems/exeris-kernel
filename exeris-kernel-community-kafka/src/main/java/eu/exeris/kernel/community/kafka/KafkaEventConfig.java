@@ -82,7 +82,7 @@ public record KafkaEventConfig(
     /** Empty topic prefix — events publish under the bare event-type name. */
     public static final String EMPTY_TOPIC_PREFIX = "";
 
-    /** Default {@link #closeTimeout()} in milliseconds. @since 0.13.2 */
+    /** Default {@link #closeTimeout()} in milliseconds. @since 0.13 */
     public static final long DEFAULT_CLOSE_TIMEOUT_MS = 30_000L;
 
     private static final Set<String> SHARED_FORBIDDEN =
@@ -234,7 +234,7 @@ public record KafkaEventConfig(
      *
      * @param newCloseTimeout the bound on each blocking step of a shutdown; must be positive
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withCloseTimeout(Duration newCloseTimeout) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,

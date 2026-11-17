@@ -68,7 +68,7 @@ public final class KafkaEventProvider implements EventProvider {
     private static final String CFG_CLIENT_ID           = "events.kafka.client-id";
     /** Optional consumer-loop thread kind, {@code virtual} (default) or {@code platform}. @since 0.13 */
     private static final String CFG_LOOP_THREAD         = "events.kafka.consumer-loop-thread";
-    /** Optional bound on each blocking shutdown step, in milliseconds. @since 0.13.2 */
+    /** Optional bound on each blocking shutdown step, in milliseconds. @since 0.13 */
     private static final String CFG_CLOSE_TIMEOUT_MS    = "events.kafka.close-timeout-ms";
 
     /**
