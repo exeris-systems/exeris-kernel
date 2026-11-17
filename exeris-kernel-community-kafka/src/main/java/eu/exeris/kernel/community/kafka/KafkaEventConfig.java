@@ -70,7 +70,7 @@ public record KafkaEventConfig(
     /**
      * The kind of thread the consumer loop runs on.
      *
-     * @since 0.13.2
+     * @since 0.13
      */
     public enum LoopThread {
         /** A virtual thread (the default). */
@@ -182,7 +182,7 @@ public record KafkaEventConfig(
      *
      * @param overrides producer properties; validated and copied
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withProducerOverrides(Map<String, String> overrides) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
@@ -195,7 +195,7 @@ public record KafkaEventConfig(
      *
      * @param overrides consumer properties; validated and copied
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withConsumerOverrides(Map<String, String> overrides) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
@@ -208,7 +208,7 @@ public record KafkaEventConfig(
      *
      * @param newClientId the client id; empty means not set
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withClientId(String newClientId) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
@@ -221,7 +221,7 @@ public record KafkaEventConfig(
      *
      * @param newLoopThread the thread kind
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withLoopThread(LoopThread newLoopThread) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
