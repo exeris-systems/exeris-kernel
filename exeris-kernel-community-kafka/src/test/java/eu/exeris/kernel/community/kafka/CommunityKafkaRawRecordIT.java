@@ -66,7 +66,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Tagged {@code @Tag("integration")}; it runs only in the Kafka integration gate.
  *
- * @since 0.13.2
+ * @since 0.13
  */
 @Tag("integration")
 @Testcontainers(disabledWithoutDocker = true)
