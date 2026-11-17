@@ -246,6 +246,10 @@ public final class KafkaEventEngine implements EventEngine {
         props.put("value.serializer",   ByteArraySerializer.class.getName());
         props.put("acks",               cfg.requireAllAcks() ? "all" : "1");
         props.put("linger.ms",          Long.toString(cfg.producerLingerMs()));
+        if (!cfg.clientId().isEmpty()) {
+            props.put("client.id", cfg.clientId());
+        }
+        props.putAll(cfg.producerOverrides());
         return props;
     }
 
@@ -263,6 +267,10 @@ public final class KafkaEventEngine implements EventEngine {
         props.put("value.deserializer", ByteArrayDeserializer.class.getName());
         props.put("enable.auto.commit", "true");
         props.put("auto.offset.reset",  "earliest");
+        if (!config.clientId().isEmpty()) {
+            props.put("client.id", config.clientId());
+        }
+        props.putAll(config.consumerOverrides());
         return props;
     }
 
@@ -536,9 +544,10 @@ public final class KafkaEventEngine implements EventEngine {
             if (!running.compareAndSet(false, true)) {
                 return;
             }
-            Thread thread = Thread.ofVirtual()
-                    .name("exeris-kafka-consumer-" + config.consumerGroupId())
-                    .start(this::run);
+            String threadName = "exeris-kafka-consumer-" + config.consumerGroupId();
+            Thread thread = config.loopThread() == KafkaEventConfig.LoopThread.PLATFORM
+                    ? Thread.ofPlatform().name(threadName).daemon(true).start(this::run)
+                    : Thread.ofVirtual().name(threadName).start(this::run);
             loopThread.set(thread);
         }
 

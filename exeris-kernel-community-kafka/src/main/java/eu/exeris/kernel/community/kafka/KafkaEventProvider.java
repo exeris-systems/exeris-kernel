@@ -11,8 +11,17 @@ import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.exceptions.events.EventProviderException;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 
 /**
  * {@link EventProvider} implementation for the Community Kafka binding.
@@ -50,6 +59,14 @@ public final class KafkaEventProvider implements EventProvider {
     private static final String CFG_REQUIRE_ALL_ACKS   = "events.kafka.require-all-acks";
     private static final String CFG_LINGER_MS          = "events.kafka.producer-linger-ms";
     private static final String CFG_POLL_TIMEOUT_MS    = "events.kafka.consumer-poll-timeout-ms";
+    /** Optional path of a {@code .properties} file of Kafka producer overrides. @since 0.13.2 */
+    private static final String CFG_PRODUCER_PROPS_FILE = "events.kafka.producer-properties-file";
+    /** Optional path of a {@code .properties} file of Kafka consumer overrides. @since 0.13.2 */
+    private static final String CFG_CONSUMER_PROPS_FILE = "events.kafka.consumer-properties-file";
+    /** Optional Kafka {@code client.id} for both clients. @since 0.13.2 */
+    private static final String CFG_CLIENT_ID           = "events.kafka.client-id";
+    /** Optional consumer-loop thread kind, {@code virtual} (default) or {@code platform}. @since 0.13.2 */
+    private static final String CFG_LOOP_THREAD         = "events.kafka.consumer-loop-thread";
 
     /**
      * Instantiated reflectively by {@code ServiceLoader} through this module's
@@ -100,7 +117,7 @@ public final class KafkaEventProvider implements EventProvider {
         return new KafkaEventEngine(spi, kafka);
     }
 
-    private static KafkaEventConfig readKafkaConfig() {
+    /* default */ static KafkaEventConfig readKafkaConfig() {
         if (!KernelProviders.CURRENT_CONFIG.isBound()) {
             throw EventProviderException.creationFailure(PROVIDER_NAME,
                     "ConfigProvider not bound; bind KernelProviders.CURRENT_CONFIG before "
@@ -118,12 +135,60 @@ public final class KafkaEventProvider implements EventProvider {
         boolean requireAllAcks = cfg.getBoolean(CFG_REQUIRE_ALL_ACKS).orElse(true);
         long lingerMs = cfg.getLong(CFG_LINGER_MS).orElse(5L);
         long pollTimeoutMs = cfg.getLong(CFG_POLL_TIMEOUT_MS).orElse(250L);
-        return new KafkaEventConfig(
-                bootstrapServers,
-                groupId,
-                topicPrefix,
-                requireAllAcks,
-                lingerMs,
-                Duration.ofMillis(pollTimeoutMs));
+        Map<String, String> producerOverrides = cfg.getString(CFG_PRODUCER_PROPS_FILE)
+                .map(f -> loadOverrides(Path.of(f))).orElse(Map.of());
+        Map<String, String> consumerOverrides = cfg.getString(CFG_CONSUMER_PROPS_FILE)
+                .map(f -> loadOverrides(Path.of(f))).orElse(Map.of());
+        String clientId = cfg.getString(CFG_CLIENT_ID).orElse("");
+        KafkaEventConfig.LoopThread loopThread = parseLoopThread(
+                cfg.getString(CFG_LOOP_THREAD).orElse("virtual"));
+        try {
+            return new KafkaEventConfig(
+                    bootstrapServers,
+                    groupId,
+                    topicPrefix,
+                    requireAllAcks,
+                    lingerMs,
+                    Duration.ofMillis(pollTimeoutMs),
+                    producerOverrides,
+                    consumerOverrides,
+                    clientId,
+                    loopThread);
+        } catch (IllegalArgumentException e) {
+            throw EventProviderException.creationFailure(PROVIDER_NAME, e.getMessage(), e);
+        }
+    }
+
+    private static KafkaEventConfig.LoopThread parseLoopThread(String value) {
+        return switch (value.strip().toLowerCase(Locale.ROOT)) {
+            case "virtual" -> KafkaEventConfig.LoopThread.VIRTUAL;
+            case "platform" -> KafkaEventConfig.LoopThread.PLATFORM;
+            default -> throw EventProviderException.creationFailure(PROVIDER_NAME,
+                    "invalid config '" + CFG_LOOP_THREAD + "': expected 'virtual' or 'platform'",
+                    null);
+        };
+    }
+
+    /**
+     * Loads a {@code .properties} file of Kafka client overrides.
+     *
+     * @param file the properties file
+     * @return the file's entries as an immutable map
+     * @throws EventProviderException when the file is missing or unreadable
+     * @since 0.13.2
+     */
+    /* default */ static Map<String, String> loadOverrides(Path file) {
+        Properties props = new Properties();
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            props.load(reader);
+        } catch (IOException e) {
+            throw EventProviderException.creationFailure(PROVIDER_NAME,
+                    "cannot read Kafka properties file '" + file + '\'', e);
+        }
+        Map<String, String> out = new HashMap<>();
+        for (String name : props.stringPropertyNames()) {
+            out.put(name, props.getProperty(name));
+        }
+        return Map.copyOf(out);
     }
 }
