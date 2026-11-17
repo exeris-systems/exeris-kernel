@@ -514,8 +514,10 @@ class ContractBootstrapStepTest {
              URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
             recording.enable("eu.exeris.kernel.contract.Resolved");
             recording.start();
-            assertThatThrownBy(() -> ContractBootstrapStep.run(
-                    config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, outside.toString())), empty, resolver))
+            ConfigProvider config = config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, outside.toString()));
+            // At NOW, so the refusal stays the scope one whatever order the verifier checks in.
+            assertThatThrownBy(() -> ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt(NOW.toString()))
+                    .run(() -> ContractBootstrapStep.run(config, empty, resolver)))
                     .isInstanceOfSatisfying(ContractBreachException.class,
                             breach -> assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0009));
             recording.stop();
