@@ -46,6 +46,25 @@ last-verified: 2026-09-05
   - *How fixes land during RC.* On `development/1.0.0` through ordinary pull requests, and onto
     `main` in the next candidate's `release(1.0.0-RC(n+1))` pull request. The 1.0 line is not done
     until `v1.0.0`, so the rule against reusing an integrated branch does not apply to it.
+- **Patch releases.** A fix that must reach consumers of a released `X.Y.Z` before the active line
+  is released ships as `X.Y.(Z+1)` from a line of its own. The integration is the milestone's, step
+  for step; four points differ.
+  - *Opening.* `development/X.Y.(Z+1)` is cut from `main`, which carries `vX.Y.Z` and whatever has
+    merged into it since. One pull request into the new line moves all 13 reactor coordinates to
+    `X.Y.(Z+1)-SNAPSHOT`.
+  - *Base.* The resolver above still returns the newest line, so it does not find the patch line. A
+    pull request meant for the patch names `development/X.Y.(Z+1)` as its base explicitly.
+  - *Cut, integration, tag.* As for a milestone: a pull request into the patch line flips the
+    coordinates to `X.Y.(Z+1)`, dates the CHANGELOG section and adds
+    `docs/release/vX.Y.(Z+1)-release-notes.md`. Then a `release(X.Y.(Z+1))` pull request goes from
+    the patch line into `main`, and the tag `vX.Y.(Z+1)` goes on the resulting commit on `main`.
+  - *After the tag.* `main` is merged up into the active development line. The reactor poms
+    conflict on their `<version>` element only, and keep that line's `-SNAPSHOT`. The up-merge
+    pull request is merged with a merge commit, not squashed, so the next up-merge starts from
+    zero.
+
+  API added in a patch release carries `@since X.Y` (javadoc-conventions rule 4: `major.minor`
+  only).
 - **ADR and RFC numbers are a GLOBAL namespace across the Exeris ecosystem.** Reserve the number in
   the registry **before** writing content — use the `exeris-adr-register` skill. The ADR-026
   collision in PR #129 is the cautionary tale. Filenames are kebab-case `ADR-0NN-short-title.md`;
