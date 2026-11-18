@@ -700,7 +700,7 @@ public final class KafkaEventEngine implements EventEngine {
             Thread previous = loopThread.get();
             if (previous != null && previous.isAlive() && !running.get()) {
                 // A stop issued from the loop thread returns before the loop has closed its consumer.
-                throw new IllegalStateException("the consumer loop is still stopping");
+                throw new EventEngineException("the consumer loop is still stopping");
             }
             if (!running.compareAndSet(false, true)) {
                 return;
@@ -1059,7 +1059,9 @@ public final class KafkaEventEngine implements EventEngine {
                     localDelegate.publishAndAwait(descriptor, payload);
                 } catch (EventBusException ex) {
                     // An event whose handler failed: the one thing EventEngineStats.failedTotal
-                    // counts. A raw record is not an event, so a raw handler's failure is not here.
+                    // counts, and the only EventBusException the in-memory delegate raises from
+                    // publishAndAwait. A raw record is not an event, so a raw handler's failure is
+                    // not here.
                     failedTotal.incrementAndGet();
                     throw ex;
                 }

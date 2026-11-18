@@ -9,7 +9,9 @@ import eu.exeris.kernel.community.kafka.KafkaLoopTestSupport.RecordingConsumer;
 import eu.exeris.kernel.community.kafka.KafkaLoopTestSupport.RecordingProducer;
 import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventHandler;
+import eu.exeris.kernel.spi.events.EventLoop;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -154,6 +156,34 @@ class KafkaCloseOrderTest {
 
             assertThat(log.contains("producer.close")).as("the producer is closed regardless").isTrue();
             assertThat(engine.loopFailure()).as("an escalation interrupt is not a failure").isEmpty();
+        } finally {
+            gate.countDown();
+        }
+    }
+
+    @Test
+    @DisplayName("start() is refused with EX-EVENT-6001 while a loop stopped from its own thread is still closing")
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void startWhileTheLoopIsStillStoppingIsRefused() {
+        build(true, Duration.ofSeconds(5), null);
+        CountDownLatch gate = new CountDownLatch(1);
+        consumer.holdCloseUntil(gate);
+        EventLoop loop = engine.loop();
+        // A stop from the loop thread only signals: it returns before the consumer is closed.
+        consumer.onNextPoll(loop::stop);
+        engine.start();
+
+        try {
+            assertThat(KafkaLoopTestSupport.await(() -> log.contains("consumer.close"), WAIT))
+                    .as("the loop reached the held consumer close").isTrue();
+            assertThat(loop.isRunning()).isFalse();
+
+            assertThatThrownBy(loop::start)
+                    .isInstanceOf(EventEngineException.class)
+                    .hasMessageContaining("still stopping")
+                    .extracting(e -> ((EventEngineException) e).errorCode())
+                    .isEqualTo("EX-EVENT-6001");
+            assertThat(loop.isRunning()).as("the refused start changed nothing").isFalse();
         } finally {
             gate.countDown();
         }
