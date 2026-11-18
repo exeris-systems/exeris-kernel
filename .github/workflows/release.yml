@@ -274,7 +274,9 @@ jobs:
         # has already verified that each one is a good signature by our key.
         run: |
           set -euo pipefail
-          find . -path ./.git -prune -o \( -name '*.jar' -o -name '*.pom' -o -name 'bom.json' \) -print \
+          find . -path ./.git -prune -o -path '*/target/central-staging' -prune \
+            -o -path '*/target/central-publishing' -prune \
+            -o \( -name '*.jar' -o -name '*.pom' -o -name 'bom.json' \) -print \
             | grep '/target/' | sort | xargs sha256sum > "${RUNNER_TEMP}/gated.sha256"
           echo "recorded $(wc -l < "${RUNNER_TEMP}/gated.sha256") artifact digests"
 
@@ -335,12 +337,29 @@ jobs:
         # in the portal rather than published.
         run: |
           set -euo pipefail
-          find . -path ./.git -prune -o \( -name '*.jar' -o -name '*.pom' -o -name 'bom.json' \) -print \
+          find . -path ./.git -prune -o -path '*/target/central-staging' -prune \
+            -o -path '*/target/central-publishing' -prune \
+            -o \( -name '*.jar' -o -name '*.pom' -o -name 'bom.json' \) -print \
             | grep '/target/' | sort | xargs sha256sum > "${RUNNER_TEMP}/uploaded.sha256"
           if ! diff -u "${RUNNER_TEMP}/gated.sha256" "${RUNNER_TEMP}/uploaded.sha256"; then
             echo "::error::The deploying build produced different artifacts than the gated build." >&2
             echo "::error::DROP the deployment in the Central portal. Do not publish it." >&2
             exit 1
+          fi
+          # The publishing plugin copies each artifact into its staging directory and bundles that
+          # copy, so the bundle is what Central received: every staged jar and pom must carry the
+          # digest the gated build recorded for a file of the same name.
+          if [ -d target/central-staging ]; then
+            staged=0
+            while read -r digest path; do
+              staged=$((staged + 1))
+              if ! grep -q "^${digest}  .*/$(basename "${path}")$" "${RUNNER_TEMP}/gated.sha256"; then
+                echo "::error::Staged ${path} matches no gated artifact of that name." >&2
+                echo "::error::DROP the deployment in the Central portal. Do not publish it." >&2
+                exit 1
+              fi
+            done < <(find target/central-staging \( -name '*.jar' -o -name '*.pom' \) -exec sha256sum {} +)
+            echo "all ${staged} staged artifacts carry a gated digest"
           fi
           echo "every gated artifact is byte-identical to the uploaded one"
 
