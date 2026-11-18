@@ -1,17 +1,17 @@
 [ {
-  "t" : 1793356489462,
+  "t" : 1795027276089,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 261544,
+  "size" : 261568,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:1052)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1793356489462,
+  "t" : 1795027276089,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "thread" : "main",
@@ -23,43 +23,43 @@
   "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:1052)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1793356490921,
+  "t" : 1795027301094,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
   "thread" : "main",
   "threadId" : 3,
   "size" : 261552,
   "sizeKind" : "sample_weight",
-  "kind" : "exeris",
+  "kind" : "jdk",
   "category" : "production",
-  "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
+  "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket.offerIfBelow(CommunityArenaShardPool$Bucket.java:267)",
   "stackId" : "stk_0002"
 }, {
-  "t" : 1793356490921,
+  "t" : 1795027301094,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
   "thread" : "main",
   "threadId" : 3,
   "size" : 262144,
   "sizeKind" : "tlab_size",
-  "kind" : "exeris",
+  "kind" : "jdk",
   "category" : "production",
-  "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
+  "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket.offerIfBelow(CommunityArenaShardPool$Bucket.java:267)",
   "stackId" : "stk_0002"
 }, {
-  "t" : 1793356500404,
+  "t" : 1795027301600,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 245152,
+  "size" : 261560,
   "sizeKind" : "sample_weight",
   "kind" : "jdk",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket.offerIfBelow(CommunityArenaShardPool$Bucket.java:267)",
-  "stackId" : "stk_0003"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1793356500404,
+  "t" : 1795027301600,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
   "thread" : "main",
@@ -69,5 +69,5 @@
   "kind" : "jdk",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket.offerIfBelow(CommunityArenaShardPool$Bucket.java:267)",
-  "stackId" : "stk_0003"
+  "stackId" : "stk_0002"
 } ]
