@@ -398,17 +398,17 @@ Implementation is planned for 0.13 (wave W2). Until it lands, none of the behavi
 - **2026-11-17 — Two factual corrections; no ruling changes.**
   - **`kafka-clients` version.** *Risks and Assumptions* says the binding uses `kafka-clients` 4.0.x.
     When this ADR was accepted the BOM already managed 4.3.1 (the 0.12.0 changelog records the bump),
-    and from 0.13.2 it manages 4.4.0. The assumption it supports, record headers carried end to end,
-    is unaffected.
+    and it still does. The assumption it supports, record headers carried end to end, is unaffected.
   - **Consume-side semantics.** *What is NOT in scope* describes the Kafka binding's consumer as
     `enable.auto.commit=true`, at-most-once. From 0.13.2 that is the default of two modes: with
     `enable.auto.commit=false` in the consumer overrides the loop delivers each record with
     `publishAndAwait` on its own thread and commits after every handled batch, at-least-once on
     consumption. Consume-side semantics remain outside this ADR, and the 0.13.2 raw record channel
     bypasses the bus and with it Ruling 1's isolation scoping, as `docs/subsystems/events.md` states.
-- **2026-11-18 — The 2026-11-17 entry corrected.** Its `kafka-clients` sentence said the BOM managed
-  4.3.1 "and it still does". 0.13.2 moves the BOM to 4.4.0, and the sentence now says so. No ruling
-  changes.
+- **2026-11-18 — Correction to the 2026-11-17 entry; no ruling changes.** That entry says the BOM
+  managed `kafka-clients` 4.3.1 when this ADR was accepted "and it still does". The first half holds.
+  The second does not hold for 0.13.2, which moves the BOM to 4.4.0. The 2026-11-17 entry is left as
+  written.
 
 ## Engineering Protocol
 
