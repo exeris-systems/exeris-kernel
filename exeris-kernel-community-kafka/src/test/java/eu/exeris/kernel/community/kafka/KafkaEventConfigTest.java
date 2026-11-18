@@ -30,7 +30,9 @@ class KafkaEventConfigTest {
             "transactional.id"})
     @DisplayName("forbidden producer override keys are rejected by name")
     void producerForbiddenKeys(String key) {
-        assertThatThrownBy(() -> BASE.withProducerOverrides(Map.of(key, "x")))
+        Map<String, String> overrides = Map.of(key, "x");
+
+        assertThatThrownBy(() -> BASE.withProducerOverrides(overrides))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining(key);
     }
@@ -40,7 +42,9 @@ class KafkaEventConfigTest {
             "group.id", "transactional.id"})
     @DisplayName("forbidden consumer override keys are rejected by name")
     void consumerForbiddenKeys(String key) {
-        assertThatThrownBy(() -> BASE.withConsumerOverrides(Map.of(key, "x")))
+        Map<String, String> overrides = Map.of(key, "x");
+
+        assertThatThrownBy(() -> BASE.withConsumerOverrides(overrides))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining(key);
     }
@@ -62,7 +66,8 @@ class KafkaEventConfigTest {
         source.put("linger.ms", "1");
 
         assertThat(cfg.producerOverrides()).containsOnlyKeys("acks");
-        assertThatThrownBy(() -> cfg.producerOverrides().put("x", "y"))
+        Map<String, String> copied = cfg.producerOverrides();
+        assertThatThrownBy(() -> copied.put("x", "y"))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
