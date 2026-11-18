@@ -347,6 +347,11 @@ topics whose records carry no Exeris header. It exposes `kafka-clients` types an
   loop thread. A listener set after partitions were assigned gets `onPartitionsAssigned` once with the
   current assignment. The hooks are an observation surface for state a partition owns, not a
   coordination mechanism: the kernel commits nothing when partitions are revoked.
+- `afterPoll(Runnable)` sets a hook the loop runs on its own thread after every poll, including a poll
+  that returned no record. It runs after the raw handlers of the batch and before the batch is
+  committed, so it never overlaps a raw handler or a rebalance listener method; it is the place for
+  periodic work on state those own. An exception from it ends the loop, and in manual mode the batch
+  is then not committed. A loop with no subscribed topic does not poll, so the hook does not run.
 - `send(ProducerRecord, Callback)` hands the record to the engine's producer as given, with no Exeris
   or isolation header. An asynchronous failure is counted in `sendFailedTotal()`, not in
   `EventEngineStats.publishFailedTotal()`, and sets the latch described above.
@@ -364,6 +369,10 @@ one another, and in offset order per partition (not across partitions), in both 
 consumed positions when the consumer closes, so the failing batch is committed all the same: that mode
 stays at-most-once for raw records too. With no raw subscription the engine behaves as without the
 channel.
+
+`KafkaEventEngine.commitFailedTotal()` counts the per-batch asynchronous commits the broker did not
+accept, in manual mode. Such a failure does not end the loop: a later commit covers the same
+positions, and until one succeeds a restart redelivers from the last committed offset.
 
 ### Multi-node substrate inventory
 
