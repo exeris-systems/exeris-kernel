@@ -331,7 +331,9 @@ close are each bounded by `closeTimeout` (`events.kafka.close-timeout-ms`, 30 s 
 is not. `close()` and `EventLoop.stop()` wait for the loop thread for up to twice `closeTimeout`, plus
 one poll timeout, plus one second; a loop still running then is interrupted, and that interrupt is not
 reported as a failure. Called from the loop thread itself (a handler or a failure listener), `close()`
-does not wait, and the loop thread closes the producer when it ends. Up to 0.13.1 the loop was
+does not wait, and the loop thread closes the producer when it ends. `EventLoop.stop()` from the loop
+thread does not wait either; a `start()` issued while that loop is still closing its consumer throws
+`EventEngineException` (`EX-EVENT-6001`). Up to 0.13.1 the loop was
 interrupted at once, `stop()` waited for it at most 5 s, and the producer was closed with no time bound.
 
 **Raw record channel.** `KafkaEventEngine.records()` returns the engine's `KafkaRecordChannel`, for
