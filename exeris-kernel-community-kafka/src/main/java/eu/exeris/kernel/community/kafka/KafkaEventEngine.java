@@ -106,7 +106,9 @@ import java.util.function.Function;
  * <h2>Shutdown</h2>
  * <p>{@link #close()} is terminal and idempotent. It stops the loop without interrupting it; the
  * loop thread then flushes the producer, commits (manual mode, no failure), and closes the consumer,
- * each bounded by {@link KafkaEventConfig#closeTimeout()}, and the caller closes the producer last.
+ * and the caller closes the producer last. The commit and the two closes are each bounded by
+ * {@link KafkaEventConfig#closeTimeout()}; the flush is bounded only by the producer's own
+ * {@code delivery.timeout.ms}.
  * A loop that does not finish in time is interrupted as an escalation, and that is not reported as a
  * failure.
  *
