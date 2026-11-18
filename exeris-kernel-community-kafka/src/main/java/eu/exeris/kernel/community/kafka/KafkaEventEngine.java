@@ -30,6 +30,7 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -329,6 +330,19 @@ public final class KafkaEventEngine implements EventEngine {
      */
     public void onLoopFailure(java.util.function.Consumer<Throwable> listener) {
         loop.onFailure(Objects.requireNonNull(listener, "listener"));
+    }
+
+    /**
+     * Returns the number of per-batch asynchronous commits the broker did not accept. Such a failure
+     * does not end the consumer loop: a later commit covers the same positions, and until one
+     * succeeds a restart redelivers from the last committed offset. Always {@code 0} in auto-commit
+     * mode, where the Kafka client commits on its own.
+     *
+     * @return the failed asynchronous commit count
+     * @since 0.13
+     */
+    public long commitFailedTotal() {
+        return loop.commitFailedTotal();
     }
 
     // Package-private: the latch an asynchronous send failure sets, framed publish and raw send alike.
@@ -660,6 +674,14 @@ public final class KafkaEventEngine implements EventEngine {
         private final AtomicBoolean       stopping = new AtomicBoolean(false);
         private final AtomicLong          processedTotal = new AtomicLong(0L);
         private final AtomicLong          failedTotal = new AtomicLong(0L);
+        private final AtomicLong          commitFailedTotal = new AtomicLong(0L);
+        // One shared callback, so a commit allocates nothing. The client invokes it on this loop's
+        // thread, from a later poll, commit or close.
+        private final OffsetCommitCallback commitCallback = (_, exception) -> {
+            if (exception != null) {
+                commitFailedTotal.incrementAndGet();
+            }
+        };
         private final AtomicReference<Throwable> failure = new AtomicReference<>();
         private final AtomicReference<Duration> producerCloseOnExit = new AtomicReference<>();
         private final List<FailureListener> listeners = new CopyOnWriteArrayList<>();
@@ -791,6 +813,10 @@ public final class KafkaEventEngine implements EventEngine {
             return processedTotal.get();
         }
 
+        /* default */ long commitFailedTotal() {
+            return commitFailedTotal.get();
+        }
+
         // PMD.CloseResource — the consumer is closed by closeConsumer, bounded by the close timeout.
         @SuppressWarnings("PMD.CloseResource")
         private void run() {
@@ -852,9 +878,13 @@ public final class KafkaEventEngine implements EventEngine {
                 }
                 ConsumerRecords<byte[], byte[]> batch = consumer.poll(pollTimeout);
                 handleBatch(batch);
+                Runnable afterPoll = rawChannel.hooks().afterPoll();
+                if (afterPoll != null) {
+                    afterPoll.run();
+                }
                 if (manualCommit && !batch.isEmpty()) {
                     throwIfSendFailed();
-                    consumer.commitAsync();
+                    consumer.commitAsync(commitCallback);
                 }
             }
         }
@@ -990,7 +1020,7 @@ public final class KafkaEventEngine implements EventEngine {
 
             @Override
             public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-                ConsumerRebalanceListener user = rawChannel.listener();
+                ConsumerRebalanceListener user = rawChannel.hooks().rebalanceListener();
                 if (user != null) {
                     notified = user;
                     user.onPartitionsAssigned(partitions);
@@ -999,7 +1029,7 @@ public final class KafkaEventEngine implements EventEngine {
 
             @Override
             public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-                ConsumerRebalanceListener user = rawChannel.listener();
+                ConsumerRebalanceListener user = rawChannel.hooks().rebalanceListener();
                 if (user != null) {
                     user.onPartitionsRevoked(partitions);
                 }
@@ -1007,7 +1037,7 @@ public final class KafkaEventEngine implements EventEngine {
 
             @Override
             public void onPartitionsLost(Collection<TopicPartition> partitions) {
-                ConsumerRebalanceListener user = rawChannel.listener();
+                ConsumerRebalanceListener user = rawChannel.hooks().rebalanceListener();
                 if (user != null) {
                     user.onPartitionsLost(partitions);
                 }
@@ -1017,7 +1047,7 @@ public final class KafkaEventEngine implements EventEngine {
             // Identity, not equals(): a user's listener may define equals() loosely.
             @SuppressWarnings("PMD.CompareObjectsWithEquals")
             private void replayIfNeeded(Consumer<byte[], byte[]> consumer) {
-                ConsumerRebalanceListener user = rawChannel.listener();
+                ConsumerRebalanceListener user = rawChannel.hooks().rebalanceListener();
                 if (user == null || user == notified) {
                     return;
                 }

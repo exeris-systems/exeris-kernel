@@ -11,6 +11,7 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.MockConsumer;
+import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.clients.producer.MockProducer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
@@ -164,6 +165,7 @@ final class KafkaLoopTestSupport {
         private final CountDownLatch polled = new CountDownLatch(1);
         private final AtomicReference<Thread> pollThread = new AtomicReference<>();
         private volatile CountDownLatch closeGate;
+        private volatile Exception commitAsyncFailure;
         private final Set<TopicPartition> assignedPartitions = new LinkedHashSet<>();
         private volatile ConsumerRebalanceListener driverListener;
         private long nextOffset;
@@ -255,10 +257,21 @@ final class KafkaLoopTestSupport {
             return super.poll(Duration.ZERO);
         }
 
+        /** Makes the next {@code commitAsync} report {@code failure} to its callback instead of committing. */
+        void failNextCommitAsync(Exception failure) {
+            this.commitAsyncFailure = failure;
+        }
+
         @Override
-        public synchronized void commitAsync() {
+        public synchronized void commitAsync(OffsetCommitCallback callback) {
             log.add("consumer.commitAsync");
-            super.commitAsync();
+            Exception failure = commitAsyncFailure;
+            if (failure != null) {
+                commitAsyncFailure = null;
+                callback.onComplete(Map.of(), failure);
+                return;
+            }
+            super.commitAsync(callback);
         }
 
         @Override

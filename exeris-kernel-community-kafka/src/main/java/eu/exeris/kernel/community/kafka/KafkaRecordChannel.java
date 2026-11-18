@@ -53,6 +53,22 @@ public interface KafkaRecordChannel {
     void rebalanceListener(ConsumerRebalanceListener listener);
 
     /**
+     * Sets the hook the consumer loop runs after every poll, replacing any earlier one. May be called
+     * at any time, before or after {@link KafkaEventEngine#start()}. The hook runs on the consumer
+     * loop thread, after the raw record handlers of the polled batch and before the batch is
+     * committed, and it runs when the poll returned no record too. It therefore never overlaps a raw
+     * record handler or a rebalance listener method, and it suits periodic work on state those own.
+     *
+     * <p>A loop with no subscribed topic does not poll, so the hook does not run until a topic is
+     * subscribed. The hook must not block for long: it holds up polling as a handler does. An
+     * exception thrown from it ends the consumer loop (see {@link KafkaEventEngine#loopFailure()}),
+     * and in manual-commit mode the batch is then not committed.
+     *
+     * @param hook the hook, never {@code null}
+     */
+    void afterPoll(Runnable hook);
+
+    /**
      * Hands {@code producerRecord} to the engine's producer as it is: no Exeris header and no isolation header
      * is added. When the send completes exceptionally the channel counts it in
      * {@link #sendFailedTotal()} and sets the engine's send-failure latch (which, in manual-commit
