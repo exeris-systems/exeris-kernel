@@ -141,6 +141,10 @@ final class KafkaEventLog {
         return true;
     }
 
+    /**
+     * Builds the throwaway scan consumer's properties; it deliberately applies no
+     * {@code consumerOverrides} and no {@code clientId} from the config.
+     */
     /* default */ static Properties consumerProps(KafkaEventConfig config) {
         Properties props = new Properties();
         props.put("bootstrap.servers",         config.bootstrapServers());

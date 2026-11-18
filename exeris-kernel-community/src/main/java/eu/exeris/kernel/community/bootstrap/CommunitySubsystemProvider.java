@@ -35,8 +35,10 @@ public final class CommunitySubsystemProvider implements SubsystemProvider {
     /**
      * Returns every subsystem the Community tier registers with the orchestrator.
      *
-     * @param config the resolved kernel configuration; unused — the Community subsystem set is
-     *               fixed and does not vary by configuration, unlike each subsystem's own behavior
+     * @param config the resolved kernel configuration, or {@code null} for all defaults; the
+     *               Community subsystem set itself is fixed, but a subsystem whose
+     *               {@code dependsOn()} depends on a key reads it here, once — today only
+     *               {@code events}, via {@code event.durableLogEnabled}
      * @return the complete, fixed Community subsystem list
      */
     @Override
@@ -46,7 +48,7 @@ public final class CommunitySubsystemProvider implements SubsystemProvider {
                 new CommunityCryptoSubsystem(),
                 new CommunitySecuritySubsystem(),
                 new CommunityPersistenceSubsystem(),
-                new CommunityEventsSubsystem(),
+                new CommunityEventsSubsystem(config),
                 new CommunityGraphSubsystem(),
                 new CommunityTransportSubsystem(),
                 new CommunityHttpSubsystem(),

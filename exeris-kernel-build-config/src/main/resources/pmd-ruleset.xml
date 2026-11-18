@@ -26,6 +26,8 @@
     <rule ref="category/java/codestyle.xml">
         <exclude name="AtLeastOneConstructor"/>
         <exclude name="LocalVariableCouldBeFinal"/>
+        <!-- New in PMD 7.29: wants every local declared, uninitialised, at the top of its block. -->
+        <exclude name="LocalVariableDeclarationShouldBeAtStartOfBlock"/>
         <exclude name="MethodArgumentCouldBeFinal"/>
         <exclude name="OnlyOneReturn"/>
         <exclude name="TooManyStaticImports"/>

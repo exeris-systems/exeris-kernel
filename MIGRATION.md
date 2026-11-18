@@ -24,6 +24,26 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.13.1 → 0.13.2 — Kafka engine: `close()` is terminal and `stop()` waits for the consumer loop
+
+This is the step for an application that uses `exeris-kernel-community-kafka` and stops or closes the
+engine itself. An application that lets the kernel's shutdown close the engine has nothing to edit.
+
+1. **Do not start an engine again after `close()`.** `KafkaEventEngine.start()` after `close()` throws
+   `IllegalStateException`. On 0.13.1 it started a consumer loop, but `close()` had closed the producer,
+   so every publish failed. Create a new engine instead. `EventLoop.stop()` followed by `start()` on an
+   engine that was not closed is unchanged, except that a `start()` made while the loop is still
+   stopping is refused with `EX-EVENT-6001`.
+2. **Allow for a longer `stop()` and `close()`.** Both wait for the consumer loop to finish the handlers
+   in flight, flush the producer, commit in manual-commit mode and close the consumer, for up to twice
+   `closeTimeout` plus one poll timeout plus one second (61.25 s with the defaults), and interrupt the
+   loop only after that. On 0.13.1 `stop()` interrupted the loop at once and waited at most 5 s. A
+   caller that holds a deadline around `stop()` or `close()`, for example a container's termination
+   grace period, either raises the deadline or lowers `events.kafka.close-timeout-ms` (default
+   `30000`).
+
+---
+
 ## 0.12.x → 0.13 — the reference policy raises when the tenant key is absent (ADR-012 §4c.3)
 
 The kernel still publishes `exeris.tenant_id` as `''` for a context that declares no tenant and still
