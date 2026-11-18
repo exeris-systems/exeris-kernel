@@ -93,8 +93,9 @@ public record KafkaEventConfig(
             Set.of("key.deserializer", "value.deserializer", "group.id");
 
     /**
-     * Six-argument constructor kept for existing callers: no overrides, no client id, a
-     * virtual consumer-loop thread and the default close timeout.
+     * Creates a configuration with no property overrides, no client id, a virtual consumer-loop
+     * thread and the default close timeout. This is the constructor callers used before those
+     * components existed.
      *
      * @param bootstrapServers    comma-separated {@code host:port} list
      * @param consumerGroupId     consumer group id
