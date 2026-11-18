@@ -67,8 +67,9 @@ public final class NativeSmokeKafka {
         Checks checks = Checks.declare(STEP_KAFKA, "provider", CHECK_ROUNDTRIP);
 
         System.setProperty("exeris.events.kafka.bootstrap-servers", bootstrapServers);
-        System.setProperty("exeris.persistence.jdbcUrl", "jdbc:h2:mem:kfk;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
-        System.setProperty("exeris.persistence.runMigrations", "true");
+        // The Kafka engine needs no database: without this the events subsystem pulls persistence in for
+        // the JDBC durable event log alone, and persistence would open a connection pool.
+        System.setProperty("exeris.event.durableLogEnabled", "false");
         System.setProperty("exeris.events.kafka.group-id", "native-smoke-" + UUID.randomUUID());
 
         long[] bootTimeHolder = {0L};
