@@ -142,7 +142,8 @@ flowchart TD
     CRP --> TRP
     PER --> GRP
     MEM --> EVT & HTTP & WS
-    PER --> EVT & FLW
+    PER --> FLW
+    PER -.->|"unless event.durableLogEnabled=false"| EVT
 
     EVT & FLW & HTTP & WS --> RDY([KERNEL STARTED])
 
@@ -152,7 +153,9 @@ flowchart TD
     style RDY fill:#00b894,color:#000,stroke:#00b894
 ```
 
-`scheduling` declares no dependency. Being in the DAG does not make a subsystem active: `transport` stays
+`scheduling` declares no dependency. The labelled dashed edge from `persistence` to `events` is a
+declared edge too, present by default and removed by `event.durableLogEnabled=false` (since 0.13.2).
+Being in the DAG does not make a subsystem active: `transport` stays
 inert unless `transport.mode`/`network.transportMode` is set, `http` unless an HTTP mode or port is
 configured, `websocket` unless `websocket.enabled=true`, and `crypto`/`security` unless a provider is
 discovered. Such a subsystem still passes through `initialize()` and `start()`, but reports
@@ -268,9 +271,14 @@ stop:         reverse of the initialize order, running subsystems only
 ```
 
 For the Community set the initialize order is `memory, crypto, http, persistence, events, flow, graph,
-scheduling, security, storage, transport, websocket`, so the stop order is its reverse. Stop order follows
-declared `dependsOn()` edges and the name tie-break, not phases: `http` declares only `memory`, so it stops
-after `persistence`, `events`, `flow` and `transport`. A subsystem that must outlive another at shutdown has
+scheduling, security, storage, transport, websocket`, so the stop order is its reverse. That order holds
+while `events` depends on `persistence`, which is the default. With `event.durableLogEnabled=false`
+(since 0.13.2) `events` declares only `memory`; under `BootstrapSelector.all()` persistence still boots,
+but the name tie-break now puts `events` before it — `memory, crypto, events, http, persistence, flow,
+graph, …` — so `persistence` and `http` stop before `events`, and `forNames("events")` no longer pulls
+`persistence` in. The key is read once, when the Community subsystem set is built. Stop order follows
+declared `dependsOn()` edges and the name tie-break, not phases: `http` declares only `memory`, so in the
+default order it stops after `persistence`, `events`, `flow` and `transport`. A subsystem that must outlive another at shutdown has
 to declare it.
 
 > **Config** is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` (highest `priority()` wins)

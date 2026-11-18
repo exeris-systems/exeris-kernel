@@ -11,7 +11,7 @@ slug: adr/ADR-101
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-10-20)                                                |
+| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-11-18)                                                |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/events`                                                                           |
@@ -323,7 +323,8 @@ Implementation is planned for 0.13 (wave W2). Until it lands, none of the behavi
   ruling can filter on it; this ADR does not.
 - The payload codec (ADR-046), log ordering (ADR-049) and `topic` (ADR-050): unchanged.
 - Consume-side delivery semantics of the Kafka binding (`enable.auto.commit=true`, at-most-once on
-  consume), recorded in `KafkaEventEngine`'s Javadoc.
+  consume), recorded in `KafkaEventEngine`'s Javadoc. *[Amended 2026-11-17: since 0.13.2 that is the
+  default of two commit modes, see Amendments.]*
 
 ### 🚫 Non-Goals
 
@@ -334,7 +335,8 @@ Implementation is planned for 0.13 (wave W2). Until it lands, none of the behavi
 ### ⚠️ Risks and Assumptions
 
 - **Assumes:** Kafka record headers are carried end to end by the brokers and tooling in use
-  (supported since Kafka 0.11; the binding uses `kafka-clients` 4.0.x).
+  (supported since Kafka 0.11; the binding uses `kafka-clients` 4.0.x). *[Amended 2026-11-17: the
+  version is corrected under Amendments.]*
 - **Reversed by:** a deployment that cannot supply a stable key-to-ordinal mapping — which argues
   for Option 1B — or a measured need for acknowledged `publish` on the brokered bus.
 - **Risk:** a subscriber that keeps using unscoped `subscribe` for tenant data still receives every
@@ -393,6 +395,20 @@ Implementation is planned for 0.13 (wave W2). Until it lands, none of the behavi
   The publish refusal reasons `unregistered-isolation-key` and `isolation-mismatch` are recorded under
   `EX-EVENT-6009`, and the scoped-subscription refusal stays `EX-EVENT-6011` with its existing rawArgs
   layout. Migration `V0.13.0` adds the two `isolation_ordinal` columns, default `0`.
+- **2026-11-17 — Two factual corrections; no ruling changes.**
+  - **`kafka-clients` version.** *Risks and Assumptions* says the binding uses `kafka-clients` 4.0.x.
+    When this ADR was accepted the BOM already managed 4.3.1 (the 0.12.0 changelog records the bump),
+    and it still does. The assumption it supports, record headers carried end to end, is unaffected.
+  - **Consume-side semantics.** *What is NOT in scope* describes the Kafka binding's consumer as
+    `enable.auto.commit=true`, at-most-once. From 0.13.2 that is the default of two modes: with
+    `enable.auto.commit=false` in the consumer overrides the loop delivers each record with
+    `publishAndAwait` on its own thread and commits after every handled batch, at-least-once on
+    consumption. Consume-side semantics remain outside this ADR, and the 0.13.2 raw record channel
+    bypasses the bus and with it Ruling 1's isolation scoping, as `docs/subsystems/events.md` states.
+- **2026-11-18 — Correction to the 2026-11-17 entry; no ruling changes.** That entry says the BOM
+  managed `kafka-clients` 4.3.1 when this ADR was accepted "and it still does". The first half holds.
+  The second does not hold for 0.13.2, which moves the BOM to 4.4.0. The 2026-11-17 entry is left as
+  written.
 
 ## Engineering Protocol
 

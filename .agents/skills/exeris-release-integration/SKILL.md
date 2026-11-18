@@ -1,6 +1,6 @@
 ---
 name: exeris-release-integration
-description: Milestone release flow for Exeris Kernel — flip versions, write release notes, integrate development/X.Y.0 into main via a single release(x.y.z) PR, then open the next development line. Use when asked to prepare, cut, integrate, or finalize a milestone release, or to open the next development branch.
+description: Milestone release flow for Exeris Kernel — flip versions, write release notes, integrate development/X.Y.0 into main via a single release(x.y.z) PR, then open the next development line. Use when asked to prepare, cut, integrate, or finalize a milestone release, or to open the next development branch, or to cut a patch release (X.Y.Z) from a line of its own.
 ---
 
 # Exeris Release Integration
@@ -54,6 +54,13 @@ Make the recurring milestone→main integration deterministic. The flow below ma
    - Tag `v1.0.0-RCn` on the resulting commit on `main`. The release workflow accepts exactly `vMAJOR.MINOR.PATCH` and `vMAJOR.MINOR.PATCH-RC<n>` (`tools/release-tag/release-tag.sh`), requires the tag's commit to be on `main` and the root pom's version to equal the tag without its `v`, and uploads with `autoPublish=false`: the deployment is published or dropped by hand in the portal.
    - A published candidate cannot be withdrawn. A defect found in `RCn` is fixed in `RC(n+1)`; never re-tag.
    - Fixes land on `development/1.0.0` through ordinary PRs, then reach `main` in the next candidate's `release(1.0.0-RC(n+1))` PR. `v1.0.0` is the same PR with the poms at `1.0.0`.
+
+10. **Patch releases (`X.Y.Z`, `Z > 0`).** A fix that cannot wait for the active line ships from a line of its own; `.agents/policies/branch-and-release.md` (*Patch releases*) is the rule, and the steps above apply with these differences:
+   - Open `development/X.Y.Z` from `main` and move the 13 coordinates to `X.Y.Z-SNAPSHOT` in one PR into it, the same one-commit shape as step 7.
+   - Every PR for the patch names `development/X.Y.Z` as its base. The `sort -V | tail -1` resolver returns the newer active line and never this one.
+   - Steps 2–6 run unchanged against `development/X.Y.Z`. The cut PR goes into the patch line, then `release(X.Y.Z): integrate development/X.Y.Z into main`, then the tag `vX.Y.Z` on `main`.
+   - In place of step 7, merge `main` up into the active development line. Resolve the reactor poms, which conflict on `<version>` only, to that line's `-SNAPSHOT`, and merge the up-merge PR with a merge commit so `main` stays an ancestor of the line.
+   - The patch line is done after the tag; step 8 applies to it.
 
 ## Output
 Checklist status per step (DONE / SKIPPED+reason), the release PR URL, and the new development branch name.
