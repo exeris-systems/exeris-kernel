@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The engine's single {@link KafkaRecordChannel}. Its subscription map is written by application
@@ -38,7 +37,7 @@ final class KafkaRawRecordChannel implements KafkaRecordChannel {
     private final AtomicBoolean sendFailed;
     // One shared, stateless callback for a send that brings none of its own.
     private final Callback failureOnly = new FailureTracking(null);
-    private final AtomicReference<ConsumerRebalanceListener> listener = new AtomicReference<>();
+    private final KafkaLoopHooks hooks = new KafkaLoopHooks();
     private final KafkaFramedTopics framedTopics;
 
     /* default */ KafkaRawRecordChannel(KafkaEventRegistry registry, KafkaEventConfig config,
@@ -70,7 +69,12 @@ final class KafkaRawRecordChannel implements KafkaRecordChannel {
 
     @Override
     public void rebalanceListener(ConsumerRebalanceListener rebalanceListener) {
-        listener.set(Objects.requireNonNull(rebalanceListener, "listener"));
+        hooks.rebalanceListener(Objects.requireNonNull(rebalanceListener, "listener"));
+    }
+
+    @Override
+    public void afterPoll(Runnable hook) {
+        hooks.afterPoll(Objects.requireNonNull(hook, "hook"));
     }
 
     @Override
@@ -102,8 +106,8 @@ final class KafkaRawRecordChannel implements KafkaRecordChannel {
         return version.get();
     }
 
-    /* default */ ConsumerRebalanceListener listener() {
-        return listener.get();
+    /* default */ KafkaLoopHooks hooks() {
+        return hooks;
     }
 
     /**

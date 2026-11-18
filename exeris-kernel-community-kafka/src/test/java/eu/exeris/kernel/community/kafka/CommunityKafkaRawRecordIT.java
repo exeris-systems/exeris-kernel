@@ -435,6 +435,40 @@ class CommunityKafkaRawRecordIT {
         assertThat(engine.records().partitionsFor(two)).isEqualTo(2);
     }
 
+    @Test
+    @Timeout(value = 120, unit = TimeUnit.SECONDS)
+    @DisplayName("e2. the after-poll hook runs on the loop thread while the topic is idle, and no commit fails")
+    void afterPollHookRunsOnAnIdleTopic() throws Exception {
+        String in = topic("idle");
+        createTopic(in, 2);
+        KafkaEventEngine engine = engine(group("idle"));
+        AtomicInteger hookRuns = new AtomicInteger();
+        Set<Thread> hookThreads = ConcurrentHashMap.newKeySet();
+        Set<Thread> handlerThreads = ConcurrentHashMap.newKeySet();
+        CountDownLatch handled = new CountDownLatch(1);
+        engine.records().subscribe(in, _ -> {
+            handlerThreads.add(Thread.currentThread());
+            handled.countDown();
+        });
+        engine.records().afterPoll(() -> {
+            hookThreads.add(Thread.currentThread());
+            hookRuns.incrementAndGet();
+        });
+        engine.start();
+
+        awaitTrue("the hook ran after three polls of an empty topic", () -> hookRuns.get() >= 3);
+        assertThat(handlerThreads).as("nothing was produced yet").isEmpty();
+
+        produceOne(in, 0, 0);
+        assertThat(handled.await(AWAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+        int afterRecord = hookRuns.get();
+        awaitTrue("the hook kept running after the record", () -> hookRuns.get() > afterRecord);
+
+        assertThat(hookThreads).hasSize(1).isEqualTo(handlerThreads);
+        assertThat(engine.commitFailedTotal()).isZero();
+        assertThat(engine.loopFailure()).isEmpty();
+    }
+
     // =========================================================================
     // f. framed and raw side by side in manual mode
     // =========================================================================
