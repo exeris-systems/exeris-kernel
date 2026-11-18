@@ -37,11 +37,16 @@
  * {@code @since 0.10}) are implemented, including replay by wall-clock timestamp and by
  * committed version; see {@code docs/subsystems/events.md}.
  *
+ * <h2>Commit Modes</h2>
+ * <p>The consumer loop auto-commits by default, which is at-most-once on consume. With
+ * {@code enable.auto.commit=false} in {@link KafkaEventConfig#consumerOverrides()} it delivers each
+ * record synchronously and commits after every handled batch, which is at-least-once on
+ * consumption; it does not cover the output a handler produces. A failure ends the loop with a
+ * recorded cause ({@link KafkaEventEngine#loopFailure()}) and the batch is not committed.
+ *
  * <h2>Deferred</h2>
  * <ul>
  *   <li>Outbox-orchestrator-driven delivery wiring on top of {@link KafkaEventBrokerPort}.</li>
- *   <li>{@code enable.auto.commit=false} with manual commit-after-handler (today the
- *       loop runs auto-commit, which yields at-most-once semantics on consume).</li>
  *   <li>Consumer-rebalance behavior under in-flight choreography (TCK extension).</li>
  * </ul>
  *

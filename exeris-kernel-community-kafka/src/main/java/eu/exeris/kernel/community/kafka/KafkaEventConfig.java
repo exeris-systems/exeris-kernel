@@ -47,6 +47,10 @@ import java.util.TreeSet;
  * @param clientId          Kafka {@code client.id} for both clients; empty means not set, and a
  *                          {@code client.id} in an override map wins over it
  * @param loopThread        the kind of thread the consumer loop runs on
+ * @param closeTimeout      the bound on each blocking step of an engine shutdown (the final
+ *                          offset commit, the consumer close, the producer close), and the base of
+ *                          the time {@code close()} waits for the loop thread; must be positive
+ *                          ({@value #DEFAULT_CLOSE_TIMEOUT_MS} ms by default)
  *
  * @since 0.7
  */
@@ -60,7 +64,8 @@ public record KafkaEventConfig(
         Map<String, String> producerOverrides,
         Map<String, String> consumerOverrides,
         String   clientId,
-        LoopThread loopThread) {
+        LoopThread loopThread,
+        Duration closeTimeout) {
 
     /**
      * The kind of thread the consumer loop runs on.
@@ -77,6 +82,9 @@ public record KafkaEventConfig(
     /** Empty topic prefix — events publish under the bare event-type name. */
     public static final String EMPTY_TOPIC_PREFIX = "";
 
+    /** Default {@link #closeTimeout()} in milliseconds. @since 0.13 */
+    public static final long DEFAULT_CLOSE_TIMEOUT_MS = 30_000L;
+
     private static final Set<String> SHARED_FORBIDDEN =
             Set.of("bootstrap.servers", "transactional.id");
     private static final Set<String> PRODUCER_FORBIDDEN =
@@ -85,8 +93,8 @@ public record KafkaEventConfig(
             Set.of("key.deserializer", "value.deserializer", "group.id");
 
     /**
-     * Six-argument constructor kept for existing callers: no overrides, no client id, and a
-     * virtual consumer-loop thread.
+     * Creates a configuration with no property overrides, no client id, a virtual consumer-loop
+     * thread and the default close timeout.
      *
      * @param bootstrapServers    comma-separated {@code host:port} list
      * @param consumerGroupId     consumer group id
@@ -99,7 +107,8 @@ public record KafkaEventConfig(
                             boolean requireAllAcks, long producerLingerMs,
                             Duration consumerPollTimeout) {
         this(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks, producerLingerMs,
-                consumerPollTimeout, Map.of(), Map.of(), "", LoopThread.VIRTUAL);
+                consumerPollTimeout, Map.of(), Map.of(), "", LoopThread.VIRTUAL,
+                Duration.ofMillis(DEFAULT_CLOSE_TIMEOUT_MS));
     }
 
     /**
@@ -115,6 +124,7 @@ public record KafkaEventConfig(
         Objects.requireNonNull(consumerOverrides, "consumerOverrides must not be null");
         Objects.requireNonNull(clientId,          "clientId must not be null — use the empty string");
         Objects.requireNonNull(loopThread,        "loopThread must not be null");
+        Objects.requireNonNull(closeTimeout,      "closeTimeout must not be null");
         if (bootstrapServers.isBlank()) {
             throw new IllegalArgumentException("bootstrapServers must not be blank");
         }
@@ -128,6 +138,10 @@ public record KafkaEventConfig(
         if (consumerPollTimeout.isNegative() || consumerPollTimeout.isZero()) {
             throw new IllegalArgumentException(
                     "consumerPollTimeout must be > 0, got: " + consumerPollTimeout);
+        }
+        if (closeTimeout.isNegative() || closeTimeout.isZero()) {
+            throw new IllegalArgumentException(
+                    "closeTimeout must be > 0, got: " + closeTimeout);
         }
         producerOverrides = Map.copyOf(producerOverrides);
         consumerOverrides = Map.copyOf(consumerOverrides);
@@ -173,7 +187,7 @@ public record KafkaEventConfig(
     public KafkaEventConfig withProducerOverrides(Map<String, String> overrides) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
                 producerLingerMs, consumerPollTimeout, overrides, consumerOverrides, clientId,
-                loopThread);
+                loopThread, closeTimeout);
     }
 
     /**
@@ -186,7 +200,7 @@ public record KafkaEventConfig(
     public KafkaEventConfig withConsumerOverrides(Map<String, String> overrides) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
                 producerLingerMs, consumerPollTimeout, producerOverrides, overrides, clientId,
-                loopThread);
+                loopThread, closeTimeout);
     }
 
     /**
@@ -199,7 +213,7 @@ public record KafkaEventConfig(
     public KafkaEventConfig withClientId(String newClientId) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
                 producerLingerMs, consumerPollTimeout, producerOverrides, consumerOverrides,
-                newClientId, loopThread);
+                newClientId, loopThread, closeTimeout);
     }
 
     /**
@@ -212,7 +226,20 @@ public record KafkaEventConfig(
     public KafkaEventConfig withLoopThread(LoopThread newLoopThread) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
                 producerLingerMs, consumerPollTimeout, producerOverrides, consumerOverrides,
-                clientId, newLoopThread);
+                clientId, newLoopThread, closeTimeout);
+    }
+
+    /**
+     * Returns a copy with the given shutdown bound.
+     *
+     * @param newCloseTimeout the bound on each blocking step of a shutdown; must be positive
+     * @return the new configuration
+     * @since 0.13
+     */
+    public KafkaEventConfig withCloseTimeout(Duration newCloseTimeout) {
+        return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
+                producerLingerMs, consumerPollTimeout, producerOverrides, consumerOverrides,
+                clientId, loopThread, newCloseTimeout);
     }
 
     /**
@@ -232,7 +259,8 @@ public record KafkaEventConfig(
                 + ", producerOverrideKeys=" + new TreeSet<>(producerOverrides.keySet())
                 + ", consumerOverrideKeys=" + new TreeSet<>(consumerOverrides.keySet())
                 + ", clientId=" + clientId
-                + ", loopThread=" + loopThread + ']';
+                + ", loopThread=" + loopThread
+                + ", closeTimeout=" + closeTimeout + ']';
     }
 
     /**

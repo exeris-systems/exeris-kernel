@@ -68,6 +68,8 @@ public final class KafkaEventProvider implements EventProvider {
     private static final String CFG_CLIENT_ID           = "events.kafka.client-id";
     /** Optional consumer-loop thread kind, {@code virtual} (default) or {@code platform}. @since 0.13 */
     private static final String CFG_LOOP_THREAD         = "events.kafka.consumer-loop-thread";
+    /** Optional bound on each blocking shutdown step, in milliseconds. @since 0.13 */
+    private static final String CFG_CLOSE_TIMEOUT_MS    = "events.kafka.close-timeout-ms";
 
     /**
      * Instantiated reflectively by {@code ServiceLoader} through this module's
@@ -143,6 +145,8 @@ public final class KafkaEventProvider implements EventProvider {
         String clientId = cfg.getString(CFG_CLIENT_ID).orElse("");
         KafkaEventConfig.LoopThread loopThread = parseLoopThread(
                 cfg.getString(CFG_LOOP_THREAD).orElse("virtual"));
+        long closeTimeoutMs = cfg.getLong(CFG_CLOSE_TIMEOUT_MS)
+                .orElse(KafkaEventConfig.DEFAULT_CLOSE_TIMEOUT_MS);
         try {
             return new KafkaEventConfig(
                     bootstrapServers,
@@ -154,7 +158,8 @@ public final class KafkaEventProvider implements EventProvider {
                     producerOverrides,
                     consumerOverrides,
                     clientId,
-                    loopThread);
+                    loopThread,
+                    Duration.ofMillis(closeTimeoutMs));
         } catch (IllegalArgumentException e) {
             throw EventProviderException.creationFailure(PROVIDER_NAME, e.getMessage(), e);
         }
