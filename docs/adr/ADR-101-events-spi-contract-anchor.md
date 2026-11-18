@@ -398,7 +398,8 @@ Implementation is planned for 0.13 (wave W2). Until it lands, none of the behavi
 - **2026-11-17 — Two factual corrections; no ruling changes.**
   - **`kafka-clients` version.** *Risks and Assumptions* says the binding uses `kafka-clients` 4.0.x.
     When this ADR was accepted the BOM already managed 4.3.1 (the 0.12.0 changelog records the bump),
-    and it still does. The assumption it supports, record headers carried end to end, is unaffected.
+    and from 0.13.2 it manages 4.4.0. The assumption it supports, record headers carried end to end,
+    is unaffected.
   - **Consume-side semantics.** *What is NOT in scope* describes the Kafka binding's consumer as
     `enable.auto.commit=true`, at-most-once. From 0.13.2 that is the default of two modes: with
     `enable.auto.commit=false` in the consumer overrides the loop delivers each record with
