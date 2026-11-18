@@ -11,14 +11,14 @@ slug: adr/ADR-103
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-10-16)                                                |
+| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-11-17)                                                |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/runtime` — `exeris-kernel-spi`, `exeris-kernel-core`, `exeris-kernel-community`, `exeris-kernel-community-kafka`, `exeris-kernel-build-config` (the `@RequiresRole` processor) |
 | **Owning Repo** | `exeris-kernel`                                                                           |
 | **Driven By**   | v0.13 scope; the ROADMAP stance "Native-image / GraalVM" under *Scope Discipline & Declared Stances*, whose enablement half this ADR moves from post-1.0 to 0.13 |
 | **Compliance**  | [docs/performance-contract.md](../performance-contract.md) §2.2.1, [docs/support-matrix.md](../support-matrix.md) "Runtime image" |
-| **Amended**     | 2026-10-16 — Obligation 5 (where the processor writes its metadata) and Obligation 8 (the Windows library lookup); see Amendments |
+| **Amended**     | 2026-10-16 — Obligation 5 (where the processor writes its metadata) and Obligation 8 (the Windows library lookup); 2026-11-17 — Obligation 4 (Kafka client property overrides); see Amendments |
 
 ## Context and Problem Statement
 
@@ -174,6 +174,8 @@ supported.
    `upcallStub` descriptor, every class in the JFR event catalogues, every `findVarHandle` target,
    every classpath resource the module reads, and every class the module or its dependency resolves
    by name on a path the module configures (for Kafka: the client types its fixed key set selects).
+   _(Amended 2026-11-17: from 0.13.2 client property override files reopen the Kafka key set, and
+   override-selected types are the consumer's — see Amendments.)_
    Each module carries a unit test that fails when one of those sites has no matching metadata entry.
    Agent output may be used to find a candidate entry; it is never the source of truth.
 
@@ -335,6 +337,24 @@ supported.
   both the buffer and the loaded library are held for the life of the process. Neither path is reached
   today: `SocketBackendSelection.resolve` returns before `load` on Windows. The ruling for the POSIX
   path is unchanged.
+- **2026-11-17 — Obligation 4: Kafka client property overrides reopen the key set (0.13.2).** The
+  Context records the Kafka class set as closed because `KafkaEventProvider` read a fixed list of
+  `events.kafka.*` keys and configured no compression; that record stands as written for 0.13. From
+  0.13.2, `events.kafka.producer-properties-file` and `events.kafka.consumer-properties-file` (and
+  `KafkaEventConfig.producerOverrides` / `consumerOverrides`) pass consumer-supplied Kafka client
+  properties through to the clients, so the set of properties is no longer the kernel's to enumerate.
+  Obligation 4's Kafka clause applies to the properties the binding sets itself: the module's metadata
+  is still derived from the producer and consumer `ConfigDef` parsed against the binding's own
+  properties, with no overrides. A type selected through consumer-supplied properties — a compression
+  codec, a partition assignor, a SASL callback handler or login module, an interceptor, a metric
+  reporter or any other class named in a property value — is the consumer's own reachability
+  metadata, outside the kernel's committed metadata and unverified by the `native-smoke` job, in the
+  same way that "What is NOT in scope" leaves the consumer's own types to the consumer. On that basis
+  `KafkaReachabilityMetadataTest` allowlists `KafkaEventProvider#loadOverrides` as a fourth `Properties`
+  construction site next to the three builder methods: it reads a file into a map and selects no
+  class. The overrides do not reach the event-log scan consumer (`KafkaEventLog`), whose properties
+  stay fixed. Obligation 2's "Kafka compression codecs" remain unverified, now reachable through an
+  override rather than unconfigured.
 
 ## Engineering Protocol
 
