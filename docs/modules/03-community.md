@@ -159,12 +159,16 @@ The Kafka metadata covers:
 - The `kafka/kafka-version.properties` classpath resource loaded by client bootstrap.
 - JFR event types from `KafkaJfrEventCatalogue` (`KafkaPublishFailedEvent`, `KafkaConsumerLoopFailedEvent`, `KafkaEventLogAppendFailedEvent`).
 
-The Kafka metadata is guarded by `KafkaReachabilityMetadataTest`, which verifies that `Properties` construction is confined to the three package-private builder methods, client classes in the by-name table resolve against the runtime classpath, and the committed metadata matches the model derived from the producer/consumer ConfigDef and the by-name table byte-for-byte.
+The Kafka metadata is guarded by `KafkaReachabilityMetadataTest`, which verifies that `Properties` construction is confined to the three package-private builder methods and `KafkaEventProvider#loadOverrides` (which reads a client properties file into a map), client classes in the by-name table resolve against the runtime classpath, and the committed metadata matches the model derived from the producer/consumer ConfigDef and the by-name table byte-for-byte.
 
 The rules for producing this metadata are set by
 [ADR-103](../adr/ADR-103-native-image-opt-in-build.md). On HotSpot the files are inert; they matter only
 to a GraalVM 25 native-image build, verified on Linux x86-64 only; aarch64, Windows, encrypted Bolt and
-Kafka compression codecs are unverified. The cost is that a new
+Kafka compression codecs are unverified. Classes named in Kafka client properties a consumer supplies
+(`events.kafka.producer-properties-file` / `consumer-properties-file`, since 0.13.2) — compression
+codecs, assignors, SASL handlers, interceptors, metric reporters — are not in this metadata and are
+unverified: registering them is the consumer's ([ADR-103](../adr/ADR-103-native-image-opt-in-build.md#amendments),
+amendment 2026-11-17). The cost is that a new
 declaration site fails the guard until the committed file is regenerated: the test writes the expected
 file under `target/native-image-expected/` and names the copy command.
 

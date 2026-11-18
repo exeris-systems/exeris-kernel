@@ -130,7 +130,7 @@ The Community subsystems, with what each declares:
 | `transport` | `memory`, `crypto` | SERVICES |
 | `graph` | `memory`, `persistence` | SERVICES |
 | `scheduling` | — | SERVICES |
-| `events` | `memory`, `persistence` | RUNTIME |
+| `events` | `memory`, `persistence` (only `memory` when `event.durableLogEnabled=false`, since 0.13.2) | RUNTIME |
 | `flow` | `persistence` | RUNTIME |
 | `http` | `memory` | RUNTIME |
 | `websocket` | `memory` | RUNTIME |

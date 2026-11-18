@@ -316,5 +316,11 @@
     "since": "0.13",
     "adr": "ADR-040",
     "justification": "Behaviour on the Community OIDC driver (ADR-040 Amendment A1): a fetched JWKS entry is installed only when its use is absent or sig, its alg is absent or the one its key type verifies (RS256 for an RSA key, EdDSA for an Ed25519 key), and no other installed entry publishes its kid; each installed key verifies only that algorithm, and an Ed25519 key now verifies EdDSA tokens. Before 0.13 use and alg were ignored and the last of two entries with one kid won, so an RSA key declaring RSA-OAEP or RS512, a key with use enc, and a kid two installable keys share verified RS256 tokens that are now denied with EX-SEC-2002. No signature changes: the static RSAPublicKey map constructors and the initialKeys parameter keep their types and pin each key to RS256. Community class, so this entry is a record for the release notes and is not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.community.kafka.KafkaEventEngine#close()",
+    "since": "0.13",
+    "adr": "ADR-101",
+    "justification": "Behaviour on the Community Kafka driver, from 0.13.2; no signature change. close() is terminal: start() after it throws IllegalStateException, where on 0.13.1 it started a consumer loop while every publish failed on the producer close() had closed. close() and loop().stop() no longer interrupt the consumer loop at once: they wait for it to finish the handlers in flight, flush the producer, commit in manual-commit mode and close the consumer, up to twice closeTimeout plus one poll timeout plus one second (61.25 s with the defaults), and interrupt it only after that, where stop() interrupted at once and waited at most 5 s. A start() made while the loop is still stopping is refused with EX-EVENT-6001. This follows the wording of EventEngine#close() and EventLoop#stop() in spi.events, the package ADR-101 anchors; ADR-101 does not rule on the driver's shutdown. A caller that starts an engine again after close(), or holds a deadline under 61.25 s around stop() or close(), changes (MIGRATION.md, 0.13.1 to 0.13.2). The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
   }
 ]

@@ -70,7 +70,7 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 - `KafkaEventBrokerPort` — Core `OutboxBrokerPort` adapter wrapping an `org.apache.kafka.clients.producer.Producer<byte[], byte[]>` it does not own or close, sending each entry synchronously; takes an `IntFunction<String> ordinalToTopic` resolver (Wall-friendly: Core never sees Kafka classes). `brokerId() = "kafka"`.
 - `KafkaEventEngine` — `EventEngine` implementation with three composed actors: `KafkaPublishBus` (publish-via-producer, subscribe-delegated to an in-process `InMemoryEventBus`), `ConsumerLoop` (single virtual-thread `KafkaConsumer` poll loop with dynamic subscription refresh per registered ordinal — quiesces on `LockSupport.parkNanos(pollTimeout)` while the registry has no entries, since `KafkaConsumer.poll()` throws `IllegalStateException` on an unsubscribed consumer), and `NoOpQueue` (degenerate — Kafka itself is the durable queue, so the local `EventQueue` slot is bypassed; `push` throws `EventEngineException`, `EX-EVENT-6001`).
 - `KafkaEventRegistry` + `KafkaHeapEventPayload` — package-private heap-backed registry with a `specOfOrdinal(int)` reverse lookup (ADR-050: returns the full `EventTypeSpec` so the publish + subscribe paths honour a `topic` override via `KafkaEventEngine.effectiveTopic`) and an `AtomicInteger`-backed payload owner for the consumer loop hand-off.
-- `KafkaEventProvider` (`META-INF/services/eu.exeris.kernel.spi.events.EventProvider`, priority `50` — outranks Community in-memory `0`, below the Enterprise tier slot `100`) reads `events.kafka.bootstrap-servers` / `group-id` / `topic-prefix` / `require-all-acks` / `producer-linger-ms` / `consumer-poll-timeout-ms` from `KernelProviders.config()`. Tests/TCK use the `KafkaEventProvider.create(spi, kafka)` factory which short-circuits the lookup.
+- `KafkaEventProvider` (`META-INF/services/eu.exeris.kernel.spi.events.EventProvider`, priority `50` — outranks Community in-memory `0`, below the Enterprise tier slot `100`) reads `events.kafka.bootstrap-servers` / `group-id` / `topic-prefix` / `require-all-acks` / `producer-linger-ms` / `consumer-poll-timeout-ms` from `KernelProviders.config()`, and since 0.13.2 also `producer-properties-file` / `consumer-properties-file` / `client-id` / `consumer-loop-thread` / `close-timeout-ms` (defaults and refusals: [config.md](config.md#kernel-configuration-reference)). Tests/TCK use the `KafkaEventProvider.create(spi, kafka)` factory which short-circuits the lookup.
 - `AbstractKafkaEventEngineTck` (EVENT-206) + `CommunityKafkaEventEngineTckIT` (`@Tag("integration") @Testcontainers`, `confluentinc/cp-kafka:7.6.1`) — asserts publish/consume roundtrip with bit-exact descriptor preservation, idempotent close, and start-before-register warm-up safety (engine started with no registry entries must not crash the consumer loop and must still deliver after a later register+publish).
 - `CommunityKafkaFlowChoreographyTckIT` (DIST-302 smoke) drives `AbstractFlowChoreographyTck` (Wake / Start / Ignore / RAII) over a Testcontainers Kafka broker; `CommunityCrossEngineChoreographyIT` (DIST-302 closure, Sprint 6c) wires two `FlowEngine`s against a shared `JdbcFlowSnapshotStore` (Postgres) plus the same Kafka broker and proves a saga parked on Service A is woken and completed on Service B via the snapshot fallback in `lookupParked`.
 
@@ -95,6 +95,28 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
   (ServiceLoader) can tune the event-payload mapper (modules/features); with none registered it is
   byte-for-byte the pre-0.10.1 default. Jackson stays a Community driver detail — the seam never enters
   SPI. See `docs/adr/ADR-052-community-json-mapper-customization-seam.md`.
+
+**Implemented in 0.13.2 (Kafka driver and the events-to-persistence edge; no SPI or Core change):**
+
+- **Kafka client configuration.** `KafkaEventConfig` gains `producerOverrides`, `consumerOverrides`,
+  `clientId`, `loopThread` (`VIRTUAL` by default, or `PLATFORM`, a daemon platform thread) and
+  `closeTimeout` (30 s by default), each with a `with…` copy method; the six-argument constructor and
+  `defaults(...)` keep their meaning. Overrides are applied after the binding's own properties, so an
+  entry wins over them. The keys the binding owns are refused at construction: `bootstrap.servers` and
+  `transactional.id` in both maps, `key.serializer` and `value.serializer` for the producer,
+  `key.deserializer`, `value.deserializer` and `group.id` for the consumer. A `client.id` in an override
+  map wins over `clientId`. `toString()` prints override key names, not values. The event-log scan
+  consumer (`KafkaEventLog`) takes neither the overrides nor `clientId`. `KafkaEventProvider` loads the
+  override maps from the `.properties` files named by `events.kafka.producer-properties-file` and
+  `events.kafka.consumer-properties-file`.
+- **Two commit modes, an ordered shutdown, and a loop failure surface** on `KafkaEventEngine`:
+  `loopFailure()` and `onLoopFailure(Consumer<Throwable>)`. See *Kafka consumer loop* under *Delivery
+  Boundary*.
+- **A raw record channel** — `KafkaEventEngine.records()` returns a `KafkaRecordChannel`, with
+  `KafkaRecordHandler` — for topics whose records carry no Exeris header. See *Kafka consumer loop*.
+- **`event.durableLogEnabled`** (default `true`). `false` removes `events`' dependency on `persistence`
+  and leaves the durable event-log slots unbound; see *Event Replay API* and
+  [bootstrap.md](bootstrap.md#the-holy-order-of-initialization).
 
 **Not yet implemented (later):**
 
@@ -209,15 +231,18 @@ real; the fan-out is local. Two conditions are worth knowing because neither ann
 orchestrator is constructed only when `outboxEnabled` (default `true` in
 `EventEngineConfig.communityDefaults()`) *and* a `PersistenceEngine` is bound, so on a kernel with no
 persistence the outbox is silently inert; and the relay is a poll loop over committed rows, so it is
-asynchronous with respect to the transaction that produced them.
+asynchronous with respect to the transaction that produced them. Since 0.13.2,
+`event.durableLogEnabled=false` removes the `events` subsystem's dependency on `persistence`, so a boot
+that selects `events` alone no longer boots persistence at all; the outbox's own condition is unchanged.
 
 **Cross-node delivery requires `exeris-kernel-community-kafka`.** `KafkaEventProvider` registers at
 priority 50 and outranks the in-memory Community provider (priority 0), so adding the jar to the
 classpath swaps the engine — intra-Community precedence, still below the Enterprise tier slot (100).
 Publication then goes producer → broker, and local subscribers see the event only after the roundtrip
-— deliberately, so a local subscriber has the same semantics as a remote one. The consume-side caveats documented for that driver hold: the poll loop runs with
-`enable.auto.commit=true` (at-most-once on consume) and hands each decoded record to an internal
-in-memory bus for local fan-out.
+— deliberately, so a local subscriber has the same semantics as a remote one. The poll loop hands each
+decoded record to an internal in-memory bus for local fan-out. By default it auto-commits, which is
+at-most-once on consume; since 0.13.2 a manual-commit mode is at-least-once on consumption (see *Kafka
+consumer loop* below).
 
 **`publishAndAwait` means something different on each side of that boundary.** `EventBus.isBrokered()`
 says which contract a bus keeps. On a bus that is not brokered — every in-memory bus, including
@@ -256,6 +281,98 @@ directly with no seam to substitute. So a deployment gets durable emission on on
 fan-out, not both from one engine. This is a current limit, not a contract: the outbox-orchestrator-driven
 Kafka delivery path is listed as deferred in that module's `package-info`. [ADR-101](../adr/ADR-101-events-spi-contract-anchor.md)
 (accepted 2026-10-08) keeps it a documented limit at 1.0 and places a configured broker-port selection after 1.0.
+
+### Kafka consumer loop: commit modes, shutdown and raw records
+
+`KafkaEventEngine` decides its commit mode once, when it is built, from the effective consumer
+properties: **manual** when `enable.auto.commit` is `false`, set through
+`KafkaEventConfig.consumerOverrides()` or the file `events.kafka.consumer-properties-file` names, and
+**auto** otherwise. Auto is the default and is the behaviour of 0.13.1 and earlier, apart from the
+shutdown described below.
+
+| | Auto (default) | Manual (`enable.auto.commit=false`) |
+|:--|:--|:--|
+| A framed record reaches its handlers | through `publish` onto the internal bus: fire-and-forget, one virtual thread per handler | through `publishAndAwait` on the loop thread: the handlers run one after another on it |
+| Offsets are committed | by the Kafka client, on its own schedule and when the consumer closes | by `commitAsync()` after every non-empty batch whose records were all handled, and by a final `commitSync` on a clean stop |
+| A handler throws | the loop does not see it, and the record's offset is committed in due course | the loop ends without committing the batch, and `EventEngineStats.failedTotal()` counts the event |
+| Guarantee on consumption | at-most-once | at-least-once |
+
+**At-least-once covers consumption, not the output a handler produces.** A batch is committed once its
+handlers have returned; the loop does not wait for the broker to acknowledge the sends those handlers
+made, so a batch's commit can precede the acknowledgement of a send one of its handlers made. A send
+that fails asynchronously on the engine's producer, whether a framed `publish` or a raw `send` and
+whoever made it, sets a latch that the loop checks before each commit, and the loop then ends without
+committing the current batch. Batches committed before the failure was reported stay committed: the
+failed send is surfaced by the loop stopping, not by redelivery. A clean stop flushes the producer
+before the final commit.
+
+**A record whose handler always fails stops consumption of its partition.** In manual mode a failing
+handler ends the loop and leaves the batch uncommitted. The consumer leaves the group when it closes,
+the partition moves to the next member, and that member's handler meets the same record and fails on it
+too. There is no skip and no dead-letter topic. The engine does not restart a loop that has ended:
+`KafkaEventEngine.loopFailure()` returns the first failure that ended it, a listener registered with
+`onLoopFailure(...)` is called once with it (on the loop thread after the consumer has closed, or at
+once if the loop has already died), and `KafkaConsumerLoopFailedEvent` is emitted. A stop requested
+through `close()` or `EventLoop.stop()` is not a failure. In both modes a raw record handler or a
+rebalance listener that throws ends the loop.
+
+**Manual-mode handlers run on the loop thread, and that has consequences.** They hold up polling: a
+batch whose handlers together run past the consumer's `max.poll.interval.ms` gets the consumer evicted
+from its group. A handler that waits for another event this same loop would deliver deadlocks, because
+the loop that would deliver it is blocked in that handler. The loop thread, like the handler threads
+the auto mode starts, carries none of the kernel's `ScopedValue` bindings.
+
+**Shutdown.** `close()` is terminal (a later `start()` throws `IllegalStateException`) and idempotent,
+and it also closes the producer of an engine that was never started. It stops the loop without
+interrupting it: the loop sees the request within one poll timeout, and handlers in flight finish. The
+loop thread then flushes the producer, commits (manual mode, when nothing has failed) and closes the
+consumer, after which the caller closes the producer. The commit, the consumer close and the producer
+close are each bounded by `closeTimeout` (`events.kafka.close-timeout-ms`, 30 s by default); the flush
+is not. `close()` and `EventLoop.stop()` wait for the loop thread for up to twice `closeTimeout`, plus
+one poll timeout, plus one second; a loop still running then is interrupted, and that interrupt is not
+reported as a failure. Called from the loop thread itself (a handler or a failure listener), `close()`
+does not wait, and the loop thread closes the producer when it ends. `EventLoop.stop()` from the loop
+thread does not wait either; a `start()` issued while that loop is still closing its consumer throws
+`EventEngineException` (`EX-EVENT-6001`). Up to 0.13.1 the loop was
+interrupted at once, `stop()` waited for it at most 5 s, and the producer was closed with no time bound.
+
+**Raw record channel.** `KafkaEventEngine.records()` returns the engine's `KafkaRecordChannel`, for
+topics whose records carry no Exeris header. It exposes `kafka-clients` types and lives in
+`exeris-kernel-community-kafka`, not in the SPI.
+
+- `subscribe(topic, KafkaRecordHandler)` takes the topic literally (no `topicPrefix`), one handler per
+  topic, before or after `start()`. The handler receives the `ConsumerRecord` as the client delivered
+  it; its value may be `null` or empty.
+- `rebalanceListener(ConsumerRebalanceListener)` replaces any earlier listener and is called on the
+  loop thread. A listener set after partitions were assigned gets `onPartitionsAssigned` once with the
+  current assignment. The hooks are an observation surface for state a partition owns, not a
+  coordination mechanism: the kernel commits nothing when partitions are revoked.
+- `afterPoll(Runnable)` sets a hook the loop runs on its own thread after every poll, including a poll
+  that returned no record. It runs after the raw handlers of the batch and before the batch is
+  committed, so it never overlaps a raw handler or a rebalance listener method; it is the place for
+  periodic work on state those own. An exception from it ends the loop, and in manual mode the batch
+  is then not committed. A loop with no subscribed topic does not poll, so the hook does not run.
+- `send(ProducerRecord, Callback)` hands the record to the engine's producer as given, with no Exeris
+  or isolation header. An asynchronous failure is counted in `sendFailedTotal()`, not in
+  `EventEngineStats.publishFailedTotal()`, and sets the latch described above.
+- `partitionsFor(topic)` may block up to the producer's `max.block.ms` and, depending on the broker,
+  may create the topic.
+
+The channel bypasses the `EventBus`, and with it the Exeris wire header and the ADR-101 isolation
+scoping: a raw record is neither stamped nor scoped. So that raw and framed records cannot share a
+topic, the effective topic of a registered event type and the event-log topic are refused in both
+directions (`subscribe` throws `IllegalStateException`, `send` throws `IllegalArgumentException`), and
+registering an event type whose topic is already subscribed raw is refused with
+`EventRegistryException`. Raw handlers run on the loop thread, synchronously, never concurrently with
+one another, and in offset order per partition (not across partitions), in both commit modes. Their records are not counted in `processedTotal()` and their failures not in
+`failedTotal()`. In auto mode a raw handler failure still ends the loop, but the client commits the
+consumed positions when the consumer closes, so the failing batch is committed all the same: that mode
+stays at-most-once for raw records too. With no raw subscription the engine behaves as without the
+channel.
+
+`KafkaEventEngine.commitFailedTotal()` counts the per-batch asynchronous commits the broker did not
+accept, in manual mode. Such a failure does not end the loop: a later commit covers the same
+positions, and until one succeeds a restart redelivers from the last committed offset.
 
 ### Multi-node substrate inventory
 
@@ -540,7 +657,7 @@ Per-event allocation is bounded to one heap `byte[]` payload per row/record (no 
 
 **Bindings (status):**
 
-- PostgreSQL event-log — **shipped (ADR-049, v0.10)**: `JdbcEventStreamAppender` / `JdbcEventStreamReader` over the dedicated `exeris_event_log` table (per-`StreamId` monotonic ordering + append-with-expected-version OCC → `EX-EVENT-6008`; `V0.10.0` migration). Bound into `KernelProviders.EVENT_STREAM_APPENDER` / `EVENT_STREAM_READER` by `CommunityEventsSubsystem` when a persistence engine is present. Distinct from the transactional `exeris_outbox` delivery drain.
+- PostgreSQL event-log — **shipped (ADR-049, v0.10)**: `JdbcEventStreamAppender` / `JdbcEventStreamReader` over the dedicated `exeris_event_log` table (per-`StreamId` monotonic ordering + append-with-expected-version OCC → `EX-EVENT-6008`; `V0.10.0` migration). Bound into `KernelProviders.EVENT_STREAM_APPENDER` / `EVENT_STREAM_READER` by `CommunityEventsSubsystem` when a persistence engine is present and `event.durableLogEnabled` is not `false` (since 0.13.2; with `false` both slots stay unbound even when persistence boots for another reason, and `events` no longer depends on `persistence`). Distinct from the transactional `exeris_outbox` delivery drain.
 - Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; the ADR-049 durable event-log binding shipped in v0.10 — `KafkaEventStreamAppender` / `KafkaEventStreamReader` over a `streamId`-keyed log topic (log-authoritative per-`StreamId` sequence + append-with-expected-version OCC → `EX-EVENT-6008`), single-writer-per-stream best-effort (Kafka has no cross-instance CAS). Publish-side failures the bus observes (since v0.8 Sprint 5, JFR-091 — see *Backpressure by Design* for which ones `publish` observes) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the bus wraps the cause as `EX-EVENT-6009` with reason `delivery-failed`. A send the producer completes exceptionally after `publish` has returned emits the same event with `publishMode` `"publishAsync"` and is counted in `publishFailedTotal` instead (see *Delivery Boundary*). **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
 - Enterprise off-heap log — out-of-repo, target-state.
 
@@ -553,7 +670,7 @@ intentional design contract, not an oversight.
 
 | Layer           | Deduplication Mechanism                                                       |
 |:----------------|:------------------------------------------------------------------------------|
-| **EventBus (L3)** | None. The bus neither retries nor deduplicates. The outbox relay is at-least-once — a row published but not yet marked delivered when the process stops is published again — so an outbox-fed subscriber can see a duplicate. The Kafka consume path runs with auto-commit (at-most-once). |
+| **EventBus (L3)** | None. The bus neither retries nor deduplicates. The outbox relay is at-least-once — a row published but not yet marked delivered when the process stops is published again — so an outbox-fed subscriber can see a duplicate. The Kafka consume path is at-most-once in its default auto-commit mode; in manual-commit mode (since 0.13.2) it is at-least-once on consumption, so a record whose batch was not committed is delivered again and a Kafka-fed subscriber can see a duplicate. |
 | **Flow Engine (L4)** | `IdempotencyGuard` — per-Saga-step idempotency key prevents duplicate step execution. This covers the most critical deduplication requirement (business actions). |
 | **Application layer** | Each subscriber must implement idempotency for its own state mutations. The `EventDescriptor.eventIdHigh/eventIdLow` fields provide a stable deduplication key (UUID stable across retries). |
 
@@ -601,9 +718,9 @@ on compaction, and no row below is exercised by a test in this repository:
 ### Integration Tests (TCK)
 
 - **Outbox Guarantee:** Take the broker down; verify committed events accumulate in the DB outbox and are all delivered once it recovers, survive an engine rebuild, and never reappear once marked published. *(`AbstractOutboxGuaranteeTck`, Community binding `CommunityOutboxGuaranteeTckTest`.)*
-- **Provider Switching:** The same abstract suites run against more than one binding. `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` bind to PostgreSQL and Kafka (see ADR-049 above). `AbstractEventBusTck` binds to the Community bus (`CommunityEventBusTckTest`) and to the Kafka bus (`KafkaEventBusTckTest`, mock producer and consumer, no broker); the Kafka bus reports itself brokered, so the ten cases that assert in-process fan-out, handler-completion semantics or in-process isolation delivery are reported as skipped there. *(Kafka roundtrip + bit-exact descriptor preservation: `AbstractKafkaEventEngineTck` / `CommunityKafkaEventEngineTckIT` — Testcontainers `confluentinc/cp-kafka:7.6.1`.)*
+- **Provider Switching:** The same abstract suites run against more than one binding. `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` bind to PostgreSQL and Kafka (see ADR-049 above). `AbstractEventBusTck` binds to the Community bus (`CommunityEventBusTckTest`) and to the Kafka bus (`KafkaEventBusTckTest`, mock producer and consumer, no broker); the Kafka bus reports itself brokered, so the ten cases that assert in-process fan-out, handler-completion semantics or in-process isolation delivery are reported as skipped there. *(Kafka roundtrip + bit-exact descriptor preservation: `AbstractKafkaEventEngineTck` / `CommunityKafkaEventEngineTckIT` — Testcontainers `confluentinc/cp-kafka:7.6.1`. Since 0.13.2 the suite also asserts that `loop().stop()` leaves the loop not running, idempotently, with `stats()` agreeing, and a second binding, `CommunityKafkaManualCommitEventEngineTckIT`, runs it unchanged against an engine in manual-commit mode. `CommunityKafkaRawRecordIT` covers the raw channel, manual commit and the rebalance hooks against the same broker image. All three are integration-tagged.)*
 - **Order Integrity:** Per-`StreamId` order is a durable-log property, asserted by the ordering and OCC cases of `AbstractEventStreamAppenderTck`.
-  > The `EventBus` makes no ordering promise (ADR-049), so no bus suite asserts one. On the Kafka bus the record key is the stream id, so one stream's records share a partition, but each consumed record is republished through the in-memory bus (one virtual thread per handler) and `AbstractKafkaEventEngineTck` asserts set equality for a stream, not order.
+  > The `EventBus` makes no ordering promise (ADR-049), so no bus suite asserts one. On the Kafka bus the record key is the stream id, so one stream's records share a partition, but in the default auto-commit mode each consumed record is republished through the in-memory bus (one virtual thread per handler), and `AbstractKafkaEventEngineTck` asserts set equality for a stream, not order, in both of its bindings. Two Kafka-driver properties are not bus promises: the raw record channel hands records to their handler in offset order per partition (`CommunityKafkaRawRecordIT`, case c), and in manual-commit mode the loop runs a record's handlers on its own thread before it takes the next record. Neither extends ADR-049; code that needs order on the event path uses the durable log.
 - **Zero Subscriber Fast-Free:** Publish to a bus with zero subscribers; verify the bus calls
   `payload.close()` exactly once (no silent leak). *(`AbstractEventBusTck`, every bus.)*
 - **Broken Fan-Out Balance:** Fail the dispatch part-way — a `retain()` that throws, or a handler thread

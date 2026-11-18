@@ -58,7 +58,7 @@ class KafkaReachabilityMetadataTest {
      * <p>Each entry documents the upstream kafka-clients mechanism:
      * <ul>
      *   <li>{@code AppInfoParser$AppInfo}: Built directly by
-     *       {@link org.apache.kafka.common.utils.AppInfoParser#registerAppInfo(String, String, org.apache.kafka.common.metrics.Metrics, long)}
+     *       {@link org.apache.kafka.common.utils.internals.AppInfoParser#registerAppInfo(String, String, org.apache.kafka.common.metrics.Metrics, long)}
      *       and introspected as an MBean via {@code MBeanServer.registerMBean}.</li>
      *   <li>{@code AppInfoParser$AppInfoMBean}: The standard MBean interface for client app info, reflectively
      *       inspected by the platform MBeanServer during MBean registration, whose getters are invoked
@@ -67,13 +67,13 @@ class KafkaReachabilityMetadataTest {
      */
     private static final List<String> MEASURED_BY_NAME_TYPES = List.of(
             // AppInfoParser.registerAppInfo builds AppInfo directly; MBeanServer.registerMBean introspects it
-            "org.apache.kafka.common.utils.AppInfoParser$AppInfo",
+            "org.apache.kafka.common.utils.internals.AppInfoParser$AppInfo",
             // AppInfoParser$AppInfoMBean introspected by JMX; getters called reflectively on attribute reads
-            "org.apache.kafka.common.utils.AppInfoParser$AppInfoMBean"
+            "org.apache.kafka.common.utils.internals.AppInfoParser$AppInfoMBean"
     );
 
     /**
-     * Shaded Google Protobuf {@code ExtensionRegistry} type in kafka-clients 4.3.1.
+     * Shaded Google Protobuf {@code ExtensionRegistry} type in kafka-clients 4.4.0.
      *
      * <p>Loaded reflectively by {@code org.apache.kafka.shaded.com.google.protobuf.ExtensionRegistryFactory#reflectExtensionRegistry}
      * via {@code Class.forName("org.apache.kafka.shaded.com.google.protobuf.ExtensionRegistry")}.
@@ -90,7 +90,7 @@ class KafkaReachabilityMetadataTest {
     private static final String GET_EMPTY_REGISTRY_METHOD = "getEmptyRegistry";
 
     /**
-     * Client version properties resource loaded by {@link org.apache.kafka.common.utils.AppInfoParser}.
+     * Client version properties resource loaded by {@link org.apache.kafka.common.utils.internals.AppInfoParser}.
      *
      * <p>Loaded in {@code AppInfoParser}'s static initializer via
      * {@code AppInfoParser.class.getResourceAsStream("/kafka/kafka-version.properties")} to populate
@@ -109,7 +109,8 @@ class KafkaReachabilityMetadataTest {
     private static final Set<String> ALLOWED_PROPERTIES_BUILDER_SITES = Set.of(
             "eu.exeris.kernel.community.kafka.KafkaEventEngine#producerProperties",
             "eu.exeris.kernel.community.kafka.KafkaEventEngine#consumerProperties",
-            "eu.exeris.kernel.community.kafka.KafkaEventLog#consumerProps"
+            "eu.exeris.kernel.community.kafka.KafkaEventLog#consumerProps",
+            "eu.exeris.kernel.community.kafka.KafkaEventProvider#loadOverrides"
     );
 
     @Test
@@ -206,7 +207,7 @@ class KafkaReachabilityMetadataTest {
             Class.forName(typeName, false, loader);
         }
 
-        Class<?> mbeanClass = Class.forName("org.apache.kafka.common.utils.AppInfoParser$AppInfoMBean", false, loader);
+        Class<?> mbeanClass = Class.forName("org.apache.kafka.common.utils.internals.AppInfoParser$AppInfoMBean", false, loader);
         mbeanClass.getDeclaredMethod("getVersion");
         mbeanClass.getDeclaredMethod("getCommitId");
         mbeanClass.getDeclaredMethod("getStartTimeMs");
@@ -259,9 +260,9 @@ class KafkaReachabilityMetadataTest {
         for (String typeName : MEASURED_BY_NAME_TYPES) {
             builder.registerType(typeName);
         }
-        builder.registerMethod("org.apache.kafka.common.utils.AppInfoParser$AppInfoMBean", "getVersion", List.of());
-        builder.registerMethod("org.apache.kafka.common.utils.AppInfoParser$AppInfoMBean", "getCommitId", List.of());
-        builder.registerMethod("org.apache.kafka.common.utils.AppInfoParser$AppInfoMBean", "getStartTimeMs", List.of());
+        builder.registerMethod("org.apache.kafka.common.utils.internals.AppInfoParser$AppInfoMBean", "getVersion", List.of());
+        builder.registerMethod("org.apache.kafka.common.utils.internals.AppInfoParser$AppInfoMBean", "getCommitId", List.of());
+        builder.registerMethod("org.apache.kafka.common.utils.internals.AppInfoParser$AppInfoMBean", "getStartTimeMs", List.of());
         builder.registerMethod(SHADED_EXTENSION_REGISTRY_CLASS, GET_EMPTY_REGISTRY_METHOD, List.of());
         builder.registerResource(KAFKA_VERSION_RESOURCE);
 
