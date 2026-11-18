@@ -4,7 +4,7 @@ type: migration-guide
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-11-18
+last-verified: 2026-09-30
 ---
 
 # Migration guide — Exeris Kernel (open-core)

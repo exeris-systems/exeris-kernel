@@ -11,7 +11,7 @@ slug: adr/ADR-101
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-11-17)                                                |
+| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-11-18)                                                |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/events`                                                                           |
@@ -406,6 +406,9 @@ Implementation is planned for 0.13 (wave W2). Until it lands, none of the behavi
     `publishAndAwait` on its own thread and commits after every handled batch, at-least-once on
     consumption. Consume-side semantics remain outside this ADR, and the 0.13.2 raw record channel
     bypasses the bus and with it Ruling 1's isolation scoping, as `docs/subsystems/events.md` states.
+- **2026-11-18 — The 2026-11-17 entry corrected.** Its `kafka-clients` sentence said the BOM managed
+  4.3.1 "and it still does". 0.13.2 moves the BOM to 4.4.0, and the sentence now says so. No ruling
+  changes.
 
 ## Engineering Protocol
 
