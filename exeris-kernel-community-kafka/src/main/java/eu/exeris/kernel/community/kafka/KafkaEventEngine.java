@@ -800,6 +800,12 @@ public final class KafkaEventEngine implements EventEngine {
                 consumer = consumerFactory.apply(consumerProperties(config));
                 pollUntilStopped(consumer);
                 clean = true;
+            } catch (InterruptedException ex) {
+                // Same rule as below; the flag is restored so the shutdown that follows is hurried.
+                Thread.currentThread().interrupt();
+                if (!stopping.get()) {
+                    fail(ex);
+                }
             } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — any escape ends the loop, with a cause
                 // A stop's escalation interrupt is not a failure; everything else is, and operators
                 // rely on the JFR event to see silent consumer-thread death.

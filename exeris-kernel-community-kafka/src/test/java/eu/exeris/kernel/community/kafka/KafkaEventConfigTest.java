@@ -105,7 +105,8 @@ class KafkaEventConfigTest {
         assertThatThrownBy(() -> BASE.withCloseTimeout(null)).isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> BASE.withCloseTimeout(Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("closeTimeout");
-        assertThatThrownBy(() -> BASE.withCloseTimeout(Duration.ofMillis(-1L)))
+        Duration negative = Duration.ofMillis(-1L);
+        assertThatThrownBy(() -> BASE.withCloseTimeout(negative))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("closeTimeout");
 
         KafkaEventConfig cfg = BASE.withClientId("c").withCloseTimeout(Duration.ofSeconds(2));
