@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The engine's single {@link KafkaRecordChannel}. Its subscription map is written by application
@@ -37,7 +38,7 @@ final class KafkaRawRecordChannel implements KafkaRecordChannel {
     private final AtomicBoolean sendFailed;
     // One shared, stateless callback for a send that brings none of its own.
     private final Callback failureOnly = new FailureTracking(null);
-    private volatile ConsumerRebalanceListener listener;
+    private final AtomicReference<ConsumerRebalanceListener> listener = new AtomicReference<>();
     private final KafkaFramedTopics framedTopics;
 
     /* default */ KafkaRawRecordChannel(KafkaEventRegistry registry, KafkaEventConfig config,
@@ -69,18 +70,18 @@ final class KafkaRawRecordChannel implements KafkaRecordChannel {
 
     @Override
     public void rebalanceListener(ConsumerRebalanceListener rebalanceListener) {
-        this.listener = Objects.requireNonNull(rebalanceListener, "listener");
+        listener.set(Objects.requireNonNull(rebalanceListener, "listener"));
     }
 
     @Override
-    public void send(ProducerRecord<byte[], byte[]> record, Callback callback) {
-        Objects.requireNonNull(record, "record");
+    public void send(ProducerRecord<byte[], byte[]> producerRecord, Callback callback) {
+        Objects.requireNonNull(producerRecord, "producerRecord");
         // The send path: one set lookup against a snapshot rebuilt only when a type is registered.
-        if (framedTopics.contains(record.topic())) {
-            throw new IllegalArgumentException("topic '" + record.topic() + "' is "
-                    + framedTopics.describe(record.topic()) + "; a raw send cannot write into it");
+        if (framedTopics.contains(producerRecord.topic())) {
+            throw new IllegalArgumentException("topic '" + producerRecord.topic() + "' is "
+                    + framedTopics.describe(producerRecord.topic()) + "; a raw send cannot write into it");
         }
-        producer.send(record, callback == null ? failureOnly : new FailureTracking(callback));
+        producer.send(producerRecord, callback == null ? failureOnly : new FailureTracking(callback));
     }
 
     @Override
@@ -102,7 +103,7 @@ final class KafkaRawRecordChannel implements KafkaRecordChannel {
     }
 
     /* default */ ConsumerRebalanceListener listener() {
-        return listener;
+        return listener.get();
     }
 
     /**
