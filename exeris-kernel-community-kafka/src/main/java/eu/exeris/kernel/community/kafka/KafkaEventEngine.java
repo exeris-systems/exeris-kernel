@@ -102,7 +102,9 @@ import java.util.function.Function;
  * <h2>Shutdown</h2>
  * <p>{@link #close()} is terminal and idempotent. It stops the loop without interrupting it; the
  * loop thread then flushes the producer, commits (manual mode, no failure), and closes the consumer,
- * each bounded by {@link KafkaEventConfig#closeTimeout()}, and the caller closes the producer last.
+ * and the caller closes the producer last. The commit and the two closes are each bounded by
+ * {@link KafkaEventConfig#closeTimeout()}; the flush is bounded only by the producer's own
+ * {@code delivery.timeout.ms}.
  * A loop that does not finish in time is interrupted as an escalation, and that is not reported as a
  * failure.
  *
@@ -753,6 +755,12 @@ public final class KafkaEventEngine implements EventEngine {
                 consumer = consumerFactory.apply(consumerProperties(config));
                 pollUntilStopped(consumer);
                 clean = true;
+            } catch (InterruptedException ex) {
+                // Same rule as below; the flag is restored so the shutdown that follows is hurried.
+                Thread.currentThread().interrupt();
+                if (!stopping.get()) {
+                    fail(ex);
+                }
             } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — any escape ends the loop, with a cause
                 // A stop's escalation interrupt is not a failure; everything else is, and operators
                 // rely on the JFR event to see silent consumer-thread death.

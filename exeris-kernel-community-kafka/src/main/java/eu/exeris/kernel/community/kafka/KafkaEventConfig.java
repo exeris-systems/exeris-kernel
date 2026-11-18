@@ -94,8 +94,7 @@ public record KafkaEventConfig(
 
     /**
      * Creates a configuration with no property overrides, no client id, a virtual consumer-loop
-     * thread and the default close timeout. This is the constructor callers used before those
-     * components existed.
+     * thread and the default close timeout.
      *
      * @param bootstrapServers    comma-separated {@code host:port} list
      * @param consumerGroupId     consumer group id
