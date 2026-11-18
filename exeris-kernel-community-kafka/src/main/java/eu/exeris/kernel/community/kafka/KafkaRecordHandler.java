@@ -13,7 +13,9 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * <p>Invocation contract:
  * <ul>
  *   <li>called on the consumer loop thread, synchronously, in offset order per partition, and never
- *       concurrently with itself or with any other handler of the engine;</li>
+ *       concurrently with itself or with another raw record handler. In manual-commit mode that
+ *       holds for event handlers too; in auto-commit mode event handlers run on their own virtual
+ *       threads and can overlap it;</li>
  *   <li>it must not block for long: it holds up polling, and a handler that runs past
  *       {@code max.poll.interval.ms} gets the consumer evicted from its group;</li>
  *   <li>an exception thrown from it ends the consumer loop (see
@@ -29,7 +31,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * <p>The record's value may be {@code null} (a tombstone) or empty; the handler decides what that
  * means.
  *
- * @since 0.13.2
+ * @since 0.13
  */
 @FunctionalInterface
 public interface KafkaRecordHandler {

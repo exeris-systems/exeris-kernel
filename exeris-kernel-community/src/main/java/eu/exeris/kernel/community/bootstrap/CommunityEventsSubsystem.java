@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.events.EventStreamAppender;
 import eu.exeris.kernel.spi.events.EventStreamReader;
+import eu.exeris.kernel.spi.exceptions.SubsystemException;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
 import java.util.ArrayList;
@@ -26,12 +27,21 @@ import java.util.function.UnaryOperator;
  * Bootstraps the Community event bus and, when persistence is present, the durable JDBC-backed event
  * log alongside it.
  *
- * <p>Depends on {@code memory} and {@code persistence}: the engine itself needs the kernel's
- * allocator, and whether a {@link JdbcEventStreamAppender}/{@link JdbcEventStreamReader} pair can be
- * built at all depends on {@link CommunityPersistenceSubsystem} having already set the shared
- * {@link PersistenceEngine} in {@link CommunityBootstrapServices} — the same Community-internal
+ * <p>Depends on {@code memory}, and by default on {@code persistence} as well: the engine itself needs
+ * the kernel's allocator, and whether a {@link JdbcEventStreamAppender}/{@link JdbcEventStreamReader}
+ * pair can be built at all depends on {@link CommunityPersistenceSubsystem} having already set the
+ * shared {@link PersistenceEngine} in {@link CommunityBootstrapServices} — the same Community-internal
  * handoff {@link CommunityFlowSubsystem} uses, needed because {@code providerBindings()} composition
  * runs after every subsystem's {@code initialize()} (ADR-022 §4).
+ *
+ * <p>The {@code persistence} edge exists only for that durable log, and it forces the persistence
+ * subsystem — and with it a connection pool — into every boot that selects {@code events}. Setting
+ * {@code event.durableLogEnabled=false} removes the edge: {@link #dependsOn()} then returns
+ * {@code ["memory"]}, {@code initialize()} never resolves the shared persistence engine (even when one
+ * exists because something else booted persistence), and the appender/reader slots stay unbound. The
+ * flag is read once, when {@link CommunitySubsystemProvider#getSubsystems} builds this subsystem,
+ * because the {@code Subsystem} contract requires {@code dependsOn()} to answer identically on every
+ * call.
  *
  * <p>The durable log is optional twice over: with no persistence engine bound, {@code initialize()}
  * leaves both the appender and the reader {@code null} and the corresponding
@@ -43,10 +53,73 @@ import java.util.function.UnaryOperator;
  */
 final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
 
+    private static final String DURABLE_LOG_KEY = "event.durableLogEnabled";
+    private static final List<String> DEPENDS_WITH_DURABLE_LOG = List.of("memory", "persistence");
+    private static final List<String> DEPENDS_WITHOUT_DURABLE_LOG = List.of("memory");
+
+    private final boolean durableLogEnabled;
+    private final boolean durableLogKeyMalformed;
     private EventProvider eventProvider;
     private EventEngine eventEngine;
     private EventStreamAppender eventStreamAppender;
     private EventStreamReader eventStreamReader;
+
+    /**
+     * Builds the subsystem with every key at its default — equivalent to a {@code null} config.
+     *
+     * <p>Kept for the reflective name-readers in the architecture guards, which instantiate each
+     * subsystem without a kernel context.
+     *
+     * @since 0.13
+     */
+    /* default */ CommunityEventsSubsystem() {
+        this(null);
+    }
+
+    /**
+     * Builds the subsystem, reading {@code event.durableLogEnabled} once.
+     *
+     * <p>{@code event.durableLogEnabled} (boolean, default {@code true}) decides whether this subsystem
+     * depends on {@code persistence} and binds the JDBC durable event log
+     * ({@code EVENT_STREAM_APPENDER}/{@code EVENT_STREAM_READER}). When it is {@code false} and
+     * {@code event.outboxEnabled=true}, no outbox is constructed unless a persistence engine is bound
+     * anyway — {@code CommunityEventEngine} builds its outbox orchestrator only when
+     * {@code PERSISTENCE_ENGINE} is bound, and otherwise leaves it {@code null} without raising an
+     * error.
+     *
+     * <p>A value that is not {@code true} or {@code false}, or a provider that throws while reading it,
+     * cannot be reported from here: {@code getSubsystems} runs outside the orchestrator's failure
+     * policy, and the checked {@code BootstrapException} is not available to it. The subsystem is
+     * instead built with the default and {@link #initialize()} fails with a {@link SubsystemException}
+     * naming the key, which the failure policy handles.
+     *
+     * @param config the resolved kernel configuration; {@code null} means every key takes its default
+     * @since 0.13
+     */
+    /* default */
+    @SuppressWarnings("PMD.AvoidCatchingGenericException") // a foreign ConfigProvider may throw anything
+    CommunityEventsSubsystem(ConfigProvider config) {
+        super();
+        boolean enabled = true;
+        boolean malformed = false;
+        if (config != null) {
+            try {
+                boolean unparseable = config.getString(DURABLE_LOG_KEY)
+                        .map(String::strip)
+                        .filter(raw -> !"true".equalsIgnoreCase(raw) && !"false".equalsIgnoreCase(raw))
+                        .isPresent();
+                if (unparseable) {
+                    malformed = true;
+                } else {
+                    enabled = config.getBoolean(DURABLE_LOG_KEY).orElse(true);
+                }
+            } catch (RuntimeException readFailure) {
+                malformed = true;
+            }
+        }
+        this.durableLogEnabled = enabled;
+        this.durableLogKeyMalformed = malformed;
+    }
 
     @Override
     public String name() {
@@ -55,7 +128,7 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public List<String> dependsOn() {
-        return List.of("memory", "persistence");
+        return durableLogEnabled ? DEPENDS_WITH_DURABLE_LOG : DEPENDS_WITHOUT_DURABLE_LOG;
     }
 
     @Override
@@ -65,6 +138,10 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void initialize() {
+        if (durableLogKeyMalformed) {
+            throw new SubsystemException(name(), SubsystemException.Phase.INITIALIZE,
+                    "Config key event.durableLogEnabled is not a boolean (expected true or false)");
+        }
         ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.get();
         EventEngineConfig config = buildConfig(configProvider);
         EventBootstrap.BootstrapResult bootstrapResult = EventBootstrap.loadWithProvider(config);
@@ -73,7 +150,11 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
 
         // ADR-049: bind the durable event-log appender/reader when a Community persistence engine is
         // present. Optional — with no engine the slots stay unbound and callers fall back to the bus
-        // per the SPI Javadoc. dependsOn("persistence") guarantees the shared engine is set first.
+        // per the SPI Javadoc. With the durable log enabled, dependsOn("persistence") guarantees the
+        // shared engine is set first; with it disabled the engine is not even looked up.
+        if (!durableLogEnabled) {
+            return;
+        }
         eventStreamAppender = resolveEventStreamAppender(config.engineName());
         eventStreamReader = resolveEventStreamReader(config.engineName());
     }

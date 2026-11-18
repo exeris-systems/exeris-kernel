@@ -27,6 +27,7 @@ final class SelectedEngines {
 
     /* default */ static final String EVENTS = "events";
     /* default */ static final String FLOW = "flow";
+    /* default */ static final String PERSISTENCE = "persistence";
 
     private final Set<String> selected;
     private final AtomicReference<EventEngine> eventEngineSlot = new AtomicReference<>();
@@ -60,8 +61,8 @@ final class SelectedEngines {
         PersistenceEngine current = persistenceEngineSlot.get();
         if (current == null) {
             throw new IllegalStateException(
-                    "Persistence engine is not bound — every subsystem this fixture selects declares "
-                            + "dependsOn(\"persistence\"), so this means the boot did not complete");
+                    "Persistence engine is not bound — the fixture always selects the persistence "
+                            + "subsystem, so this means the boot did not complete");
         }
         return current;
     }

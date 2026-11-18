@@ -125,6 +125,28 @@ class EmbeddedKernelFixtureConsumerTest {
                         .hasMessageContaining("not selected");
             }
         }
+
+        @Test
+        @DisplayName("persistenceEngine() stays available when events no longer depends on persistence")
+        void persistenceSurvivesDurableLogOff() {
+            String key = "exeris.event.durableLogEnabled";
+            String previous = System.getProperty(key);
+            System.setProperty(key, "false");
+            try (EmbeddedKernelFixture fixture = EmbeddedKernelFixtures.eventsOnH2()) {
+                fixture.start();
+
+                assertThat(fixture.eventEngine()).isNotNull();
+                assertThat(fixture.persistenceEngine())
+                        .as("the fixture selects persistence itself; events no longer pulls it in")
+                        .isNotNull();
+            } finally {
+                if (previous == null) {
+                    System.clearProperty(key);
+                } else {
+                    System.setProperty(key, previous);
+                }
+            }
+        }
     }
 
     private static EventDescriptor descriptor() {

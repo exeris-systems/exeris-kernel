@@ -70,7 +70,7 @@ public record KafkaEventConfig(
     /**
      * The kind of thread the consumer loop runs on.
      *
-     * @since 0.13.2
+     * @since 0.13
      */
     public enum LoopThread {
         /** A virtual thread (the default). */
@@ -82,7 +82,7 @@ public record KafkaEventConfig(
     /** Empty topic prefix — events publish under the bare event-type name. */
     public static final String EMPTY_TOPIC_PREFIX = "";
 
-    /** Default {@link #closeTimeout()} in milliseconds. @since 0.13.2 */
+    /** Default {@link #closeTimeout()} in milliseconds. @since 0.13 */
     public static final long DEFAULT_CLOSE_TIMEOUT_MS = 30_000L;
 
     private static final Set<String> SHARED_FORBIDDEN =
@@ -93,8 +93,9 @@ public record KafkaEventConfig(
             Set.of("key.deserializer", "value.deserializer", "group.id");
 
     /**
-     * Six-argument constructor kept for existing callers: no overrides, no client id, a
-     * virtual consumer-loop thread and the default close timeout.
+     * Creates a configuration with no property overrides, no client id, a virtual consumer-loop
+     * thread and the default close timeout. This is the constructor callers used before those
+     * components existed.
      *
      * @param bootstrapServers    comma-separated {@code host:port} list
      * @param consumerGroupId     consumer group id
@@ -182,7 +183,7 @@ public record KafkaEventConfig(
      *
      * @param overrides producer properties; validated and copied
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withProducerOverrides(Map<String, String> overrides) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
@@ -195,7 +196,7 @@ public record KafkaEventConfig(
      *
      * @param overrides consumer properties; validated and copied
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withConsumerOverrides(Map<String, String> overrides) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
@@ -208,7 +209,7 @@ public record KafkaEventConfig(
      *
      * @param newClientId the client id; empty means not set
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withClientId(String newClientId) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
@@ -221,7 +222,7 @@ public record KafkaEventConfig(
      *
      * @param newLoopThread the thread kind
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withLoopThread(LoopThread newLoopThread) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
@@ -234,7 +235,7 @@ public record KafkaEventConfig(
      *
      * @param newCloseTimeout the bound on each blocking step of a shutdown; must be positive
      * @return the new configuration
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaEventConfig withCloseTimeout(Duration newCloseTimeout) {
         return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,

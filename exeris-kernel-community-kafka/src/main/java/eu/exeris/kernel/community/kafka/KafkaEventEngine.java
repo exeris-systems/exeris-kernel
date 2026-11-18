@@ -106,7 +106,9 @@ import java.util.function.Function;
  * <h2>Shutdown</h2>
  * <p>{@link #close()} is terminal and idempotent. It stops the loop without interrupting it; the
  * loop thread then flushes the producer, commits (manual mode, no failure), and closes the consumer,
- * each bounded by {@link KafkaEventConfig#closeTimeout()}, and the caller closes the producer last.
+ * and the caller closes the producer last. The commit and the two closes are each bounded by
+ * {@link KafkaEventConfig#closeTimeout()}; the flush is bounded only by the producer's own
+ * {@code delivery.timeout.ms}.
  * A loop that does not finish in time is interrupted as an escalation, and that is not reported as a
  * failure.
  *
@@ -217,7 +219,7 @@ public final class KafkaEventEngine implements EventEngine {
      * Exeris header. See the <em>Raw Records</em> section of the class documentation.
      *
      * @return the engine's one channel, never {@code null}
-     * @since 0.13.2
+     * @since 0.13
      */
     public KafkaRecordChannel records() {
         return rawChannel;
@@ -310,7 +312,7 @@ public final class KafkaEventEngine implements EventEngine {
      * {@link EventLoop#stop()} is never a failure.
      *
      * @return the first failure that ended the loop, or empty
-     * @since 0.13.2
+     * @since 0.13
      */
     public Optional<Throwable> loopFailure() {
         return loop.failure();
@@ -323,7 +325,7 @@ public final class KafkaEventEngine implements EventEngine {
      * call {@link #close()}.
      *
      * @param listener receives the failure cause
-     * @since 0.13.2
+     * @since 0.13
      */
     public void onLoopFailure(java.util.function.Consumer<Throwable> listener) {
         loop.onFailure(Objects.requireNonNull(listener, "listener"));
