@@ -44,10 +44,20 @@
  * consumption; it does not cover the output a handler produces. A failure ends the loop with a
  * recorded cause ({@link KafkaEventEngine#loopFailure()}) and the batch is not committed.
  *
+ * <h2>Raw Records</h2>
+ * <p>{@link KafkaEventEngine#records()} returns a {@link KafkaRecordChannel} for topics whose records
+ * carry no Exeris header: {@link KafkaRecordHandler} receives the Kafka {@code ConsumerRecord}
+ * as delivered, and the channel sends records as given. It bypasses the in-memory event bus and
+ * therefore the ADR-101 isolation scoping and the Exeris wire header; a topic of a registered event
+ * type or the event-log topic is refused in both directions. Handlers run on the consumer loop thread,
+ * and ordering is per partition. The channel's rebalance hooks observe partition-owned state; they
+ * are not a coordination mechanism. Off unless used.
+ *
  * <h2>Deferred</h2>
  * <ul>
  *   <li>Outbox-orchestrator-driven delivery wiring on top of {@link KafkaEventBrokerPort}.</li>
- *   <li>Consumer-rebalance behavior under in-flight choreography (TCK extension).</li>
+ *   <li>TCK coverage of consumer-rebalance behavior under in-flight choreography. The raw channel's
+ *       rebalance hooks only report assignment changes; they add no such coverage.</li>
  * </ul>
  *
  * @since 0.7

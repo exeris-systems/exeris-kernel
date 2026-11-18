@@ -7,6 +7,7 @@ package eu.exeris.kernel.community.kafka;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
 import org.apache.kafka.clients.consumer.CloseOptions;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -16,8 +17,12 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -159,12 +164,56 @@ final class KafkaLoopTestSupport {
         private final CountDownLatch polled = new CountDownLatch(1);
         private final AtomicReference<Thread> pollThread = new AtomicReference<>();
         private volatile CountDownLatch closeGate;
+        private final Set<TopicPartition> assignedPartitions = new LinkedHashSet<>();
+        private volatile ConsumerRebalanceListener driverListener;
         private long nextOffset;
-        private boolean assigned;
 
         RecordingConsumer(CallLog log) {
             super("earliest");
             this.log = log;
+        }
+
+        /** The listener the engine's loop passed to {@code subscribe}; a test can call it to model callbacks MockConsumer cannot (lost). */
+        ConsumerRebalanceListener driverListener() {
+            return driverListener;
+        }
+
+        @Override
+        public synchronized void subscribe(Collection<String> topics, ConsumerRebalanceListener listener) {
+            this.driverListener = listener;
+            super.subscribe(topics, listener);
+        }
+
+        /** Runs {@code task} on the loop thread inside one poll (the way {@code MockConsumer} schedules it). */
+        synchronized void onNextPoll(Runnable task) {
+            schedulePollTask(task);
+        }
+
+        /**
+         * Schedules one poll that assigns {@code partitions} (as a rebalance would) and returns
+         * {@code records}, which carry their own topic, partition and offset.
+         */
+        @SafeVarargs
+        final synchronized void deliverRecords(List<TopicPartition> partitions,
+                                               ConsumerRecord<byte[], byte[]>... records) {
+            schedulePollTask(() -> {
+                assignAll(partitions);
+                for (ConsumerRecord<byte[], byte[]> consumerRecord : records) {
+                    addRecord(consumerRecord);
+                }
+            });
+        }
+
+        // Called on the loop thread, inside a poll task; the topics must already be subscribed.
+        void assignAll(List<TopicPartition> partitions) {
+            if (assignedPartitions.addAll(partitions)) {
+                rebalance(List.copyOf(assignedPartitions));
+                Map<TopicPartition, Long> beginnings = new HashMap<>();
+                for (TopicPartition tp : assignedPartitions) {
+                    beginnings.put(tp, 0L);
+                }
+                updateBeginningOffsets(beginnings);
+            }
         }
 
         /** Makes {@code close} block, ignoring interrupts, until the gate opens. */
@@ -178,11 +227,7 @@ final class KafkaLoopTestSupport {
          */
         synchronized void deliver(byte[]... frames) {
             schedulePollTask(() -> {
-                if (!assigned) {
-                    assigned = true;
-                    rebalance(List.of(partition));
-                    updateBeginningOffsets(Map.of(partition, 0L));
-                }
+                assignAll(List.of(partition));
                 for (byte[] frame : frames) {
                     addRecord(new ConsumerRecord<>(TOPIC, 0, nextOffset++, null, frame));
                 }
