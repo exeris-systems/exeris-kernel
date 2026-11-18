@@ -53,17 +53,17 @@ public interface KafkaRecordChannel {
     void rebalanceListener(ConsumerRebalanceListener listener);
 
     /**
-     * Hands {@code record} to the engine's producer as it is: no Exeris header and no isolation header
+     * Hands {@code producerRecord} to the engine's producer as it is: no Exeris header and no isolation header
      * is added. When the send completes exceptionally the channel counts it in
      * {@link #sendFailedTotal()} and sets the engine's send-failure latch (which, in manual-commit
      * mode, ends the consumer loop before its next commit), and only then invokes {@code callback}.
      *
-     * @param record   the record to send
+     * @param producerRecord the record to send
      * @param callback invoked on completion; may be {@code null}
      * @throws IllegalArgumentException if the record's topic is the effective topic of a registered
      *                                  event type or the event-log topic
      */
-    void send(ProducerRecord<byte[], byte[]> record, Callback callback);
+    void send(ProducerRecord<byte[], byte[]> producerRecord, Callback callback);
 
     /**
      * Returns the number of raw sends that failed asynchronously. The counter belongs to the channel:

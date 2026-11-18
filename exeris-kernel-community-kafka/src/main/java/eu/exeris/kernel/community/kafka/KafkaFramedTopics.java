@@ -8,6 +8,7 @@ import eu.exeris.kernel.spi.events.EventTypeSpec;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The topics that carry Exeris-framed records: the event-log topic and the effective topic of every
@@ -20,7 +21,8 @@ final class KafkaFramedTopics {
 
     private final KafkaEventRegistry registry;
     private final KafkaEventConfig config;
-    private volatile Snapshot snapshot = new Snapshot(-1, Set.of());
+    private final AtomicReference<Snapshot> snapshot =
+            new AtomicReference<>(new Snapshot(-1, Set.of()));
 
     private record Snapshot(int registryVersion, Set<String> topics) { }
 
@@ -30,13 +32,13 @@ final class KafkaFramedTopics {
     }
 
     /* default */ boolean contains(String topic) {
-        Snapshot current = snapshot;
+        Snapshot current = snapshot.get();
         // Read before the snapshot is built: a registration that lands in between only makes the
         // snapshot newer than its version says, and the next call rebuilds it.
         int registryVersion = registry.registeredVersion();
         if (current.registryVersion() != registryVersion) {
             current = new Snapshot(registryVersion, build());
-            snapshot = current;
+            snapshot.set(current);
         }
         return current.topics().contains(topic);
     }
