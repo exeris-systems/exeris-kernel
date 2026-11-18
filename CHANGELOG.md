@@ -19,6 +19,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 ### Breaking
 
 - None. No SPI type changes, and `MIGRATION.md` has no 0.13.2 section.
+- The Kafka engine's shutdown change, listed under `### Changed`, is not classified as breaking, because it brings the driver to what the SPI already states. `EventEngine.close()` says no component obtained from the engine may be used after it returns, and `EventLoop.stop()` says it blocks until everything already queued has been processed, with no time bound. On 0.13.1 the Kafka engine's `close()` closed its producer, so an engine started again after `close()` could consume but every publish failed on the closed producer; that restart is now refused with `IllegalStateException`. A caller that relied on `stop()` returning within 5 s, or on starting an engine again after `close()`, has to change.
 
 ### Added
 
