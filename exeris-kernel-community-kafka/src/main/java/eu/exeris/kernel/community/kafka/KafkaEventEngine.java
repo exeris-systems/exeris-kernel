@@ -717,6 +717,13 @@ public final class KafkaEventEngine implements EventEngine {
             return value != null && "false".equalsIgnoreCase(value.trim());
         }
 
+        /**
+         * Starts the consumer loop on a new thread. A call made while the loop is running does
+         * nothing.
+         *
+         * @throws EventEngineException ({@code EX-EVENT-6001}) when the previous consumer loop
+         *         thread has not finished stopping
+         */
         @Override
         public void start() {
             Thread previous = loopThread.get();
