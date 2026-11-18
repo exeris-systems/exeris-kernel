@@ -1,3 +1,11 @@
+---
+title: "RFC-2026-08-07: What substrate can a cross-node coordination seam actually stand on?"
+type: rfc
+visibility: public
+owning-repo: exeris-kernel
+status: active
+---
+
 # RFC-2026-08-07: What substrate can a cross-node coordination seam actually stand on?
 
 | Field             | Value                                                                    |
