@@ -5,7 +5,10 @@
 package eu.exeris.kernel.community.kafka;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Community-Kafka-internal configuration for the Kafka {@code EventEngine} binding.
@@ -33,6 +36,17 @@ import java.util.Objects;
  * @param producerLingerMs upper bound on producer batching latency; {@code 0} disables linger
  * @param consumerPollTimeout how long each {@code consumer.poll} call may block; bounded so
  *                            shutdown remains responsive even under empty topics
+ * @param producerOverrides Kafka producer properties applied after the binding's own, so an entry
+ *                          wins over them; must not carry {@code bootstrap.servers},
+ *                          {@code key.serializer}, {@code value.serializer} or
+ *                          {@code transactional.id}; defensively copied; may be empty
+ * @param consumerOverrides Kafka consumer properties applied after the binding's own, so an entry
+ *                          wins over them; must not carry {@code bootstrap.servers},
+ *                          {@code group.id}, {@code key.deserializer}, {@code value.deserializer}
+ *                          or {@code transactional.id}; defensively copied; may be empty
+ * @param clientId          Kafka {@code client.id} for both clients; empty means not set, and a
+ *                          {@code client.id} in an override map wins over it
+ * @param loopThread        the kind of thread the consumer loop runs on
  *
  * @since 0.7
  */
@@ -42,10 +56,51 @@ public record KafkaEventConfig(
         String   topicPrefix,
         boolean  requireAllAcks,
         long     producerLingerMs,
-        Duration consumerPollTimeout) {
+        Duration consumerPollTimeout,
+        Map<String, String> producerOverrides,
+        Map<String, String> consumerOverrides,
+        String   clientId,
+        LoopThread loopThread) {
+
+    /**
+     * The kind of thread the consumer loop runs on.
+     *
+     * @since 0.13
+     */
+    public enum LoopThread {
+        /** A virtual thread (the default). */
+        VIRTUAL,
+        /** A daemon platform thread. */
+        PLATFORM
+    }
 
     /** Empty topic prefix — events publish under the bare event-type name. */
     public static final String EMPTY_TOPIC_PREFIX = "";
+
+    private static final Set<String> SHARED_FORBIDDEN =
+            Set.of("bootstrap.servers", "transactional.id");
+    private static final Set<String> PRODUCER_FORBIDDEN =
+            Set.of("key.serializer", "value.serializer");
+    private static final Set<String> CONSUMER_FORBIDDEN =
+            Set.of("key.deserializer", "value.deserializer", "group.id");
+
+    /**
+     * Six-argument constructor kept for existing callers: no overrides, no client id, and a
+     * virtual consumer-loop thread.
+     *
+     * @param bootstrapServers    comma-separated {@code host:port} list
+     * @param consumerGroupId     consumer group id
+     * @param topicPrefix         topic prefix; may be empty
+     * @param requireAllAcks      whether the producer uses {@code acks=all}
+     * @param producerLingerMs    producer linger bound in milliseconds
+     * @param consumerPollTimeout consumer poll timeout
+     */
+    public KafkaEventConfig(String bootstrapServers, String consumerGroupId, String topicPrefix,
+                            boolean requireAllAcks, long producerLingerMs,
+                            Duration consumerPollTimeout) {
+        this(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks, producerLingerMs,
+                consumerPollTimeout, Map.of(), Map.of(), "", LoopThread.VIRTUAL);
+    }
 
     /**
      * Compact constructor — validates non-null / non-blank invariants eagerly so a
@@ -56,6 +111,10 @@ public record KafkaEventConfig(
         Objects.requireNonNull(consumerGroupId,  "consumerGroupId must not be null");
         Objects.requireNonNull(topicPrefix,      "topicPrefix must not be null — use EMPTY_TOPIC_PREFIX");
         Objects.requireNonNull(consumerPollTimeout, "consumerPollTimeout must not be null");
+        Objects.requireNonNull(producerOverrides, "producerOverrides must not be null");
+        Objects.requireNonNull(consumerOverrides, "consumerOverrides must not be null");
+        Objects.requireNonNull(clientId,          "clientId must not be null — use the empty string");
+        Objects.requireNonNull(loopThread,        "loopThread must not be null");
         if (bootstrapServers.isBlank()) {
             throw new IllegalArgumentException("bootstrapServers must not be blank");
         }
@@ -69,6 +128,20 @@ public record KafkaEventConfig(
         if (consumerPollTimeout.isNegative() || consumerPollTimeout.isZero()) {
             throw new IllegalArgumentException(
                     "consumerPollTimeout must be > 0, got: " + consumerPollTimeout);
+        }
+        producerOverrides = Map.copyOf(producerOverrides);
+        consumerOverrides = Map.copyOf(consumerOverrides);
+        rejectForbidden("producerOverrides", producerOverrides, PRODUCER_FORBIDDEN);
+        rejectForbidden("consumerOverrides", consumerOverrides, CONSUMER_FORBIDDEN);
+    }
+
+    private static void rejectForbidden(String component, Map<String, String> overrides,
+                                        Set<String> specific) {
+        for (String key : new TreeSet<>(overrides.keySet())) {
+            if (SHARED_FORBIDDEN.contains(key) || specific.contains(key)) {
+                throw new IllegalArgumentException(
+                        component + " must not contain '" + key + "' — the binding owns it");
+            }
         }
     }
 
@@ -88,6 +161,78 @@ public record KafkaEventConfig(
                 true,                // requireAllAcks — at-least-once by default
                 5L,                  // producerLingerMs — 5 ms is the upstream Kafka default
                 Duration.ofMillis(250L));
+    }
+
+    /**
+     * Returns a copy with the given producer property overrides.
+     *
+     * @param overrides producer properties; validated and copied
+     * @return the new configuration
+     * @since 0.13
+     */
+    public KafkaEventConfig withProducerOverrides(Map<String, String> overrides) {
+        return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
+                producerLingerMs, consumerPollTimeout, overrides, consumerOverrides, clientId,
+                loopThread);
+    }
+
+    /**
+     * Returns a copy with the given consumer property overrides.
+     *
+     * @param overrides consumer properties; validated and copied
+     * @return the new configuration
+     * @since 0.13
+     */
+    public KafkaEventConfig withConsumerOverrides(Map<String, String> overrides) {
+        return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
+                producerLingerMs, consumerPollTimeout, producerOverrides, overrides, clientId,
+                loopThread);
+    }
+
+    /**
+     * Returns a copy with the given Kafka {@code client.id}.
+     *
+     * @param newClientId the client id; empty means not set
+     * @return the new configuration
+     * @since 0.13
+     */
+    public KafkaEventConfig withClientId(String newClientId) {
+        return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
+                producerLingerMs, consumerPollTimeout, producerOverrides, consumerOverrides,
+                newClientId, loopThread);
+    }
+
+    /**
+     * Returns a copy with the given consumer-loop thread kind.
+     *
+     * @param newLoopThread the thread kind
+     * @return the new configuration
+     * @since 0.13
+     */
+    public KafkaEventConfig withLoopThread(LoopThread newLoopThread) {
+        return new KafkaEventConfig(bootstrapServers, consumerGroupId, topicPrefix, requireAllAcks,
+                producerLingerMs, consumerPollTimeout, producerOverrides, consumerOverrides,
+                clientId, newLoopThread);
+    }
+
+    /**
+     * Describes this configuration without printing override values, which can carry secrets
+     * such as {@code sasl.jaas.config}: only the override key names appear.
+     *
+     * @return a description with override key names only
+     */
+    @Override
+    public String toString() {
+        return "KafkaEventConfig[bootstrapServers=" + bootstrapServers
+                + ", consumerGroupId=" + consumerGroupId
+                + ", topicPrefix=" + topicPrefix
+                + ", requireAllAcks=" + requireAllAcks
+                + ", producerLingerMs=" + producerLingerMs
+                + ", consumerPollTimeout=" + consumerPollTimeout
+                + ", producerOverrideKeys=" + new TreeSet<>(producerOverrides.keySet())
+                + ", consumerOverrideKeys=" + new TreeSet<>(consumerOverrides.keySet())
+                + ", clientId=" + clientId
+                + ", loopThread=" + loopThread + ']';
     }
 
     /**

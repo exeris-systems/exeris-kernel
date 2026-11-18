@@ -109,7 +109,8 @@ class KafkaReachabilityMetadataTest {
     private static final Set<String> ALLOWED_PROPERTIES_BUILDER_SITES = Set.of(
             "eu.exeris.kernel.community.kafka.KafkaEventEngine#producerProperties",
             "eu.exeris.kernel.community.kafka.KafkaEventEngine#consumerProperties",
-            "eu.exeris.kernel.community.kafka.KafkaEventLog#consumerProps"
+            "eu.exeris.kernel.community.kafka.KafkaEventLog#consumerProps",
+            "eu.exeris.kernel.community.kafka.KafkaEventProvider#loadOverrides"
     );
 
     @Test
