@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -81,6 +82,70 @@ class KafkaPropertiesBuilderTest {
         assertThat(props.getProperty("value.deserializer")).isEqualTo(ByteArrayDeserializer.class.getName());
         assertThat(props.getProperty("enable.auto.commit")).isEqualTo("true");
         assertThat(props.getProperty("auto.offset.reset")).isEqualTo("earliest");
+    }
+
+    @Test
+    @DisplayName("a producer override wins over acks and linger.ms, and adds nothing else")
+    void producerOverridesWinOverDefaults() {
+        KafkaEventConfig cfg = CONFIG_ALL_ACKS.withProducerOverrides(
+                Map.of("acks", "0", "linger.ms", "99", "compression.type", "lz4"));
+
+        Properties props = KafkaEventEngine.producerProperties(cfg);
+
+        assertThat(props.getProperty("acks")).isEqualTo("0");
+        assertThat(props.getProperty("linger.ms")).isEqualTo("99");
+        assertThat(props.stringPropertyNames()).containsExactlyInAnyOrder(
+                "bootstrap.servers", "key.serializer", "value.serializer", "acks", "linger.ms",
+                "compression.type");
+    }
+
+    @Test
+    @DisplayName("a consumer override wins over enable.auto.commit and auto.offset.reset, and adds nothing else")
+    void consumerOverridesWinOverDefaults() {
+        KafkaEventConfig cfg = CONFIG_ALL_ACKS.withConsumerOverrides(
+                Map.of("enable.auto.commit", "false", "auto.offset.reset", "latest",
+                        "max.poll.records", "10"));
+
+        Properties props = KafkaEventEngine.consumerProperties(cfg);
+
+        assertThat(props.getProperty("enable.auto.commit")).isEqualTo("false");
+        assertThat(props.getProperty("auto.offset.reset")).isEqualTo("latest");
+        assertThat(props.stringPropertyNames()).containsExactlyInAnyOrder(
+                "bootstrap.servers", "group.id", "key.deserializer", "value.deserializer",
+                "enable.auto.commit", "auto.offset.reset", "max.poll.records");
+    }
+
+    @Test
+    @DisplayName("clientId adds client.id to both builders, and a map entry wins over it")
+    void clientIdIsAddedAndMapWins() {
+        KafkaEventConfig cfg = CONFIG_ALL_ACKS.withClientId("from-component");
+
+        assertThat(KafkaEventEngine.producerProperties(cfg)).hasSize(6)
+                .containsEntry("client.id", "from-component");
+        assertThat(KafkaEventEngine.consumerProperties(cfg)).hasSize(7)
+                .containsEntry("client.id", "from-component");
+
+        KafkaEventConfig overridden = cfg
+                .withProducerOverrides(Map.of("client.id", "from-map-p"))
+                .withConsumerOverrides(Map.of("client.id", "from-map-c"));
+
+        assertThat(KafkaEventEngine.producerProperties(overridden)).hasSize(6)
+                .containsEntry("client.id", "from-map-p");
+        assertThat(KafkaEventEngine.consumerProperties(overridden)).hasSize(7)
+                .containsEntry("client.id", "from-map-c");
+    }
+
+    @Test
+    @DisplayName("KafkaEventLog.consumerProps ignores overrides and clientId")
+    void eventLogConsumerPropsUnaffectedByOverrides() {
+        KafkaEventConfig cfg = CONFIG_ALL_ACKS.withClientId("cid")
+                .withConsumerOverrides(Map.of("auto.offset.reset", "latest", "extra", "x"));
+
+        Properties props = KafkaEventLog.consumerProps(cfg);
+
+        assertThat(props).hasSize(7);
+        assertThat(props.getProperty("auto.offset.reset")).isEqualTo("earliest");
+        assertThat(props.stringPropertyNames()).doesNotContain("client.id", "extra");
     }
 
     @Test

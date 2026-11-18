@@ -106,8 +106,8 @@ of it.
 
 ### Events and flow — `EmbeddedKernelFixture` (since 0.12)
 
-Boots `events`, `flow`, or both — transitively pulling `persistence` and, for events, `memory` — and
-hands back the engines out of **one** kernel.
+Boots `events`, `flow`, or both, together with `persistence`, which the fixture selects itself, and
+`memory` — and hands back the engines out of **one** kernel.
 
 ```java
 try (EmbeddedKernelFixture fixture = EmbeddedKernelFixtures.eventsAndFlowOnH2()) {
@@ -128,8 +128,10 @@ Three fixtures for one saga test would be three kernels, booted in sequence, sha
 that emits an event needs both engines out of the *same* runtime, which is also how production wires
 it.
 
-`persistenceEngine()` is always available, because both subsystems declare `dependsOn("persistence")`.
-That is what makes an assertion on saga state or on the outbox possible: the test reads the rows the
+`persistenceEngine()` is always available, because the fixture adds `persistence` to the subsystems it
+boots. Since 0.13.2 it does so explicitly rather than relying on `dependsOn("persistence")`: `events`
+drops that edge when `event.durableLogEnabled=false`, and the fixture, which reads its configuration
+from JVM system properties, still boots persistence then. That is what makes an assertion on saga state or on the outbox possible: the test reads the rows the
 engine wrote. Asking for an engine whose subsystem was not selected fails with a message naming it,
 not with a `NullPointerException`.
 

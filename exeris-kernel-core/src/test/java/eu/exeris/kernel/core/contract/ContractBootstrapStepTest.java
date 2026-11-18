@@ -514,8 +514,10 @@ class ContractBootstrapStepTest {
              URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
             recording.enable("eu.exeris.kernel.contract.Resolved");
             recording.start();
-            assertThatThrownBy(() -> ContractBootstrapStep.run(
-                    config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, outside.toString())), empty, resolver))
+            ConfigProvider config = config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, outside.toString()));
+            // At NOW, so the refusal stays the scope one whatever order the verifier checks in.
+            assertThatThrownBy(() -> ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt(NOW.toString()))
+                    .run(() -> ContractBootstrapStep.run(config, empty, resolver)))
                     .isInstanceOfSatisfying(ContractBreachException.class,
                             breach -> assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0009));
             recording.stop();
@@ -579,12 +581,16 @@ class ContractBootstrapStepTest {
                      new URL[] {dir.resolve("classpath").toUri().toURL()}, getClass().getClassLoader())) {
             recording.enable("eu.exeris.kernel.contract.Resolved");
             recording.start();
-            ContractBootstrapStep.run(config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY, developer.toString())),
-                    loader, resolver);
-            ContractBootstrapStep.run(config(Map.of("environment", "production",
-                    ContractBootstrapStep.MANIFEST_PATH_KEY, production.toString())), loader, resolver);
-            assertThatThrownBy(() -> ContractBootstrapStep.run(config(Map.of("environment", "production",
-                    ContractBootstrapStep.MANIFEST_PATH_KEY, developer.toString())), loader, resolver));
+            // The fixtures' validity windows are fixed dates, so the gate is run at NOW rather than
+            // at the platform clock.
+            ScopedValue.where(TimeKernelProviders.TIME_SOURCE, sourceAt(NOW.toString())).run(() -> {
+                ContractBootstrapStep.run(config(Map.of(ContractBootstrapStep.MANIFEST_PATH_KEY,
+                        developer.toString())), loader, resolver);
+                ContractBootstrapStep.run(config(Map.of("environment", "production",
+                        ContractBootstrapStep.MANIFEST_PATH_KEY, production.toString())), loader, resolver);
+                assertThatThrownBy(() -> ContractBootstrapStep.run(config(Map.of("environment", "production",
+                        ContractBootstrapStep.MANIFEST_PATH_KEY, developer.toString())), loader, resolver));
+            });
             recording.stop();
             recording.dump(dump);
         }

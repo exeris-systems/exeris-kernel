@@ -52,6 +52,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *       the publish path and the subscribe path both resolve to the override topic, so the event
  *       reaches the local subscriber. If they diverged (publish → override, subscribe →
  *       name-derived default) the event would be stranded and never surface.</li>
+ *   <li>{@link eu.exeris.kernel.spi.events.EventLoop} lifecycle: the loop reports running after
+ *       {@code start()} and not running once {@code stop()} has returned, both calls are
+ *       idempotent, and {@link EventEngine#stats()} {@code loopRunning} agrees with
+ *       {@code isRunning()} on both sides.</li>
  * </ol>
  *
  * <p>Concrete bindings (e.g. {@code CommunityKafkaEventEngineTckIT}) are responsible for
@@ -229,6 +233,41 @@ public abstract class AbstractKafkaEventEngineTck {
                 .as("Engine close MUST be idempotent — the second close() is a no-op")
                 .doesNotThrowAnyException();
         engine = null; // tearDown should not double-close
+    }
+
+    /**
+     * {@link eu.exeris.kernel.spi.events.EventLoop}: {@code isRunning()} is true between a successful
+     * {@code start()} and the {@code stop()} that follows it, and both are idempotent. A brokered
+     * engine's loop is a consumer, not a queue drainer, so it cannot be bound to
+     * {@code AbstractEventLoopTck}; this case holds it to the lifecycle half of that contract.
+     */
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS)
+    @DisplayName("loop().stop() leaves the loop not running, idempotently, and stats() agrees")
+    void loopStopTransitionsToNotRunning() {
+        assertThat(engine.loop().isRunning())
+                .as("isRunning() MUST be true after a successful start()")
+                .isTrue();
+        assertThat(engine.stats().loopRunning())
+                .as("stats().loopRunning() MUST agree with isRunning() while running")
+                .isTrue();
+        assertThatCode(() -> engine.loop().start())
+                .as("start() on a running loop MUST be a no-op")
+                .doesNotThrowAnyException();
+        assertThat(engine.loop().isRunning()).isTrue();
+
+        engine.loop().stop();
+
+        assertThat(engine.loop().isRunning())
+                .as("isRunning() MUST be false once stop() has returned")
+                .isFalse();
+        assertThat(engine.stats().loopRunning())
+                .as("stats().loopRunning() MUST agree with isRunning() after stop()")
+                .isFalse();
+        assertThatCode(() -> engine.loop().stop())
+                .as("stop() on a stopped loop MUST be a no-op")
+                .doesNotThrowAnyException();
+        assertThat(engine.loop().isRunning()).isFalse();
     }
 
     @Test
