@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -38,6 +39,8 @@ final class KernelBootstrapRuntimeFixture implements EmbeddedKernelFixture {
     private static final long STOP_TIMEOUT_SECONDS = 15L;
 
     private final Set<String> subsystems;
+    /** What is handed to the selector: the caller's subsystems plus {@code persistence}, named outright. */
+    private final Set<String> bootSelection;
     private final String jdbcUrl;
     private final boolean runMigrations;
 
@@ -52,6 +55,11 @@ final class KernelBootstrapRuntimeFixture implements EmbeddedKernelFixture {
                                                 String jdbcUrl,
                                                 boolean runMigrations) {
         this.subsystems = Set.copyOf(Objects.requireNonNull(subsystems, "subsystems must not be null"));
+        // persistence is selected explicitly, not left to dependency closure: events only depends on it
+        // while event.durableLogEnabled is true, and persistenceEngine() must hold whatever that is set to.
+        Set<String> withPersistence = new LinkedHashSet<>(this.subsystems);
+        withPersistence.add(SelectedEngines.PERSISTENCE);
+        this.bootSelection = Set.copyOf(withPersistence);
         this.engines = new SelectedEngines(this.subsystems);
         this.jdbcUrl = Objects.requireNonNull(jdbcUrl, "jdbcUrl must not be null");
         this.runMigrations = runMigrations;
@@ -143,7 +151,7 @@ final class KernelBootstrapRuntimeFixture implements EmbeddedKernelFixture {
             // that owns the stop; a kernel hook would be a second owner of it, and would drain an unclosed
             // fixture inside the test JVM's exit window.
             KernelBootstrap.builder()
-                    .selector(BootstrapSelector.forNames(subsystems.toArray(new String[0])))
+                    .selector(BootstrapSelector.forNames(bootSelection.toArray(new String[0])))
                     .registerShutdownHook(false)
                     .build()
                     .boot(() -> {
