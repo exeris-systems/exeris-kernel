@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The rebalance hooks of the raw channel. {@code MockConsumer} (kafka-clients 4.3.1) calls the subscribed
+ * The rebalance hooks of the raw channel. {@code MockConsumer} (kafka-clients 4.4.0) calls the subscribed
  * {@link ConsumerRebalanceListener} from {@code rebalance(...)} (revoked for the partitions that left, then
  * assigned for the ones that arrived, the delta only), but it has no way to lose partitions. So
  * {@code onPartitionsLost} is driven by calling the listener the engine's loop passed to {@code subscribe}
