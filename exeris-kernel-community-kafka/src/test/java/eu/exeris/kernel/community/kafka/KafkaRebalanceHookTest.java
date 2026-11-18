@@ -228,20 +228,20 @@ class KafkaRebalanceHookTest {
 
         @Override
         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-            record("assigned", partitions);
+            note("assigned", partitions);
         }
 
         @Override
         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-            record("revoked", partitions);
+            note("revoked", partitions);
         }
 
         @Override
         public void onPartitionsLost(Collection<TopicPartition> partitions) {
-            record("lost", partitions);
+            note("lost", partitions);
         }
 
-        private void record(String kind, Collection<TopicPartition> partitions) {
+        private void note(String kind, Collection<TopicPartition> partitions) {
             threads.add(Thread.currentThread());
             events.add(new Event(kind, Set.copyOf(partitions)));
         }

@@ -39,8 +39,8 @@ public interface KafkaRecordHandler {
     /**
      * Handles one record.
      *
-     * @param record the consumed record, with its topic, partition, offset, key, value, headers and
+     * @param consumerRecord the consumed record, with its topic, partition, offset, key, value, headers and
      *               timestamp
      */
-    void onRecord(ConsumerRecord<byte[], byte[]> record);
+    void onRecord(ConsumerRecord<byte[], byte[]> consumerRecord);
 }

@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.kafka;
 
 import eu.exeris.kernel.spi.events.EventEngineConfig;
+import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
 import eu.exeris.kernel.spi.exceptions.events.EventRegistryException;
 import org.apache.kafka.clients.producer.MockProducer;
@@ -49,7 +50,9 @@ class KafkaRawTopicCollisionTest {
         engine("");
         engine.registry().register(EventTypeSpec.of("OrderCreated", 9_501));
 
-        assertThatThrownBy(() -> engine.records().subscribe("OrderCreated", _ -> { }))
+        KafkaRecordChannel records = engine.records();
+
+        assertThatThrownBy(() -> records.subscribe("OrderCreated", _ -> { }))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("OrderCreated");
     }
 
@@ -59,9 +62,11 @@ class KafkaRawTopicCollisionTest {
         engine("exeris.");
         engine.registry().register(EventTypeSpec.of("OrderCreated", 9_502));
 
-        assertThatThrownBy(() -> engine.records().subscribe("exeris.OrderCreated", _ -> { }))
+        KafkaRecordChannel records = engine.records();
+
+        assertThatThrownBy(() -> records.subscribe("exeris.OrderCreated", _ -> { }))
                 .isInstanceOf(IllegalStateException.class);
-        engine.records().subscribe("OrderCreated", _ -> { });
+        records.subscribe("OrderCreated", _ -> { });
     }
 
     @Test
@@ -70,7 +75,9 @@ class KafkaRawTopicCollisionTest {
         engine("exeris.");
         engine.registry().register(EventTypeSpec.ofPersistent("OrderCreated", 9_503, "orders.created"));
 
-        assertThatThrownBy(() -> engine.records().subscribe("exeris.orders.created", _ -> { }))
+        KafkaRecordChannel records = engine.records();
+
+        assertThatThrownBy(() -> records.subscribe("exeris.orders.created", _ -> { }))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -80,8 +87,10 @@ class KafkaRawTopicCollisionTest {
         engine("exeris.");
         engine.records().subscribe("exeris.OrderCreated", _ -> { });
         engine.records().subscribe("raw.orders", _ -> { });
+        EventRegistry registry = engine.registry();
+        EventTypeSpec clashing = EventTypeSpec.of("OrderCreated", 9_504);
 
-        assertThatThrownBy(() -> engine.registry().register(EventTypeSpec.of("OrderCreated", 9_504)))
+        assertThatThrownBy(() -> registry.register(clashing))
                 .isInstanceOf(EventRegistryException.class).hasMessageContaining("raw record topic");
         assertThat(engine.registry().size()).isZero();
         assertThat(engine.registry().resolve("OrderCreated")).isNull();
@@ -96,10 +105,12 @@ class KafkaRawTopicCollisionTest {
     void eventLogTopicRefused() {
         engine("exeris.");
         String eventLog = "exeris.exeris-event-log";
+        KafkaRecordChannel records = engine.records();
+        ProducerRecord<byte[], byte[]> toEventLog = new ProducerRecord<>(eventLog, new byte[] {1});
 
-        assertThatThrownBy(() -> engine.records().subscribe(eventLog, _ -> { }))
+        assertThatThrownBy(() -> records.subscribe(eventLog, _ -> { }))
                 .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> engine.records().send(new ProducerRecord<>(eventLog, new byte[] {1}), null))
+        assertThatThrownBy(() -> records.send(toEventLog, null))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(producer.history()).isEmpty();
     }
@@ -109,8 +120,10 @@ class KafkaRawTopicCollisionTest {
     void sendOntoTypeTopicRefused() {
         engine("");
         engine.registry().register(EventTypeSpec.of("OrderCreated", 9_506));
+        KafkaRecordChannel records = engine.records();
+        ProducerRecord<byte[], byte[]> toTypeTopic = new ProducerRecord<>("OrderCreated", new byte[] {1});
 
-        assertThatThrownBy(() -> engine.records().send(new ProducerRecord<>("OrderCreated", new byte[] {1}), null))
+        assertThatThrownBy(() -> records.send(toTypeTopic, null))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("OrderCreated");
         assertThat(producer.history()).isEmpty();
     }
@@ -119,9 +132,10 @@ class KafkaRawTopicCollisionTest {
     @DisplayName("a second raw subscribe on the same topic is refused")
     void duplicateSubscribeRefused() {
         engine("");
-        engine.records().subscribe("raw.once", _ -> { });
+        KafkaRecordChannel records = engine.records();
+        records.subscribe("raw.once", _ -> { });
 
-        assertThatThrownBy(() -> engine.records().subscribe("raw.once", _ -> { }))
+        assertThatThrownBy(() -> records.subscribe("raw.once", _ -> { }))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("raw.once");
     }
 }
