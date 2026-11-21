@@ -2,12 +2,12 @@
   "class" : "java.util.HashMap$Node",
   "kind" : "jdk",
   "category" : "test_harness",
-  "count" : 273,
-  "events" : 273,
-  "samples" : 60,
-  "sample_weight_bytes" : 15693192,
-  "tlab_refills" : 213,
-  "tlab_bytes" : 55809936,
+  "count" : 269,
+  "events" : 269,
+  "samples" : 58,
+  "sample_weight_bytes" : 67180648,
+  "tlab_refills" : 211,
+  "tlab_bytes" : 55312384,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
@@ -15,26 +15,26 @@
     "loom" : 0,
     "panama" : 0,
     "array" : 0,
-    "jdk" : 273,
+    "jdk" : 269,
     "other" : 0
   }
 }, {
   "class" : "[Ljava.util.HashMap$Node;",
   "kind" : "array",
   "category" : "test_harness",
-  "count" : 118,
-  "events" : 118,
-  "samples" : 27,
-  "sample_weight_bytes" : 7016208,
-  "tlab_refills" : 91,
-  "tlab_bytes" : 23855104,
+  "count" : 121,
+  "events" : 121,
+  "samples" : 28,
+  "sample_weight_bytes" : 7302584,
+  "tlab_refills" : 93,
+  "tlab_bytes" : 24379392,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
     "exeris" : 0,
     "loom" : 0,
     "panama" : 0,
-    "array" : 118,
+    "array" : 121,
     "jdk" : 0,
     "other" : 0
   }
@@ -45,7 +45,7 @@
   "count" : 115,
   "events" : 115,
   "samples" : 25,
-  "sample_weight_bytes" : 50970464,
+  "sample_weight_bytes" : 6538864,
   "tlab_refills" : 90,
   "tlab_bytes" : 23592960,
   "outside_tlab" : 0,
@@ -65,7 +65,7 @@
   "count" : 38,
   "events" : 38,
   "samples" : 8,
-  "sample_weight_bytes" : 2087488,
+  "sample_weight_bytes" : 2087272,
   "tlab_refills" : 30,
   "tlab_bytes" : 7864320,
   "outside_tlab" : 0,
@@ -76,6 +76,26 @@
     "panama" : 0,
     "array" : 38,
     "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.ArrayList$Itr",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261552,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
     "other" : 0
   }
 } ]
